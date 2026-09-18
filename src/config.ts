@@ -14,6 +14,10 @@ export type Tier = (typeof TIERS)[number];
 export const MAIN_CHAT_POLICIES = ["guarded", "never"] as const;
 export type MainChatPolicy = (typeof MAIN_CHAT_POLICIES)[number];
 
+export const DECISION_RULES = ["mass", "argmax"] as const;
+/** How the tier is read from the backend's probability vector (src/policy.ts). */
+export type DecisionRule = (typeof DECISION_RULES)[number];
+
 export const UPGRADE_POLICIES = ["off", "confident", "on"] as const;
 export type UpgradePolicy = (typeof UPGRADE_POLICIES)[number];
 
@@ -57,6 +61,10 @@ export interface Config {
   readonly maxAssistantChars: number;
   /** REFLEX_LOG_PROMPTS=0 omits the (redacted, 300-char) prompt preview from the decision log. */
   readonly logPrompts: boolean;
+  /** REFLEX_DECISION_RULE: `mass` (ordered, default) or `argmax` (Jev's own choice + confidence floor). */
+  readonly decisionRule: DecisionRule;
+  /** REFLEX_MASS_EPS: the most probability the mass rule leaves on tiers above its pick. */
+  readonly massEps: number;
   /** Main-chat cost guard: largest one-time cache penalty ($) a model switch may cost (REFLEX_MAX_SWITCH_PENALTY_USD). */
   readonly maxSwitchPenaltyUsd: number;
 }
@@ -178,6 +186,8 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     maxUserChars: parseBoundedInt(env["REFLEX_MAX_USER_CHARS"], 4000, 200, 60_000, "REFLEX_MAX_USER_CHARS", errors),
     maxAssistantChars: parseBoundedInt(env["REFLEX_MAX_ASSISTANT_CHARS"], 1000, 0, 60_000, "REFLEX_MAX_ASSISTANT_CHARS", errors),
     logPrompts: !falsy(env["REFLEX_LOG_PROMPTS"]),
+    decisionRule: parseEnum(env["REFLEX_DECISION_RULE"], DECISION_RULES, "mass", "REFLEX_DECISION_RULE", errors),
+    massEps: parseBoundedNumber(env["REFLEX_MASS_EPS"], 0.1, 0, 0.5, "REFLEX_MASS_EPS", errors),
     maxSwitchPenaltyUsd: parseBoundedNumber(env["REFLEX_MAX_SWITCH_PENALTY_USD"], 0.01, 0, 100, "REFLEX_MAX_SWITCH_PENALTY_USD", errors),
   };
   if (errors.length > 0) return { ok: false, errors };

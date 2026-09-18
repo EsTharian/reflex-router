@@ -39,7 +39,12 @@ export interface DecisionRecord {
   readonly backend: string | null;
   readonly requested: { readonly model: string | null; readonly tier: Tier | null; readonly effort: string | null };
   readonly decision: {
+    /** `picks.tier.value` is the applied pick; confidence/probabilities are the backend's answer as given. */
     readonly picks: { readonly tier: PickRecord };
+    /** Which rule produced the applied pick; both readings are always logged for comparison. */
+    readonly rule: "mass" | "argmax";
+    readonly pick_mass: { readonly value: string; readonly above_mass: number };
+    readonly pick_argmax: { readonly value: string; readonly confidence: number };
     readonly vetoes: Readonly<Record<string, number>>;
     readonly latencyMs: number;
     readonly tokensIn: number | null;

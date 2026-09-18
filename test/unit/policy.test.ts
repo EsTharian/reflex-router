@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { loadConfig, type Config, type Tier } from "../../src/config.js";
-import { buildQuestions, judge, offeredTiers, plan, type PlanInput } from "../../src/policy.js";
+import { buildQuestions, judge, massPick, offeredTiers, plan, type PlanInput } from "../../src/policy.js";
 import { tierOfModel } from "../../src/tiers.js";
 import type { Decision, Judgement } from "../../src/types.js";
 
@@ -10,8 +10,11 @@ const cfg = (env: NodeJS.ProcessEnv = {}): Config => {
   assert.ok(r.ok, r.ok ? "" : r.errors.join());
   return r.config;
 };
+/** A judgement read with the `argmax` rule (the confidence floor applies). */
 const j = (tier: Tier, confidence: number, reasoning?: number): Judgement => ({
   tier: { value: tier, confidence, probabilities: { [tier]: confidence } },
+  rule: "argmax",
+  readings: { mass: { value: tier, aboveMass: 0 }, argmax: { value: tier, confidence } },
   vetoes: reasoning === undefined ? {} : { reasoning_demand: reasoning },
 });
 const sub = (model: string): PlanInput => ({ kind: "subagent", requestedModel: model });
@@ -52,8 +55,12 @@ describe("judge", () => {
   it("merges the tier pick and the reasoning_demand veto", () => {
     const r = judge(decision({ tier: tierA, reasoning_demand: rdA }), cfg());
     assert.ok(r.ok);
-    assert.equal(r.judgement.tier.value, "haiku");
+    assert.equal(r.judgement.tier.value, "sonnet", "mass: 0.2 on sonnet is above eps, so haiku is not safe");
+    assert.deepEqual(r.judgement.readings, { mass: { value: "sonnet", aboveMass: 0 }, argmax: { value: "haiku", confidence: 0.8 } });
     assert.equal(r.judgement.vetoes["reasoning_demand"], 0.7);
+    const a = judge(decision({ tier: tierA, reasoning_demand: rdA }), cfg({ REFLEX_DECISION_RULE: "argmax" }));
+    assert.ok(a.ok);
+    assert.equal(a.judgement.tier.value, "haiku");
   });
 
   it("a missing or mistyped answer, or a tier that was not offered, is an error (the caller fails open)", () => {
@@ -93,6 +100,90 @@ describe("plan (decision table)", () => {
       assert.equal(p.wouldUpgrade, wouldUpgrade);
     });
   }
+});
+
+// The twelve decisions of the first shadow dogfood session (docs/shadow-observations.md), probability vectors as
+// Jev returned them. Requested tier: opus for all.
+const SHADOW1: { probs: Record<string, number>; confidence: number; rd: number; argmax: Tier; mass: Tier; lowConfidence: boolean }[] = [
+  { probs: { haiku: 1, sonnet: 0, opus: 0 }, confidence: 0.99, rd: 0.16, argmax: "haiku", mass: "haiku", lowConfidence: false },
+  { probs: { sonnet: 0.9, opus: 0.01, haiku: 0.09 }, confidence: 0.85, rd: 1.16, argmax: "sonnet", mass: "sonnet", lowConfidence: false },
+  { probs: { haiku: 0.93, sonnet: 0.07, opus: 0 }, confidence: 0.9, rd: 0.5, argmax: "haiku", mass: "haiku", lowConfidence: false },
+  { probs: { sonnet: 0.55, opus: 0, haiku: 0.45 }, confidence: 0.32, rd: 1.04, argmax: "sonnet", mass: "sonnet", lowConfidence: true }, // the subagent turn
+  { probs: { sonnet: 0.05, opus: 0, haiku: 0.95 }, confidence: 0.93, rd: 0.85, argmax: "haiku", mass: "haiku", lowConfidence: false },
+  { probs: { opus: 0, haiku: 0.73, sonnet: 0.27 }, confidence: 0.59, rd: 1.01, argmax: "haiku", mass: "sonnet", lowConfidence: true },
+  { probs: { opus: 0.01, sonnet: 0.5, haiku: 0.49 }, confidence: 0.25, rd: 0.83, argmax: "sonnet", mass: "sonnet", lowConfidence: true },
+  { probs: { haiku: 1, opus: 0, sonnet: 0 }, confidence: 1, rd: 0.01, argmax: "haiku", mass: "haiku", lowConfidence: false },
+  { probs: { haiku: 0, sonnet: 0.24, opus: 0.76 }, confidence: 0.63, rd: 3.24, argmax: "opus", mass: "opus", lowConfidence: false },
+  { probs: { opus: 0.09, haiku: 0.62, sonnet: 0.29 }, confidence: 0.42, rd: 1.35, argmax: "haiku", mass: "sonnet", lowConfidence: true },
+  { probs: { haiku: 0.36, sonnet: 0.62, opus: 0.02 }, confidence: 0.43, rd: 1.05, argmax: "sonnet", mass: "sonnet", lowConfidence: true },
+  { probs: { haiku: 0.92, opus: 0, sonnet: 0.08 }, confidence: 0.87, rd: 0.75, argmax: "haiku", mass: "haiku", lowConfidence: false },
+];
+
+describe("decision rule: mass vs argmax on the shadow-1 vectors", () => {
+  const decisionFor = (v: (typeof SHADOW1)[number]): Decision => ({
+    answers: {
+      tier: { type: "choice", choice: v.argmax, confidence: v.confidence, probabilities: v.probs },
+      reasoning_demand: { type: "score", score: v.rd, confidence: 0.5, probabilities: {} },
+    },
+    latencyMs: 1,
+    backendModel: "m",
+    tokensIn: 1,
+    connection: null,
+  });
+  const opusReq: PlanInput = { kind: "subagent", requestedModel: "claude-opus-5" };
+
+  it("the five low-confidence turns all pick sonnet under mass/0.10, and are downgraded from opus to sonnet", () => {
+    const low = SHADOW1.filter((v) => v.lowConfidence);
+    assert.equal(low.length, 5);
+    for (const v of low) {
+      const r = judge(decisionFor(v), cfg());
+      assert.ok(r.ok);
+      assert.equal(r.judgement.rule, "mass");
+      assert.equal(r.judgement.tier.value, "sonnet", JSON.stringify(v.probs));
+      const p = plan(opusReq, r.judgement, cfg());
+      assert.equal(p.target?.tier, "sonnet");
+      assert.deepEqual(p.reasons, ["downgrade"]);
+    }
+  });
+
+  it("under argmax the same five stay on opus (low_confidence), as they did in shadow-1", () => {
+    for (const v of SHADOW1.filter((x) => x.lowConfidence)) {
+      const r = judge(decisionFor(v), cfg({ REFLEX_DECISION_RULE: "argmax" }));
+      assert.ok(r.ok);
+      assert.deepEqual(plan(opusReq, r.judgement, cfg({ REFLEX_DECISION_RULE: "argmax" })).reasons, ["low_confidence"]);
+    }
+  });
+
+  it("the confident picks are unchanged: haiku 1.0 (x2), haiku 0.95, opus 0.76", () => {
+    const confident = SHADOW1.filter((v) => (v.argmax === "haiku" && ((v.probs["haiku"] ?? 0) >= 0.95)) || v.argmax === "opus");
+    assert.equal(confident.length, 4);
+    for (const v of confident) assert.equal(massPick(v.probs, ["haiku", "sonnet", "opus"], 0.1).value, v.argmax);
+  });
+
+  it("every one of the twelve: both readings are computed and match the expectations above", () => {
+    for (const v of SHADOW1) {
+      const r = judge(decisionFor(v), cfg());
+      assert.ok(r.ok);
+      assert.equal(r.judgement.readings.argmax.value, v.argmax);
+      assert.equal(r.judgement.readings.mass.value, v.mass, JSON.stringify(v.probs));
+    }
+  });
+
+  it("massPick: never undercuts a tier above eps, sums the mass of all higher tiers, respects the offered set", () => {
+    assert.deepEqual(massPick({ haiku: 0.8, sonnet: 0.09, opus: 0.11 }, ["haiku", "sonnet", "opus"], 0.1), { value: "opus", aboveMass: 0 });
+    assert.deepEqual(massPick({ haiku: 0.84, sonnet: 0.08, opus: 0.08 }, ["haiku", "sonnet", "opus"], 0.1).value, "sonnet", "0.08 + 0.08 above haiku is more than eps");
+    assert.deepEqual(massPick({ haiku: 0.9, sonnet: 0.1, opus: 0 }, ["haiku", "sonnet", "opus"], 0.1), { value: "haiku", aboveMass: 0.1 }, "exactly eps is allowed");
+    assert.equal(massPick({ haiku: 0.5, sonnet: 0.5 }, ["haiku", "sonnet", "opus"], 0).value, "sonnet", "eps 0: only tiers with zero mass above");
+    assert.equal(massPick({ haiku: 0.5, sonnet: 0.3, opus: 0.1, fable: 0.1 }, ["haiku", "sonnet", "opus", "fable"], 0.1).value, "opus");
+  });
+
+  it("config: mass is the default; eps is bounded", () => {
+    assert.equal(cfg().decisionRule, "mass");
+    assert.equal(cfg().massEps, 0.1);
+    assert.equal(cfg({ REFLEX_MASS_EPS: "0.05" }).massEps, 0.05);
+    assert.equal(loadConfig({ REFLEX_MASS_EPS: "0.9" }).ok, false);
+    assert.equal(loadConfig({ REFLEX_DECISION_RULE: "vote" }).ok, false);
+  });
 });
 
 describe("config for policy", () => {

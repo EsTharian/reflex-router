@@ -1,8 +1,8 @@
 // Decision-side types shared by the backend, the policy and the log. Effort-ready: Phase 1 only fills the "tier"
 // dimension, and adding "effort" means adding entries, not reshaping these types.
-import type { Tier } from "./config.js";
+import type { DecisionRule, Tier } from "./config.js";
 
-export type { Tier } from "./config.js";
+export type { DecisionRule, Tier } from "./config.js";
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max"; // declared now; Phase 1 never sets it
 export type Dimension = "tier" | "effort"; // Phase 1 policy implements only "tier"
 
@@ -60,8 +60,18 @@ export interface Picked<V extends string> {
   readonly confidence: number;
   readonly probabilities: Readonly<Record<string, number>>;
 }
+/** Both readings of the tier answer, always computed, so shadow data can compare them. */
+export interface TierReadings {
+  /** Cheapest tier leaving at most eps probability on the tiers above it. */
+  readonly mass: { readonly value: Tier; readonly aboveMass: number };
+  /** The backend's own choice (highest probability) and its confidence. */
+  readonly argmax: { readonly value: Tier; readonly confidence: number };
+}
 export interface Judgement {
+  /** The applied pick (per `rule`); `confidence`/`probabilities` are the backend's answer as given. */
   readonly tier: Picked<Tier>;
+  readonly rule: DecisionRule;
+  readonly readings: TierReadings;
   readonly effort?: Picked<Effort>;
   /** Cross-checking scores, e.g. reasoning_demand. */
   readonly vetoes: Readonly<Record<string, number>>;

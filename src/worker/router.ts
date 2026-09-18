@@ -363,6 +363,9 @@ export class Router {
         sent,
         decision: {
           picks: { tier: { value: j.judgement.tier.value, confidence: j.judgement.tier.confidence, probabilities: j.judgement.tier.probabilities } },
+          rule: j.judgement.rule,
+          pick_mass: { value: j.judgement.readings.mass.value, above_mass: j.judgement.readings.mass.aboveMass },
+          pick_argmax: { value: j.judgement.readings.argmax.value, confidence: j.judgement.readings.argmax.confidence },
           vetoes: j.judgement.vetoes,
           latencyMs: decision.latencyMs,
           tokensIn: decision.tokensIn,

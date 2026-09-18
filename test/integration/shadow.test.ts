@@ -62,6 +62,10 @@ describe("shadow mode, end to end", () => {
     assert.deepEqual(rec.plan?.reasons, ["downgrade"]);
     assert.equal(rec.plan?.routed_to, "claude-sonnet-5");
     assert.equal(rec["signal"], "header");
+    const d = rec.decision as { rule: string; pick_mass: { value: string; above_mass: number }; pick_argmax: { value: string; confidence: number } };
+    assert.equal(d.rule, "mass");
+    assert.deepEqual(d.pick_mass, { value: "haiku", above_mass: 0.1 });
+    assert.deepEqual(d.pick_argmax, { value: "haiku", confidence: 0.9 });
   });
 
   it("Jev sees only the allow-listed state keys, and nothing that identifies the session or the machine", () => {

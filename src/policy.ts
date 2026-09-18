@@ -5,7 +5,10 @@ import type { Config, Tier } from "./config.js";
 import { tierRank, tierOfModel } from "./tiers.js";
 import type { Answer, Decision, Dimension, Judgement, Picked, QuestionSet, ReasonCode, RoutePlan, Target } from "./types.js";
 
-/** A downgrade needs at least this choice confidence (a spread statistic, not the top probability). */
+/**
+ * `argmax` rule only: a downgrade needs at least this choice confidence (a spread statistic, not the top
+ * probability). The `mass` rule carries its own certainty requirement (eps) and does not use it.
+ */
 export const DOWNGRADE_MIN_CONFIDENCE = 0.7;
 /** Upgrades under REFLEX_UPGRADES=confident need at least this. */
 export const UPGRADE_MIN_CONFIDENCE = 0.7;
@@ -50,7 +53,22 @@ const REASONING_LEVELS = [
 /** Tiers offered to the backend: Fable only when explicitly allowed. */
 export const offeredTiers = (cfg: Pick<Config, "allowFable">): Tier[] => (cfg.allowFable ? ["haiku", "sonnet", "opus", "fable"] : ["haiku", "sonnet", "opus"]);
 
-type Part = Partial<Pick<Judgement, "tier">> & { vetoes?: Record<string, number> };
+/**
+ * The `mass` rule. Tiers are ordered, and the question that matters is "is anything above T needed?". Walking from
+ * the cheapest offered tier upwards, pick the first T whose more expensive tiers together get at most `eps`. So a
+ * tier Jev gives more than eps to is never undercut, and a split like sonnet 0.55 / haiku 0.45 / opus 0 picks
+ * sonnet (Jev is sure opus is not needed) where argmax-with-confidence would keep the request on opus. Pure.
+ */
+export function massPick(probabilities: Readonly<Record<string, number>>, offered: readonly Tier[], eps: number): { value: Tier; aboveMass: number } {
+  const ordered = [...offered].sort((a, b) => tierRank(a) - tierRank(b));
+  for (let i = 0; i < ordered.length; i++) {
+    const above = ordered.slice(i + 1).reduce((sum, t) => sum + (probabilities[t] ?? 0), 0);
+    if (above <= eps + 1e-9) return { value: ordered[i]!, aboveMass: Math.round(above * 1e6) / 1e6 };
+  }
+  return { value: ordered.at(-1)!, aboveMass: 0 };
+}
+
+type Part = Partial<Pick<Judgement, "tier" | "rule" | "readings">> & { vetoes?: Record<string, number> };
 
 interface QuestionSpec {
   build(cfg: Config): QuestionSet[string];
@@ -76,8 +94,10 @@ export const QUESTIONS: Readonly<Record<string, QuestionSpec>> = {
       if (a.type !== "choice") return "tier: not a choice answer";
       const offered = offeredTiers(cfg) as string[];
       if (!offered.includes(a.choice)) return "tier: choice is not an offered tier";
-      const tier: Picked<Tier> = { value: a.choice as Tier, confidence: a.confidence, probabilities: a.probabilities };
-      return { tier };
+      const readings = { mass: massPick(a.probabilities, offeredTiers(cfg), cfg.massEps), argmax: { value: a.choice as Tier, confidence: a.confidence } };
+      const applied = cfg.decisionRule === "mass" ? readings.mass.value : readings.argmax.value;
+      const tier: Picked<Tier> = { value: applied, confidence: a.confidence, probabilities: a.probabilities };
+      return { tier, rule: cfg.decisionRule, readings };
     },
   },
   reasoning_demand: {
@@ -95,6 +115,8 @@ export const buildQuestions = (cfg: Config): QuestionSet => Object.fromEntries(O
 /** 3a. Merges every question's reading. A missing or malformed answer is an error (the caller fails open). */
 export function judge(decision: Decision, cfg: Config): { ok: true; judgement: Judgement } | { ok: false; error: string } {
   let tier: Picked<Tier> | undefined;
+  let rule: Judgement["rule"] = cfg.decisionRule;
+  let readings: Judgement["readings"] | undefined;
   const vetoes: Record<string, number> = {};
   for (const [id, spec] of Object.entries(QUESTIONS)) {
     const a = decision.answers[id];
@@ -102,10 +124,12 @@ export function judge(decision: Decision, cfg: Config): { ok: true; judgement: J
     const part = spec.read(a, cfg);
     if (typeof part === "string") return { ok: false, error: part };
     if (part.tier) tier = part.tier;
+    if (part.rule) rule = part.rule;
+    if (part.readings) readings = part.readings;
     Object.assign(vetoes, part.vetoes ?? {});
   }
-  if (!tier) return { ok: false, error: "no tier answer" };
-  return { ok: true, judgement: { tier, vetoes } };
+  if (!tier || !readings) return { ok: false, error: "no tier answer" };
+  return { ok: true, judgement: { tier, rule, readings, vetoes } };
 }
 
 /** What the plan needs to know about the request (no body access). */
@@ -133,7 +157,7 @@ export const DIMENSIONS: Readonly<Partial<Record<Dimension, DimensionRules>>> = 
       if (chosen === requested) return { target: null, reasons: ["same_tier"], wouldUpgrade: false };
 
       if (tierRank(chosen) < tierRank(requested)) {
-        if (j.tier.confidence < DOWNGRADE_MIN_CONFIDENCE) return { target: null, reasons: ["low_confidence"], wouldUpgrade: false };
+        if (j.rule === "argmax" && j.tier.confidence < DOWNGRADE_MIN_CONFIDENCE) return { target: null, reasons: ["low_confidence"], wouldUpgrade: false };
         const limit = MAX_REASONING_DEMAND_FOR[chosen];
         const demand = j.vetoes["reasoning_demand"];
         if (limit !== undefined && (demand === undefined || demand > limit)) return { target: null, reasons: ["veto_reasoning_demand"], wouldUpgrade: false };
@@ -144,7 +168,7 @@ export const DIMENSIONS: Readonly<Partial<Record<Dimension, DimensionRules>>> = 
 
       // The backend wants a stronger tier than the client asked for.
       if (cfg.upgrades === "off") return { target: null, reasons: ["upgrade_disabled"], wouldUpgrade: true };
-      if (cfg.upgrades === "confident" && j.tier.confidence < UPGRADE_MIN_CONFIDENCE) return { target: null, reasons: ["upgrade_low_confidence"], wouldUpgrade: true };
+      if (cfg.upgrades === "confident" && j.rule === "argmax" && j.tier.confidence < UPGRADE_MIN_CONFIDENCE) return { target: null, reasons: ["upgrade_low_confidence"], wouldUpgrade: true };
       const to = clampUp(chosen, cfg);
       if (to === null) return { target: null, reasons: ["no_enabled_tier"], wouldUpgrade: true };
       return { target: { tier: to }, reasons: to === chosen ? ["upgrade"] : ["upgrade", "clamped_up"], wouldUpgrade: true };
