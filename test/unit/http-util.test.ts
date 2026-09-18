@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, it } from "node:test";
-import { BodyTooLargeError, HOP_BY_HOP, connectionListed, readBody, sanitizeHeaders, sendAnthropicError } from "../../src/net/http-util.js";
+import { BodyTooLargeError, HOP_BY_HOP, connectionListed, narrowAcceptEncoding, readBody, sanitizeHeaders, sendAnthropicError } from "../../src/net/http-util.js";
 import { request } from "../support/http.js";
 
 describe("sanitizeHeaders", () => {
@@ -34,6 +34,23 @@ describe("sanitizeHeaders", () => {
   });
   it("keeps multi-value headers as arrays", () => {
     assert.deepEqual(sanitizeHeaders({ "set-cookie": ["a=1", "b=2"] }, "response"), { "set-cookie": ["a=1", "b=2"] });
+  });
+});
+
+describe("narrowAcceptEncoding (the proxy only asks for codings it can decode)", () => {
+  it("keeps gzip/br/deflate in the client's order with q-values, drops zstd and unknown codings", () => {
+    assert.equal(narrowAcceptEncoding("gzip, deflate, br, zstd"), "gzip, deflate, br");
+    assert.equal(narrowAcceptEncoding("zstd;q=1.0, br;q=0.9, *;q=0.1"), "br;q=0.9");
+    assert.equal(narrowAcceptEncoding("GZIP"), "GZIP");
+  });
+  it("an offer with nothing decodable becomes identity", () => {
+    assert.equal(narrowAcceptEncoding("zstd"), "identity");
+    assert.equal(narrowAcceptEncoding(""), "identity");
+  });
+  it("sanitizeHeaders applies it to requests only, and leaves an absent header absent", () => {
+    assert.equal(sanitizeHeaders({ "accept-encoding": "gzip, deflate, br, zstd" }, "request")["accept-encoding"], "gzip, deflate, br");
+    assert.equal(sanitizeHeaders({}, "request")["accept-encoding"], undefined);
+    assert.equal(sanitizeHeaders({ "accept-encoding": "zstd" }, "response")["accept-encoding"], "zstd");
   });
 });
 

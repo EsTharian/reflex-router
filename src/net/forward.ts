@@ -1,5 +1,6 @@
 import http from "node:http";
 import https from "node:https";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { sanitizeHeaders } from "./http-util.js";
 
@@ -71,8 +72,25 @@ export function forward(target: URL, req: ForwardRequest, opts: ForwardOptions =
   });
 }
 
-/** Streams an upstream response to the client, headers first. Rejects if the stream breaks; the caller then destroys `res`. */
-export async function relay(upstream: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+/**
+ * Streams an upstream response to the client, headers first. Rejects if the stream breaks; the caller then destroys
+ * `res`. `tap` sees every chunk after it was handed on unchanged; a throwing tap is ignored.
+ */
+export async function relay(upstream: http.IncomingMessage, res: http.ServerResponse, tap?: (chunk: Buffer) => void): Promise<void> {
   res.writeHead(upstream.statusCode ?? 502, upstream.statusMessage, sanitizeHeaders(upstream.headers, "response"));
-  await pipeline(upstream, res);
+  if (!tap) {
+    await pipeline(upstream, res);
+    return;
+  }
+  const tee = new Transform({
+    transform(chunk: Buffer, _enc, done) {
+      done(null, chunk);
+      try {
+        tap(chunk);
+      } catch {
+        // observation must never affect the response
+      }
+    },
+  });
+  await pipeline(upstream, tee, res);
 }

@@ -12,10 +12,26 @@ export function connectionListed(headers: IncomingHttpHeaders): Set<string> {
   return new Set(tokens.map((t) => t.trim().toLowerCase()).filter(Boolean));
 }
 
+/** Content codings the proxy can decode to read token usage (node:zlib; zstd needs Node >= 22.15, so it is not offered). */
+export const DECODABLE_CODINGS: ReadonlySet<string> = new Set(["gzip", "br", "deflate"]);
+
 /**
- * Copies headers for the next hop, minus hop-by-hop fields. For requests `host` and `content-length` are also dropped:
- * the forwarder sets them itself. Everything else, in particular auth headers, accept-encoding, content-encoding and
- * anthropic-* headers, passes through untouched.
+ * The proxy's own accept-encoding toward the upstream: the client's offer restricted to codings the proxy can decode,
+ * in the client's order and with its q-values. Absent stays absent (the client gets the upstream bytes as they are,
+ * so it must never receive a coding it did not offer); an offer with nothing decodable becomes `identity`.
+ */
+export function narrowAcceptEncoding(value: string): string {
+  const kept = value
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => DECODABLE_CODINGS.has(t.split(";")[0]?.trim().toLowerCase() ?? ""));
+  return kept.length > 0 ? kept.join(", ") : "identity";
+}
+
+/**
+ * Copies headers for the next hop, minus hop-by-hop fields. For requests `host` and `content-length` are also dropped
+ * (the forwarder sets them itself) and `accept-encoding` is narrowed to decodable codings (narrowAcceptEncoding).
+ * Everything else, in particular auth headers, content-encoding and anthropic-* headers, passes through untouched.
  */
 export function sanitizeHeaders(headers: IncomingHttpHeaders, kind: "request" | "response"): OutgoingHttpHeaders {
   const listed = connectionListed(headers);
@@ -25,7 +41,7 @@ export function sanitizeHeaders(headers: IncomingHttpHeaders, kind: "request" | 
     const n = name.toLowerCase();
     if (HOP_BY_HOP.has(n) || listed.has(n)) continue;
     if (kind === "request" && (n === "host" || n === "content-length")) continue;
-    out[n] = value;
+    out[n] = kind === "request" && n === "accept-encoding" ? narrowAcceptEncoding(Array.isArray(value) ? value.join(", ") : value) : value;
   }
   return out;
 }
