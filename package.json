@@ -1,0 +1,36 @@
+{
+  "name": "reflex-router",
+  "version": "0.0.0",
+  "description": "Orchestration layer for Claude Code: a loopback proxy that asks a fast decision model how much reasoning a piece of work needs.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "reflex": "bin/reflex.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "LICENSE",
+    "THIRD_PARTY.md",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "gen:versions": "node scripts/gen-tested-versions.mjs",
+    "test": "npm run typecheck && npm run lint && node scripts/run-tests.mjs",
+    "test:live": "node scripts/run-tests.mjs --live"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^20.19.43",
+    "eslint": "^9.39.5",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0"
+  }
+}
