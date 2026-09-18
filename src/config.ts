@@ -57,6 +57,8 @@ export interface Config {
   readonly maxAssistantChars: number;
   /** REFLEX_LOG_PROMPTS=0 omits the (redacted, 300-char) prompt preview from the decision log. */
   readonly logPrompts: boolean;
+  /** Main-chat cost guard: largest one-time cache penalty ($) a model switch may cost (REFLEX_MAX_SWITCH_PENALTY_USD). */
+  readonly maxSwitchPenaltyUsd: number;
 }
 
 export type ConfigResult =
@@ -89,6 +91,14 @@ function parseBoundedInt(raw: string | undefined, fallback: number, min: number,
   const n = Number(raw.trim());
   if (Number.isInteger(n) && n >= min && n <= max) return n;
   errors.push(`${name}=${JSON.stringify(raw)} must be an integer between ${min} and ${max}`);
+  return fallback;
+}
+
+function parseBoundedNumber(raw: string | undefined, fallback: number, min: number, max: number, name: string, errors: string[]): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw.trim());
+  if (Number.isFinite(n) && n >= min && n <= max) return n;
+  errors.push(`${name}=${JSON.stringify(raw)} must be a number between ${min} and ${max}`);
   return fallback;
 }
 
@@ -168,6 +178,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     maxUserChars: parseBoundedInt(env["REFLEX_MAX_USER_CHARS"], 4000, 200, 60_000, "REFLEX_MAX_USER_CHARS", errors),
     maxAssistantChars: parseBoundedInt(env["REFLEX_MAX_ASSISTANT_CHARS"], 1000, 0, 60_000, "REFLEX_MAX_ASSISTANT_CHARS", errors),
     logPrompts: !falsy(env["REFLEX_LOG_PROMPTS"]),
+    maxSwitchPenaltyUsd: parseBoundedNumber(env["REFLEX_MAX_SWITCH_PENALTY_USD"], 0.01, 0, 100, "REFLEX_MAX_SWITCH_PENALTY_USD", errors),
   };
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, config, warnings };

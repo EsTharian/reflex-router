@@ -152,15 +152,14 @@ export const DIMENSIONS: Readonly<Partial<Record<Dimension, DimensionRules>>> = 
   },
 };
 
-/** 3b. Pure. The plan for one `new` turn. Main-chat scope rules come first; then every populated dimension. */
+/**
+ * 3b. Pure. The plan for one `new` turn: main-chat scope first, then every populated dimension. The main-chat cost
+ * guard, disabled tiers and rewrite verification are applied afterwards by the router (they need session state).
+ */
 export function plan(input: PlanInput, j: Judgement, cfg: Config): RoutePlan {
-  const scope: ReasonCode[] = [];
-  if (input.kind === "main") {
-    if (cfg.mainChat === "never") return { target: null, reasons: ["main_chat_disabled"], wouldUpgrade: false };
-    scope.push("guard_not_evaluated"); // the main-chat cost guard lands with route mode; until then this is shadow-only data
-  }
+  if (input.kind === "main" && cfg.mainChat === "never") return { target: null, reasons: ["main_chat_disabled"], wouldUpgrade: false };
   const tier = DIMENSIONS.tier?.apply(input, j, cfg);
-  if (!tier) return { target: null, reasons: scope, wouldUpgrade: false };
+  if (!tier) return { target: null, reasons: [], wouldUpgrade: false };
   const target: Target | null = tier.target?.tier ? { tier: tier.target.tier } : null;
-  return { target, reasons: [...scope, ...tier.reasons], wouldUpgrade: tier.wouldUpgrade };
+  return { target, reasons: tier.reasons, wouldUpgrade: tier.wouldUpgrade };
 }

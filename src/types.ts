@@ -83,7 +83,11 @@ export type ReasonCode =
   | "clamped_up"
   | "no_enabled_tier"
   | "main_chat_disabled"
-  | "guard_not_evaluated";
+  | "override"
+  | "guard_blocked"
+  | "tier_disabled"
+  | "rewrite_unverified"
+  | "rewrite_failed";
 
 export interface RoutePlan {
   /** Where the request would go; null = leave it on the requested model. */

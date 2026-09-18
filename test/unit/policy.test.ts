@@ -81,7 +81,7 @@ describe("plan (decision table)", () => {
     ["no enabled tier between chosen and requested: no change (never steps down)", sub("claude-sonnet-5"), j("haiku", 0.9, 0.2), cfg({ REFLEX_TIERS: "opus" }), null, ["no_enabled_tier"], false],
     ["unknown requested model: never routed", sub("some-other-model"), j("haiku", 0.9, 0.2), c, null, ["requested_tier_unknown"], false],
     ["main chat with REFLEX_MAIN_CHAT=never", { kind: "main", requestedModel: "claude-sonnet-5" }, j("haiku", 0.9, 0.2), cfg({ REFLEX_MAIN_CHAT: "never" }), null, ["main_chat_disabled"], false],
-    ["main chat (guarded): would-route is recorded, guard not yet evaluated", { kind: "main", requestedModel: "claude-sonnet-5" }, j("haiku", 0.9, 0.2), c, "haiku", ["guard_not_evaluated", "downgrade"], false],
+    ["main chat (guarded): the policy plans; the router applies the cost guard", { kind: "main", requestedModel: "claude-sonnet-5" }, j("haiku", 0.9, 0.2), c, "haiku", ["downgrade"], false],
     ["fable as an upgrade target is not enabled unless allowed", sub("claude-opus-5"), j("fable", 0.99, 4), cfg({ REFLEX_UPGRADES: "on" }), null, ["no_enabled_tier"], true],
     ["fable allowed", sub("claude-opus-5"), j("fable", 0.99, 4), cfg({ REFLEX_UPGRADES: "on", REFLEX_ALLOW_FABLE: "1" }), "fable", ["upgrade"], true],
   ];
