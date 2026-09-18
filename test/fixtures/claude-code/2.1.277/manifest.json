@@ -21,7 +21,8 @@
     "cc_version": "2.1.277.40c",
     "entrypoint": "sdk-cli"
    },
-   "agent_scoped": false
+   "agent_scoped": false,
+   "response_status": 200
   },
   {
    "file": "sonnet-agent-run.subagent-new-turn.request.json",
@@ -33,7 +34,8 @@
     "cc_version": "2.1.277.5f0",
     "entrypoint": "sdk-cli"
    },
-   "agent_scoped": true
+   "agent_scoped": true,
+   "response_status": 200
   },
   {
    "file": "sonnet-agent-run.subagent-new-turn.response.sse.txt",
@@ -81,7 +83,8 @@
     "cc_version": "2.1.277.5f0",
     "entrypoint": "sdk-cli"
    },
-   "agent_scoped": true
+   "agent_scoped": true,
+   "response_status": 200
   },
   {
    "file": "sonnet-agent-run.main-continuation.request.json",
@@ -93,7 +96,8 @@
     "cc_version": "2.1.277.40c",
     "entrypoint": "sdk-cli"
    },
-   "agent_scoped": false
+   "agent_scoped": false,
+   "response_status": 200
   },
   {
    "file": "sonnet-agent-run.main-continuation-tool-error.request.json",
@@ -105,7 +109,8 @@
     "cc_version": "2.1.277.40c",
     "entrypoint": "sdk-cli"
    },
-   "agent_scoped": false
+   "agent_scoped": false,
+   "response_status": 200
   },
   {
    "file": "sonnet-agent-run.head-probe.json",
@@ -143,11 +148,28 @@
     "cc_version": "2.1.277.72c",
     "entrypoint": "sdk-cli"
    },
-   "agent_scoped": false
+   "agent_scoped": false,
+   "response_status": 200
   },
   {
    "file": "haiku-mcp-draft4.head-probe.json",
    "description": "startup probe Claude Code sends to the base URL"
   }
- ]
+ ],
+ "findings": {
+  "mcp_draft04_boolean_exclusive_bounds": {
+   "status": "verified_accepted_by_api_in_scope",
+   "construct": "properties.n: {minimum:0, exclusiveMinimum:true}; properties.m: {maximum:10, exclusiveMaximum:false}; $schema draft-04",
+   "evidence_file": "haiku-mcp-draft4.main-new-turn.request.json",
+   "response_status": 200,
+   "scope": "one request, model claude-haiku-4-5-20251001, entrypoint sdk-cli, local stdio MCP server, custom ANTHROPIC_BASE_URL",
+   "not_tested": [
+    "Sonnet/Opus/Fable targets",
+    "other draft-04 constructs (id, definitions, type arrays)",
+    "interactive entrypoint",
+    "servers that declare many tools"
+   ],
+   "interpretation": "Claude Code does not rewrite the schema when a custom base URL is set, and Haiku 4.5 accepted it. This does NOT establish that every model accepts it, so a compat rewrite is not currently required but is not disproven for other targets."
+  }
+ }
 }

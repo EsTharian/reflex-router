@@ -43,6 +43,8 @@ Beyond standard ones: **`x-claude-code-session-id`** (on every request; equals `
 
 All three subagent signals co-occurred on both subagent requests; none appeared on any of the 7 main-chat requests. The previously documented markers (from jcm-router) **still exist on 2.1.277**, and there is a new, simpler header signal.
 
+**Detection priority (our rule).** The header `x-claude-code-agent-id` is the **primary** signal (cheapest, no body parsing, and the exact join key to hooks). The two system-prompt markers are the **fallback** for when the header is absent. Every decision logs which signal fired (`signal: "header" | "marker:cc_is_subagent" | "marker:agent_prompt" | "none"`) and the raw presence of all three (`signals: {header, s1, s2}`), so a signal that starts disappearing shows up in the data before it causes damage. Header and markers disagreeing is itself a shape violation (§10).
+
 ## 4. Turns
 
 Observed on every request: `last non-system message` is either `user` with text blocks (`new`), or `user` with `tool_result` blocks (`continuation`). Failed Bash arrives as `tool_result` with **`is_error: true`, content `"Exit code 1"`** — a wire-level corroboration of the hook signal.
@@ -83,7 +85,7 @@ Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_blo
 
 ## 8. Things that did NOT reproduce
 
-- **MCP draft-04 normalisation** (jev-router): with a stdio MCP tool declaring `exclusiveMinimum: true`, Claude Code 2.1.277 sent the schema **unchanged** through a custom base URL, and the API returned **200** (Haiku 4.5). The compat rewrite is not needed here; it is dropped from Phase 1.
+- **MCP draft-04 normalisation** (jev-router): verified only **in scope**. The fixture `haiku-mcp-draft4.main-new-turn.request.json` contains the construct (`$schema` draft-04, `minimum:0 + exclusiveMinimum:true`, `maximum:10 + exclusiveMaximum:false`), Claude Code sent it **unchanged** through a custom base URL, and the API returned **200** (one request, `claude-haiku-4-5-20251001`, `sdk-cli`). Not tested: Sonnet/Opus/Fable as the target, other draft-04 constructs (`id`, `definitions`, type arrays), the interactive entrypoint. So the compat rewrite is *not currently required*, which is weaker than *not needed*; if routing ever retargets a request to a model that rejects the schema, the 4xx retry-with-original path is the safety net. Recorded in `manifest.json` under `findings`.
 - `HEAD /` (prior art) — actually `HEAD /api/hello`.
 
 ## 9. Re-capturing for a new Claude Code version
@@ -94,3 +96,18 @@ node scripts/spike/summarize.mjs _dumps/<name>
 REFLEX_REDACT_EXTRA="<email>,<username>" node scripts/spike/redact-fixtures.mjs _dumps/<name> --label <name>
 ```
 `redact-fixtures.mjs` masks identifiers everywhere they occur, elides long prompt text while preserving the detection markers (and asserts they survive), and fails if any original identifier or common secret shape remains. Fixtures land in `test/fixtures/claude-code/<version>/` with a `manifest.json`; the startup version check (plan §3.1) compares the running `claude --version` with those directories.
+
+## 10. Expected shape (checked at runtime)
+
+The startup version check is only a hint. The worker therefore verifies the shape itself on the first N `/v1/messages` requests that carry `tools` (default N=10). Any violation degrades the session to shadow and logs which check failed and on which signal (never request content). All expectations below are taken from the fixtures and must hold for every fixture:
+
+| Check | Expected |
+| --- | --- |
+| session id | `x-claude-code-session-id` present, or `metadata.user_id` parses to JSON with `session_id`; when both exist they are equal |
+| client identity | system text contains `x-anthropic-billing-header:` |
+| subagent signals agree | header `x-claude-code-agent-id` present ⇔ (`cc_is_subagent=true` ∨ `You are an agent for Claude Code`) present |
+| trailing system messages | `role:"system"` messages are present ⇔ the `mid-conversation-system-*` beta is present; and the message list contains at least one non-system message |
+| cache TTL | main-chat requests carry an `extended-cache-ttl-*` beta (subagent requests are not asserted) |
+| turn structure | the last non-system message has `role:"user"` |
+
+The version check is separate and only ever a hint: same major, different minor/patch → warn; different major → degrade to shadow; unparseable → warn. Passing assertions on an unknown minor version continue normally; failing assertions on a matching version still degrade.

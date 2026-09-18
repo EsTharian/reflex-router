@@ -198,7 +198,7 @@ for (const [name, x, desc] of plan) {
   const red = redactRequest(x.q);
   const after = facts(red.body);
   if (JSON.stringify(before) !== JSON.stringify(after)) { console.error(`FAIL: markers changed by redaction in ${name}`, before, after); process.exit(1); }
-  write(`${label}.${name}.request.json`, red, desc, { facts: after, agent_scoped: isSub(x) });
+  write(`${label}.${name}.request.json`, red, desc, { facts: after, agent_scoped: isSub(x), response_status: x.res?.status ?? null });
   summaryFacts[name] = after;
   if (name === "subagent-new-turn" && x.res) write(`${label}.${name}.response.sse.txt`, truncateSse(x.res.body_head), "SSE response of a subagent request (LF-separated, identity-encoded because the capture proxy drops accept-encoding)", { status: x.res.status, response_headers: redactHeaders(x.res.headers) });
 }
@@ -226,6 +226,7 @@ const manifestPath = join(outDir, "manifest.json");
 const prior = existsSync(manifestPath) ? readJson(manifestPath) : { files: [] };
 const merged = [...prior.files.filter((f) => !written.some((w) => w.file === f.file)), ...written];
 writeFileSync(manifestPath, JSON.stringify({
+  ...prior,
   claude_code_version: version,
   captured_at: new Date().toISOString().slice(0, 10),
   platform: process.platform,
