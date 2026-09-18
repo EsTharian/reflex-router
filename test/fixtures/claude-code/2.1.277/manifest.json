@@ -594,6 +594,11 @@
     "UserPromptSubmit",
     "Stop"
    ]
+  },
+  {
+   "file": "experiment.route-sonnet-to-haiku.results.json",
+   "kind": "experiment",
+   "description": "One real claude -p session (Sonnet 5, sdk-cli, tools Bash+Agent) routed like route mode by src/wire/rewrite.ts, with probes at each shape. Statuses, API errors, shape facts, rewritten fields, usage and estimated cost only; no prompts, no headers."
   }
  ],
  "findings": {
@@ -632,6 +637,30 @@
     "subagent (5-minute cache) requests",
     "thinking.display values other than 'omitted'",
     "the API reports one error at a time, so 'necessary' comes from leave-one-out, not from the error text alone"
+   ]
+  },
+  "route_sonnet_to_haiku": {
+   "status": "verified_in_scope",
+   "date": "2026-09-19",
+   "est_cost_usd": 0.068,
+   "accepted": {
+    "subagent first request -> Haiku": "200",
+    "subagent pinned continuation (Haiku history, system messages mid-list + trailing folded)": "200",
+    "main continuation with a signed Sonnet thinking block in history, kept": "200",
+    "same, history thinking dropped": "200",
+    "same, thinking without display (interactive shape)": "200",
+    "same, + redact-thinking-2026-02-12 beta (interactive header)": "200",
+    "main pinned continuation (Haiku turns in history) -> Haiku": "200",
+    "un-pin: original bytes to Sonnet with Sonnet + Haiku thinking blocks in history": "200"
+   },
+   "decision": "keep history thinking blocks (fewer edits); dropping is available but not needed",
+   "caveat": "accepted means HTTP 200 and a normal stream; it does not show whether a model used or ignored thinking blocks signed by another model",
+   "not_tested": [
+    "Opus or Fable as source or target",
+    "Haiku -> Sonnet/Opus (upgrades)",
+    "the context-1m beta",
+    "an interactive (cli) session end to end; the cli shapes were emulated on an sdk-cli request",
+    "long histories near the context limit"
    ]
   }
  },

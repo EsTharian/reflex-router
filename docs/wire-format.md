@@ -107,6 +107,23 @@ The minimal working rewrite is therefore three field edits plus the model swap; 
 
 **Scope.** One request, first turn, no assistant history. **Not tested:** switching the model in the middle of a conversation (Sonnet-generated `thinking` blocks with signatures already in `messages`), requests with earlier `tool_use`/`tool_result` turns, Opus/Fable targets, the `context-1m` beta, and subagent (5-minute cache) requests. A mid-conversation switch is the likeliest place for a rejection, which is one more reason the main chat is only switched behind a cost guard and every rewrite keeps the retry-with-original safety net.
 
+### 5.2 Routing a whole session Sonnet → Haiku (experiment, M3)
+
+`scripts/spike/route-experiment.mjs` ran one real `claude -p` session (Sonnet 5, tools limited to Bash and Agent) through a proxy that routed it the way route mode does, using the product rewrite `src/wire/rewrite.ts`, and probed each shape on the way. Results: `test/fixtures/claude-code/2.1.277/experiment.route-sonnet-to-haiku.results.json`. Estimated cost $0.07.
+
+| Case | Result |
+| --- | --- |
+| subagent's first request → Haiku | 200 |
+| subagent continuation, pinned (Haiku history; system messages mid-list and trailing, folded) | 200 |
+| main continuation with a **signed Sonnet thinking block** in the history, kept as is | 200 |
+| same, history thinking dropped | 200 |
+| same, `thinking` without `display` (interactive shape) | 200 |
+| same, plus the `redact-thinking-2026-02-12` beta (interactive header) | 200 |
+| later main continuation, pinned (Haiku turns in history) | 200 |
+| **un-pin**: the original bytes to Sonnet, with Sonnet- and Haiku-made thinking blocks in the history | 200 |
+
+So route mode keeps history thinking blocks (fewer edits), and both the retry-with-original safety net and releasing a pin send requests the API accepts. "Accepted" means HTTP 200 and a normal stream; it does not show whether a model uses or ignores thinking blocks signed by another model. **Not tested:** Opus or Fable as source or target, Haiku → Sonnet/Opus (upgrades), `context-1m`, an interactive session end to end (the `cli` shapes were emulated on an `sdk-cli` request), histories near the context limit. Route mode therefore only rewrites Sonnet → Haiku; other pairs are logged as `rewrite_unverified` and forwarded unchanged.
+
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 
 ## 6. Responses
