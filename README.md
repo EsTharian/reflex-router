@@ -2,7 +2,7 @@
 
 An orchestration layer for [Claude Code](https://docs.claude.com/en/docs/claude-code). `reflex` starts a loopback proxy, runs the real `claude` behind it, and (as decision-making lands) uses a fast decision model to judge how much reasoning a piece of work demands, so that the cheapest adequate model handles it.
 
-**Status: early development.** The proxy forwards every request unchanged. In `shadow` mode (the default) it also classifies Claude Code's requests, asks the decision backend how much reasoning each new piece of work demands, and records what it *would* have routed where in `~/.reflex/decisions.jsonl`. It does not rewrite anything yet; `route` currently behaves like `shadow`. Nothing in this repository claims any cost or quality improvement; such claims will appear only with data measured by this project.
+**Status: early development.** In `shadow` mode (the default) reflex forwards every request unchanged, classifies Claude Code's requests, asks the decision backend how much reasoning each new piece of work demands, and records what it *would* have routed where in `~/.reflex/decisions.jsonl`. In `route` mode (opt-in) it applies those decisions: a subagent's task, or a main-chat turn that passes the cost guard, can be sent to a cheaper model. The only retarget currently verified against the API, and therefore the only one applied, is Sonnet → Haiku; every other would-be route is recorded and left alone. Nothing in this repository claims any cost or quality improvement; such claims will appear only with data measured by this project.
 
 ## Usage
 
@@ -30,7 +30,8 @@ All settings are environment variables.
 | `REFLEX_CLAUDE_BIN` | path or command | `claude` on `PATH` | The real Claude Code binary. |
 | `REFLEX_HOME` | directory | `~/.reflex` | State directory (worker log, `decisions.jsonl`). |
 | `REFLEX_LOG_PROMPTS` | `0` | on | `0` omits the redacted 300-character prompt preview from the decision log. |
-| `REFLEX_MAIN_CHAT` | `guarded`, `never` | `guarded` | Whether main-chat prompts are judged at all (subagent tasks always are). |
+| `REFLEX_MAIN_CHAT` | `guarded`, `never` | `guarded` | Whether main-chat prompts are judged at all (subagent tasks always are). `guarded`: a main-chat switch must pass the cost guard. |
+| `REFLEX_MAX_SWITCH_PENALTY_USD` | number | `0.01` | Cost guard: the most a main-chat model switch may cost in lost prompt cache (list prices, `src/pricing.ts`). |
 | `REFLEX_TIERS` | comma list of `haiku,sonnet,opus` | all three | Tiers a request may be routed to. Fable additionally needs `REFLEX_ALLOW_FABLE=1`. |
 | `REFLEX_UPGRADES` | `off`, `confident`, `on` | `off` | Whether a stronger tier than requested may be chosen. |
 | `REFLEX_MODEL_<TIER>` | model id | `ANTHROPIC_DEFAULT_<TIER>_MODEL`, else built in | Model id used for a tier. |
@@ -38,6 +39,14 @@ All settings are environment variables.
 | `REFLEX_MAX_USER_CHARS`, `REFLEX_MAX_ASSISTANT_CHARS` | integer | `4000`, `1000` | How much text the decision backend may see. |
 
 What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](docs/privacy.md).
+
+### Route mode
+
+- Only a positively identified start of work is decided: a user-typed main-chat prompt, or a subagent's first request. Its tool loop stays on the same model (a pin per conversation; per agent id for subagents). Harness side calls, notifications and anything unclassified are never touched.
+- **Main chat** is only switched behind the cost guard: switching throws away the conversation's prompt cache, so a downgrade is allowed on a conversation's first turn (nothing cached yet) or when the measured one-time cache penalty is at most `REFLEX_MAX_SWITCH_PENALTY_USD`. Unknown context is refused.
+- **Overrides:** start a prompt with `!haiku`, `!sonnet` or `!opus` to choose the tier for that turn and the subagents it spawns (recorded at each subagent's first request). The token stays in your prompt; reflex never edits prompt text.
+- **Safety nets:** a decision that takes longer than `REFLEX_JEV_DEADLINE_MS` is dropped (request unchanged); a rewritten request the API rejects is re-sent with the original bytes and that tier is switched off for the session for 30 minutes; a failed runtime shape check turns the session back into shadow mode.
+- Every routed record lists the requested model, the model actually sent, and the fields that were rewritten.
 | `REFLEX_IGNORE_VERSION_CHECK` | `1` | unset | Do not degrade `route` to `shadow` on a Claude Code major-version mismatch (the warning stays). |
 
 ## How it stays out of the way

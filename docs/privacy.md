@@ -27,4 +27,4 @@ Never stored: request or response bodies, credentials, backend error bodies.
 
 ## Sent to Anthropic
 
-The client's request, byte for byte, with its own headers. The one header reflex changes is `accept-encoding`, narrowed to the codings it can decode (`gzip`, `br`, `deflate`). No `REFLEX_*` or `TYPESAFE_*` value ever reaches the upstream.
+The client's request with its own headers. The one header reflex changes is `accept-encoding`, narrowed to the codings it can decode (`gzip`, `br`, `deflate`). In `shadow` mode the body is sent byte for byte. In `route` mode a routed request's body is rewritten for the target model (model id, reasoning settings, `role:"system"` messages folded into user messages; `src/wire/rewrite.ts`) and the changed fields are listed in its decision record. No text is added, removed or edited; system-message text is only moved into the adjacent user message. No `REFLEX_*` or `TYPESAFE_*` value ever reaches the upstream.
