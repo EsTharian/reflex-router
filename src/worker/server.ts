@@ -10,7 +10,7 @@ import { LocalBackend } from "../backend/local.js";
 import type { DecisionBackend } from "../backend/types.js";
 import { DecisionLog } from "../log/decision-log.js";
 import { Breaker } from "./breaker.js";
-import { Shadow, type Observation } from "./shadow.js";
+import { Router, type Observation } from "./router.js";
 
 export interface WorkerOptions {
   readonly config: Config;
@@ -34,20 +34,22 @@ export interface WorkerServer {
 }
 
 const MAX_BODY_BYTES = 128 * 1024 * 1024;
+/** A 4xx that means "this request is not acceptable" (not auth, not rate limiting): the trigger for retry-with-original. */
+export const isRejection = (status: number): boolean => status >= 400 && status < 500 && ![401, 403, 408, 429].includes(status);
 const asError = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e)));
 
 /**
- * The worker. Every request is forwarded to the upstream unchanged (no rewrites exist yet). In shadow mode each
- * POST /v1/messages is also classified and, for a `new` turn, judged by the decision backend off the critical path;
- * the outcome goes to decisions.jsonl. Anything unexpected must end in "forward the original bytes".
+ * The worker. Each POST /v1/messages is classified by the router (shadow: decided off the critical path, forwarded
+ * unchanged; route: possibly rewritten). A rewritten request that the upstream rejects is re-sent once with the
+ * original bytes. Everything is recorded in decisions.jsonl. Anything unexpected ends in "forward the original bytes".
  */
 export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServer> {
   const upstream = new URL(opts.config.upstreamUrl);
   const startedAt = Date.now();
   const decisionLog = new DecisionLog(opts.config.home, opts.config.logPrompts, { onError: (e) => opts.log("warn", `decision log: ${e.message}`) });
   const backend = opts.backend !== undefined ? opts.backend : backendFor(opts.config);
-  const shadow = Shadow.active(opts.effectiveMode)
-    ? new Shadow({
+  const router = Router.active(opts.effectiveMode)
+    ? new Router({
         config: opts.config,
         effectiveMode: opts.effectiveMode,
         degradedReason: opts.degradedReason,
@@ -90,9 +92,18 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     });
     let obs: Observation | null = null;
     try {
-      const upP = forward(upstream, { method, url, headers: req.headers, body }, { signal: ac.signal });
-      obs = shadow?.observe(method, url, req.headers, body) ?? null; // the request is already on its way
-      const up = await upP;
+      const prepared = router ? await router.prepare(method, url, req.headers, body) : { body, rewritten: false, obs: null };
+      obs = prepared.obs;
+      let up = await forward(upstream, { method, url, headers: req.headers, body: prepared.body }, { signal: ac.signal });
+      if (prepared.rewritten && isRejection(up.statusCode ?? 0)) {
+        // The target model refused the rewritten request: send the client's original bytes instead.
+        const rejected = up.statusCode ?? 0;
+        up.resume();
+        up.destroy();
+        opts.log("warn", `rewritten request rejected with ${rejected}; retrying with the original request`);
+        obs?.fallback(rejected);
+        up = await forward(upstream, { method, url, headers: req.headers, body }, { signal: ac.signal });
+      }
       obs?.headers(up.statusCode ?? 0, up.headers);
       await relay(up, res, obs?.tap);
       obs?.finish(true);

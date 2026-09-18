@@ -54,10 +54,24 @@ export interface DecisionRecord {
     readonly reasons: readonly ReasonCode[];
     readonly would_upgrade: boolean;
   } | null;
-  /** Main-chat cost guard; lands with route mode. */
-  readonly guard: null;
-  readonly override: null;
-  readonly forwarded: { readonly model: string | null; readonly rewritten: boolean; readonly fallback: boolean };
+  /** Main-chat cost guard, when it was evaluated. */
+  readonly guard: { readonly allowed: boolean; readonly reason: string; readonly ctx: number | null; readonly penalty_usd: number | null } | null;
+  /** Manual `!tier` override in effect for this decision (main chat: from the prompt; subagent: captured at its first request). */
+  readonly override: Tier | null;
+  /** Continuations: whether a pin for this conversation/agent existed; `set` on a decided new turn. */
+  readonly pin: "set" | "hit" | "miss" | null;
+  readonly forwarded: {
+    /** What the client asked for. */
+    readonly requested_model: string | null;
+    /** What was actually sent upstream (after a fallback: the original again). */
+    readonly model: string | null;
+    readonly rewritten: boolean;
+    /** Fields changed by the rewrite (src/wire/rewrite.ts), empty when not rewritten. */
+    readonly fields: readonly string[];
+    /** The rewritten request was rejected and the original bytes were sent instead. */
+    readonly fallback: boolean;
+    readonly fallback_status: number | null;
+  };
   readonly upstream: { readonly status: number | null; readonly msToHeaders: number | null };
   readonly usage: { readonly input: number; readonly output: number; readonly cache_read: number; readonly cache_create: number } | null;
   readonly usage_unknown_reason: string | null;

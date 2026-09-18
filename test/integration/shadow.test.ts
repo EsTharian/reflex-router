@@ -2,51 +2,12 @@
 // fixture is replayed: the upstream must see identical bytes, only positively identified `new` turns may reach Jev,
 // and every classified request leaves exactly one record in decisions.jsonl.
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import type http from "node:http";
-import path from "node:path";
 import { after, before, describe, it } from "node:test";
-import zlib from "node:zlib";
-import type { UpstreamHandler } from "../support/fake-upstream.js";
 import { startFakeJev, type FakeJev } from "../support/fake-jev.js";
 import { loadFixtures, type Fixture } from "../support/fixtures.js";
 import { request, waitFor } from "../support/http.js";
+import { records, replay, requestHeaders, sseHandler, USAGE } from "../support/replay.js";
 import { startStack, type Stack } from "../support/stack.js";
-
-const SSE = [
-  'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":1}}}',
-  'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":40}}',
-  'event: message_stop\ndata: {"type":"message_stop"}',
-].join("\n\n") + "\n\n";
-const USAGE = { input: 10, output: 40, cache_read: 30, cache_create: 20 };
-
-/** Answers like the API: SSE, compressed when the request allows gzip. */
-const sseHandler: UpstreamHandler = (req, res) => {
-  const gzip = String(req.headers["accept-encoding"] ?? "").includes("gzip");
-  const body = gzip ? zlib.gzipSync(SSE) : Buffer.from(SSE);
-  res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", ...(gzip ? { "content-encoding": "gzip" } : {}) });
-  res.end(body);
-};
-
-type Rec = Record<string, unknown> & { turn: string; side_kind: string | null; decision: unknown; plan: { reasons: string[]; would_route_to: string | null; routed_to: string | null } | null; error: string | null };
-const records = (stack: Stack): Rec[] => {
-  const f = path.join(stack.config.home, "decisions.jsonl");
-  if (!fs.existsSync(f)) return [];
-  return fs.readFileSync(f, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as Rec);
-};
-const requestHeaders = (fx: Fixture): http.OutgoingHttpHeaders => {
-  const { host: _h, "content-length": _c, ...rest } = fx.headers;
-  return rest;
-};
-/** Sends one fixture and waits for its record, so records line up with requests. */
-async function replay(stack: Stack, fx: Fixture, body: Buffer = fx.body, headers = requestHeaders(fx)): Promise<{ status: number; rec: Rec; ms: number }> {
-  const before = records(stack).length;
-  const t0 = Date.now();
-  const r = await request(`${stack.url}/v1/messages?beta=true`, { method: "POST", headers, body });
-  const ms = Date.now() - t0;
-  const all = await waitFor(() => (records(stack).length > before ? records(stack) : null), { what: `record for ${fx.file}` });
-  return { status: r.status, rec: all[before]!, ms };
-}
 
 const fixtures = loadFixtures();
 const expectsDecision = (fx: Fixture): boolean => fx.expect.turn === "new" && fx.expect.kind !== "unknown";
