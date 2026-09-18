@@ -25,7 +25,7 @@ reflex (launcher process)                        src/launcher/
 worker (child process)                           src/worker/   all routing logic; every failure ends in "forward the original bytes"
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
 src/config.ts the ONLY reader of process.env for configuration
-src/wire/     the ONLY place that may know Claude Code / Anthropic request shapes (currently just the tested-versions list)
+src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, tested versions
 ```
 
 Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacted real captures: `test/fixtures/claude-code/<version>/`.
@@ -39,7 +39,7 @@ Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacte
 - **Loopback only**, and never edit the user's `~/.claude/settings.json`.
 - **No unmeasured claims** (cost, speed, quality) in README or docs.
 - **Pricing** lives in `src/pricing.ts` with a "last verified" date and must be checked against Anthropic's pricing page before release (not present yet).
-- **Attribution.** Any code adapted from another project is listed in `THIRD_PARTY.md` in the same commit.
+- **Attribution.** Any code adapted from another project is listed in `THIRD_PARTY.md` (tracked, shipped in the npm package) in the same commit.
 - Small, well-described commits; run `npm test` first. Phase/plan documents are local working files (`docs/plan-*.md`, gitignored) and are never committed or referenced from tracked files.
 
 ## Fixtures and re-capturing
