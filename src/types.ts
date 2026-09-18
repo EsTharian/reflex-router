@@ -49,6 +49,8 @@ export interface Decision {
   readonly latencyMs: number;
   readonly backendModel: string;
   readonly tokensIn: number | null;
+  /** Whether the backend call reused an open connection (latency diagnosis); null when not applicable. */
+  readonly connection: "new" | "reused" | null;
 }
 
 // ---- what the policy makes of it ----------------------------------------------------------------------------------

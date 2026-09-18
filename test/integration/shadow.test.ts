@@ -56,7 +56,7 @@ describe("shadow mode, end to end", () => {
   let stack: Stack;
   before(async () => {
     jev = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.9, reasoning: 0.4 });
-    stack = await startStack({ config: { jevBaseUrl: jev.url, backendTimeoutMs: 800 } });
+    stack = await startStack({ config: { jevBaseUrl: jev.url, jevDeadlineMs: 800 } });
     stack.upstream.setHandler(sseHandler);
   });
   after(async () => {
@@ -169,7 +169,7 @@ describe("shadow mode: the decision backend failing never touches the session", 
   const newTurn = fixtures.find((f) => f.file === "interactive.main-new-turn.request.json");
   before(async () => {
     jev = await startFakeJev({ kind: "hang" });
-    stack = await startStack({ config: { jevBaseUrl: jev.url, backendTimeoutMs: 600 } });
+    stack = await startStack({ config: { jevBaseUrl: jev.url, jevDeadlineMs: 600 } });
     stack.upstream.setHandler(sseHandler);
   });
   after(async () => {

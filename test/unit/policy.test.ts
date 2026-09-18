@@ -45,7 +45,7 @@ describe("questions", () => {
 });
 
 describe("judge", () => {
-  const decision = (answers: Decision["answers"]): Decision => ({ answers, latencyMs: 1, backendModel: "m", tokensIn: 1 });
+  const decision = (answers: Decision["answers"]): Decision => ({ answers, latencyMs: 1, backendModel: "m", tokensIn: 1, connection: null });
   const tierA = { type: "choice" as const, choice: "haiku", confidence: 0.8, probabilities: { haiku: 0.8, sonnet: 0.2 } };
   const rdA = { type: "score" as const, score: 0.7, confidence: 0.5, probabilities: {} };
 
@@ -113,9 +113,9 @@ describe("config for policy", () => {
   });
 
   it("numeric settings are bounded and named in errors", () => {
-    const r = loadConfig({ REFLEX_BACKEND_TIMEOUT_MS: "0" });
+    const r = loadConfig({ REFLEX_JEV_DEADLINE_MS: "0" });
     assert.ok(!r.ok);
-    assert.match(r.errors.join(), /REFLEX_BACKEND_TIMEOUT_MS/);
+    assert.match(r.errors.join(), /REFLEX_JEV_DEADLINE_MS/);
     assert.equal(cfg({ REFLEX_SHAPE_CHECK_N: "3" }).shapeCheckN, 3);
     assert.equal(cfg({ REFLEX_LOG_PROMPTS: "0" }).logPrompts, false);
     assert.equal(cfg({}).logPrompts, true);

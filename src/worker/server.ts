@@ -25,7 +25,7 @@ export interface WorkerOptions {
 function backendFor(config: Config): DecisionBackend | null {
   if (config.backend === "local") return new LocalBackend();
   if (config.typesafeApiKey === undefined) return null;
-  return new JevBackend({ baseUrl: config.jevBaseUrl, apiKey: config.typesafeApiKey, timeoutMs: config.backendTimeoutMs });
+  return new JevBackend({ baseUrl: config.jevBaseUrl, apiKey: config.typesafeApiKey, deadlineMs: config.jevDeadlineMs });
 }
 
 export interface WorkerServer {
@@ -45,13 +45,14 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const upstream = new URL(opts.config.upstreamUrl);
   const startedAt = Date.now();
   const decisionLog = new DecisionLog(opts.config.home, opts.config.logPrompts, { onError: (e) => opts.log("warn", `decision log: ${e.message}`) });
+  const backend = opts.backend !== undefined ? opts.backend : backendFor(opts.config);
   const shadow = Shadow.active(opts.effectiveMode)
     ? new Shadow({
         config: opts.config,
         effectiveMode: opts.effectiveMode,
         degradedReason: opts.degradedReason,
         claudeVersion: opts.claudeVersion,
-        backend: opts.backend !== undefined ? opts.backend : backendFor(opts.config),
+        backend,
         breaker: new Breaker(),
         log: decisionLog,
         logger: opts.log,
@@ -121,7 +122,10 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     port: (server.address() as AddressInfo).port,
     close: () =>
       new Promise<void>((resolve) => {
-        server.close(() => void decisionLog.flush().then(resolve));
+        server.close(() => void decisionLog.flush().then(() => {
+          backend?.close?.();
+          resolve();
+        }));
         server.closeAllConnections();
       }),
   };

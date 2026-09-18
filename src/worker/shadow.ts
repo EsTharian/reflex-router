@@ -188,6 +188,7 @@ export class Shadow {
           latencyMs: decision.latencyMs,
           tokensIn: decision.tokensIn,
           backendModel: decision.backendModel,
+          connection: decision.connection,
         },
         plan: {
           target: p.target,

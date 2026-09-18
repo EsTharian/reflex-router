@@ -41,8 +41,8 @@ export interface Config {
   readonly typesafeApiKey: string | undefined;
   /** Jev endpoint origin (REFLEX_JEV_BASE_URL); the path /v1/systemone is appended. */
   readonly jevBaseUrl: string;
-  /** Hard deadline for one backend call (REFLEX_BACKEND_TIMEOUT_MS). */
-  readonly backendTimeoutMs: number;
+  /** Hard deadline for one Jev decision, connection setup included (REFLEX_JEV_DEADLINE_MS). Expiry fails open. */
+  readonly jevDeadlineMs: number;
   /** Tiers a request may be routed to (REFLEX_TIERS). Fable is only present when REFLEX_ALLOW_FABLE=1. */
   readonly tiers: readonly Tier[];
   readonly allowFable: boolean;
@@ -66,6 +66,8 @@ export type ConfigResult =
 export const DEFAULT_UPSTREAM = "https://api.anthropic.com";
 export const TYPESAFE_KEY_PREFIX = "apikey_";
 export const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
+/** Above the first measured cold-connection p95 (1136 ms, docs/shadow-observations.md) with some headroom. */
+export const DEFAULT_JEV_DEADLINE_MS = 1500;
 
 /** Names the claude child must never inherit: our own settings and the decision-backend credentials. */
 export const isReflexEnvName = (name: string): boolean => name.startsWith("REFLEX_") || name.startsWith("TYPESAFE_");
@@ -156,7 +158,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     ignoreVersionCheck: truthy(env["REFLEX_IGNORE_VERSION_CHECK"]),
     typesafeApiKey,
     jevBaseUrl,
-    backendTimeoutMs: parseBoundedInt(env["REFLEX_BACKEND_TIMEOUT_MS"], 1500, 50, 60_000, "REFLEX_BACKEND_TIMEOUT_MS", errors),
+    jevDeadlineMs: parseBoundedInt(env["REFLEX_JEV_DEADLINE_MS"], DEFAULT_JEV_DEADLINE_MS, 50, 60_000, "REFLEX_JEV_DEADLINE_MS", errors),
     tiers,
     allowFable,
     upgrades: parseEnum(env["REFLEX_UPGRADES"], UPGRADE_POLICIES, "off", "REFLEX_UPGRADES", errors),

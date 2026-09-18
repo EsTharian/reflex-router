@@ -6,6 +6,8 @@ export interface JevCall {
   readonly headers: http.IncomingHttpHeaders;
   readonly body: { state: unknown; model: unknown; questions: Record<string, { type: string; criteria: unknown }> };
   readonly raw: string;
+  /** Client-side port of the TCP connection: equal ports mean a reused connection. */
+  readonly remotePort: number | undefined;
 }
 
 export type JevBehaviour =
@@ -13,12 +15,16 @@ export type JevBehaviour =
   | { readonly kind: "status"; readonly status: number }
   | { readonly kind: "junk" }
   | { readonly kind: "raw"; readonly body: unknown }
-  | { readonly kind: "hang" };
+  | { readonly kind: "hang" }
+  /** Destroys the connection without answering, once; then answers like `then`. */
+  | { readonly kind: "reset_once"; readonly then: JevBehaviour };
 
 export interface FakeJev {
   readonly url: string;
   readonly calls: JevCall[];
   set(b: JevBehaviour): void;
+  /** Closes keep-alive connections that are idle, like a server-side idle timeout would. */
+  dropIdle(): void;
   close(): Promise<void>;
 }
 
@@ -50,8 +56,14 @@ export async function startFakeJev(initial: JevBehaviour = { kind: "answer", tie
     req.on("end", () => {
       const raw = Buffer.concat(chunks).toString("utf8");
       const body = JSON.parse(raw) as JevCall["body"];
-      calls.push({ headers: req.headers, body, raw });
-      const b = behaviour;
+      calls.push({ headers: req.headers, body, raw, remotePort: req.socket.remotePort });
+      let b = behaviour;
+      if (b.kind === "reset_once") {
+        behaviour = b.then;
+        req.socket.destroy();
+        return;
+      }
+      b = behaviour;
       const send = (status: number, payload: string): void => {
         res.writeHead(status, { "content-type": "application/json" });
         res.end(payload);
@@ -70,6 +82,7 @@ export async function startFakeJev(initial: JevBehaviour = { kind: "answer", tie
           send(200, JSON.stringify(b.body));
           return;
         case "hang":
+        case "reset_once":
           return; // never answers; the client's deadline must fire
       }
     });
@@ -81,6 +94,7 @@ export async function startFakeJev(initial: JevBehaviour = { kind: "answer", tie
     set: (b) => {
       behaviour = b;
     },
+    dropIdle: () => server.closeIdleConnections(),
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => resolve());

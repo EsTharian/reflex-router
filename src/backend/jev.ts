@@ -1,6 +1,9 @@
-// TypeSafe Jev (System One) over raw fetch: POST {base}/v1/systemone, Bearer key, {state, model, questions}.
-// Zero retries (an SDK's default retries would add seconds), a hard deadline, and strict validation: any odd or
-// partial answer is an error, so the caller fails open. Error messages never include the response body or the key.
+// TypeSafe Jev (System One) over node:http(s) with a keep-alive agent: POST {base}/v1/systemone, Bearer key,
+// {state, model, questions}. No semantic retries (an SDK's default retries would add seconds); the only second attempt
+// is for a keep-alive socket the server had silently closed, inside the same hard deadline. Strict validation: any
+// odd or partial answer is an error, so the caller fails open. Errors never include the response body or the key.
+import http from "node:http";
+import https from "node:https";
 import type { Answer, Decision, DecisionState, QuestionSet } from "../types.js";
 import { BackendError, type DecisionBackend } from "./types.js";
 
@@ -12,10 +15,10 @@ const SUM_TOLERANCE = 0.02;
 export interface JevOptions {
   readonly baseUrl: string;
   readonly apiKey: string;
-  readonly timeoutMs: number;
+  /** Hard deadline for one decision, connection setup included. On expiry the caller fails open. */
+  readonly deadlineMs: number;
   readonly model?: string;
   /** Injectable for tests. */
-  readonly fetch?: typeof fetch;
   readonly now?: () => number;
 }
 
@@ -62,12 +65,63 @@ export function validateAnswer(id: string, q: QuestionSet[string], a: unknown): 
   }
 }
 
+/** Upper bound on a Jev response body; anything larger is not a valid answer. */
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+interface RawResponse {
+  readonly status: number;
+  readonly body: string;
+  /** The request went over an already-open keep-alive connection. */
+  readonly reused: boolean;
+}
+
+class TransportError extends Error {
+  constructor(
+    message: string,
+    /** Failed before any response byte arrived on a reused connection: the server had closed it while idle. */
+    readonly staleSocket: boolean,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * One POST over a persistent keep-alive agent. Global fetch closes idle connections after ~4 s, so decisions minutes
+ * apart each paid a fresh TCP+TLS handshake; this agent keeps the connection until the server closes it.
+ */
+function post(url: URL, agent: http.Agent, headers: http.OutgoingHttpHeaders, body: string, signal: AbortSignal): Promise<RawResponse> {
+  return new Promise((resolve, reject) => {
+    const lib = url.protocol === "https:" ? https : http;
+    const req = lib.request(url, { method: "POST", agent, headers: { ...headers, "content-length": Buffer.byteLength(body) }, signal }, (res) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      res.on("data", (c: Buffer) => {
+        size += c.length;
+        if (size > MAX_RESPONSE_BYTES) req.destroy(new TransportError("response too large", false));
+        else chunks.push(c);
+      });
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8"), reused: req.reusedSocket }));
+      res.on("error", (e) => reject(new TransportError(e.message, false)));
+    });
+    req.on("error", (e) => reject(e instanceof TransportError ? e : new TransportError(e.message, req.reusedSocket && !signal.aborted)));
+    req.end(body);
+  });
+}
+
 export class JevBackend implements DecisionBackend {
   readonly id = "jev" as const;
-  readonly #url: string;
+  readonly #url: URL;
+  readonly #agent: http.Agent;
 
   constructor(private readonly opts: JevOptions) {
-    this.#url = opts.baseUrl.replace(/\/+$/, "") + JEV_PATH;
+    this.#url = new URL(opts.baseUrl.replace(/\/+$/, "") + JEV_PATH);
+    const agentOpts = { keepAlive: true, maxSockets: 4, maxFreeSockets: 2, scheduling: "lifo" as const };
+    this.#agent = this.#url.protocol === "https:" ? new https.Agent(agentOpts) : new http.Agent(agentOpts);
+  }
+
+  /** Closes idle keep-alive connections (worker shutdown, tests). */
+  close(): void {
+    this.#agent.destroy();
   }
 
   async decide(state: DecisionState, questions: QuestionSet, { signal }: { readonly signal: AbortSignal }): Promise<Decision> {
@@ -78,34 +132,36 @@ export class JevBackend implements DecisionBackend {
     const timer = setTimeout(() => {
       timedOut = true;
       ac.abort();
-    }, this.opts.timeoutMs);
+    }, this.opts.deadlineMs);
     const onAbort = (): void => ac.abort();
     if (signal.aborted) ac.abort();
     else signal.addEventListener("abort", onAbort, { once: true });
 
+    const headers = { authorization: `Bearer ${this.opts.apiKey}`, "content-type": "application/json", accept: "application/json" };
+    const payload = JSON.stringify({ state, model: this.opts.model ?? JEV_MODEL, questions });
+    const fail = (): never => {
+      if (timedOut) throw new BackendError("timeout", `no answer within ${this.opts.deadlineMs} ms`);
+      if (signal.aborted) throw new BackendError("aborted", "aborted by caller");
+      throw new BackendError("network", "request failed");
+    };
     try {
-      let res: Response;
+      let res: RawResponse;
       try {
-        res = await (this.opts.fetch ?? fetch)(this.#url, {
-          method: "POST",
-          headers: { authorization: `Bearer ${this.opts.apiKey}`, "content-type": "application/json", accept: "application/json" },
-          body: JSON.stringify({ state, model: this.opts.model ?? JEV_MODEL, questions }),
-          signal: ac.signal,
-        });
-      } catch {
-        if (timedOut) throw new BackendError("timeout", `no answer within ${this.opts.timeoutMs} ms`);
-        if (signal.aborted) throw new BackendError("aborted", "aborted by caller");
-        throw new BackendError("network", "request failed");
+        res = await post(this.#url, this.#agent, headers, payload, ac.signal);
+      } catch (e) {
+        // A keep-alive connection the server closed while idle fails before any byte: one fresh attempt, same deadline.
+        if (!(e instanceof TransportError && e.staleSocket) || ac.signal.aborted) fail();
+        try {
+          res = await post(this.#url, this.#agent, headers, payload, ac.signal);
+        } catch {
+          return fail();
+        }
       }
-      if (!res.ok) {
-        await res.body?.cancel().catch(() => undefined); // the error body is never read or logged
-        throw new BackendError("http", `HTTP ${res.status}`, res.status);
-      }
+      if (res.status < 200 || res.status >= 300) throw new BackendError("http", `HTTP ${res.status}`, res.status); // body never read or logged
       let body: unknown;
       try {
-        body = await res.json();
+        body = JSON.parse(res.body);
       } catch {
-        if (timedOut) throw new BackendError("timeout", `no answer within ${this.opts.timeoutMs} ms`);
         throw new BackendError("invalid_response", "response is not JSON");
       }
       if (!isObj(body) || !isObj(body["answers"])) throw new BackendError("invalid_response", "answers missing");
@@ -115,7 +171,7 @@ export class JevBackend implements DecisionBackend {
       const usage = body["usage"];
       const tokensIn = isObj(usage) && typeof usage["input_tokens"] === "number" ? usage["input_tokens"] : null;
       const backendModel = typeof body["model"] === "string" ? body["model"] : (this.opts.model ?? JEV_MODEL);
-      return { answers, latencyMs: now() - started, backendModel, tokensIn };
+      return { answers, latencyMs: now() - started, backendModel, tokensIn, connection: res.reused ? "reused" : "new" };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);

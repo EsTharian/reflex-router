@@ -44,6 +44,8 @@ export interface DecisionRecord {
     readonly latencyMs: number;
     readonly tokensIn: number | null;
     readonly backendModel: string;
+    /** Whether the Jev call reused a keep-alive connection. */
+    readonly connection: "new" | "reused" | null;
   } | null;
   readonly plan: {
     readonly target: { readonly tier: Tier; readonly effort?: Effort } | null;

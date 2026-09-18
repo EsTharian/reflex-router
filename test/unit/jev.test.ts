@@ -31,9 +31,10 @@ describe("JevBackend", () => {
   let backend: JevBackend;
   before(async () => {
     jev = await startFakeJev();
-    backend = new JevBackend({ baseUrl: jev.url + "/", apiKey: "apikey_unit", timeoutMs: 300 });
+    backend = new JevBackend({ baseUrl: jev.url + "/", apiKey: "apikey_unit", deadlineMs: 300 });
   });
   after(async () => {
+    backend.close();
     await jev.close();
   });
   beforeEach(() => {
@@ -115,8 +116,49 @@ describe("JevBackend", () => {
     });
   }
 
+  it("reuses one keep-alive connection across decisions, and says so", async () => {
+    const a = await backend.decide(state, questions, { signal });
+    const b = await backend.decide(state, questions, { signal });
+    assert.equal(b.connection, "reused");
+    assert.ok(a.connection === "new" || a.connection === "reused");
+    assert.equal(jev.calls[0]?.remotePort, jev.calls[1]?.remotePort, "same TCP connection");
+  });
+
+  it("keeps the connection across a pause longer than fetch's ~4 s idle window", async () => {
+    await backend.decide(state, questions, { signal });
+    await new Promise((r) => setTimeout(r, 4500));
+    const d = await backend.decide(state, questions, { signal });
+    assert.equal(d.connection, "reused");
+    assert.equal(jev.calls[0]?.remotePort, jev.calls[1]?.remotePort);
+  });
+
+  it("a connection the server closed while idle is replaced transparently, within the deadline", async () => {
+    await backend.decide(state, questions, { signal });
+    jev.dropIdle();
+    await new Promise((r) => setTimeout(r, 20));
+    const d = await backend.decide(state, questions, { signal });
+    assert.equal(d.connection, "new");
+    assert.equal(jev.calls.length, 2, "the stale socket never delivered a request");
+  });
+
+  it("a reused connection that dies before any answer gets exactly one fresh attempt", async () => {
+    await backend.decide(state, questions, { signal });
+    jev.set({ kind: "reset_once", then: { kind: "answer", tier: "sonnet" } });
+    const d = await backend.decide(state, questions, { signal });
+    assert.equal(d.connection, "new");
+    assert.equal(jev.calls.length, 3, "first call, the reset request, the fresh retry");
+  });
+
+  it("a fresh connection that dies is a network error, not retried", async () => {
+    const fresh = new JevBackend({ baseUrl: jev.url, apiKey: "apikey_unit", deadlineMs: 500 });
+    jev.set({ kind: "reset_once", then: { kind: "answer", tier: "sonnet" } });
+    await rejectsWith(fresh.decide(state, questions, { signal }), "network");
+    assert.equal(jev.calls.length, 1);
+    fresh.close();
+  });
+
   it("an unreachable endpoint is a network error", async () => {
-    const dead = new JevBackend({ baseUrl: "http://127.0.0.1:9", apiKey: "apikey_unit", timeoutMs: 500 });
+    const dead = new JevBackend({ baseUrl: "http://127.0.0.1:9", apiKey: "apikey_unit", deadlineMs: 500 });
     await rejectsWith(dead.decide(state, questions, { signal }), "network");
   });
 });

@@ -34,7 +34,7 @@ All settings are environment variables.
 | `REFLEX_TIERS` | comma list of `haiku,sonnet,opus` | all three | Tiers a request may be routed to. Fable additionally needs `REFLEX_ALLOW_FABLE=1`. |
 | `REFLEX_UPGRADES` | `off`, `confident`, `on` | `off` | Whether a stronger tier than requested may be chosen. |
 | `REFLEX_MODEL_<TIER>` | model id | `ANTHROPIC_DEFAULT_<TIER>_MODEL`, else built in | Model id used for a tier. |
-| `REFLEX_BACKEND_TIMEOUT_MS` | integer | `1500` | Hard deadline for one decision; no retries. |
+| `REFLEX_JEV_DEADLINE_MS` | integer | `1500` | Hard deadline for one Jev decision, connection setup included. On expiry the request is forwarded unchanged (fail-open). |
 | `REFLEX_MAX_USER_CHARS`, `REFLEX_MAX_ASSISTANT_CHARS` | integer | `4000`, `1000` | How much text the decision backend may see. |
 
 What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](docs/privacy.md).

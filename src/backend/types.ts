@@ -5,6 +5,8 @@ export interface DecisionBackend {
   readonly id: "jev" | "local";
   /** Resolves with validated answers or rejects with a BackendError; never retries. */
   decide(state: DecisionState, questions: QuestionSet, opts: { readonly signal: AbortSignal }): Promise<Decision>;
+  /** Releases pooled connections. */
+  close?(): void;
 }
 
 export type BackendErrorKind = "timeout" | "aborted" | "http" | "network" | "invalid_response" | "not_implemented";
