@@ -33,6 +33,8 @@ All settings are environment variables.
 | `REFLEX_MAIN_CHAT` | `guarded`, `never` | `guarded` | Whether main-chat prompts are judged at all (subagent tasks always are). `guarded`: a main-chat switch must pass the cost guard. |
 | `REFLEX_MAX_SWITCH_PENALTY_USD` | number | `0.01` | Cost guard: the most a main-chat model switch may cost in lost prompt cache (list prices, `src/pricing.ts`). |
 | `REFLEX_TIERS` | comma list of `haiku,sonnet,opus` | all three | Tiers a request may be routed to. Fable additionally needs `REFLEX_ALLOW_FABLE=1`. |
+| `REFLEX_DECISION_RULE` | `mass`, `argmax` | `mass` | How the tier is read from the decision backend's probabilities. `mass`: the cheapest tier that leaves at most `REFLEX_MASS_EPS` probability on the tiers above it. `argmax`: the backend's top choice, and a downgrade needs choice confidence ≥ 0.70. Both readings are logged either way. |
+| `REFLEX_MASS_EPS` | 0–0.5 | `0.10` | Probability the `mass` rule may leave on more expensive tiers. |
 | `REFLEX_UPGRADES` | `off`, `confident`, `on` | `off` | Whether a stronger tier than requested may be chosen. |
 | `REFLEX_MODEL_<TIER>` | model id | `ANTHROPIC_DEFAULT_<TIER>_MODEL`, else built in | Model id used for a tier. |
 | `REFLEX_JEV_DEADLINE_MS` | integer | `1500` | Hard deadline for one Jev decision, connection setup included. On expiry the request is forwarded unchanged (fail-open). |
