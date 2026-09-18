@@ -61,7 +61,25 @@ Observed on every request: `last non-system message` is either `user` with text 
 | trailing `role:"system"` message | yes | **no** |
 | betas | as above | minus `effort-2025-11-24`, minus `mid-conversation-system-2026-04-07` |
 
-This contradicts the prior-art recipe ("delete `thinking`, delete `context_management`"). The rewrite target for a Haiku downgrade is *"look like what Claude Code itself sends to Haiku"*. Whether the API accepts each individual field mismatch is **unverified** (M3 experiment with a rewriting spike).
+This contradicts the prior-art recipe ("delete `thinking`, delete `context_management`"). What the API actually requires was then measured (§5.1).
+
+### 5.1 Retargeting a Sonnet request to Haiku: what the API accepts (experiment)
+
+`scripts/spike/rewrite-experiment.mjs` re-sent one real Sonnet 5 request (first turn of a fresh `claude -p` conversation) as 11 variants of a 6-step rewrite, using the live request's own auth headers held in memory only. Result file: `test/fixtures/claude-code/2.1.277/experiment.sonnet-to-haiku-retarget.results.json`.
+
+| Rewrite step | Needed? | Evidence |
+| --- | --- | --- |
+| `model` → `claude-haiku-4-5-20251001` | yes | — |
+| remove `output_config.effort` | **yes** | kept → 400 `This model does not support the effort parameter.` |
+| `thinking` `adaptive` → `{type:"enabled", budget_tokens:31999}` | **yes** | kept → 400 `adaptive thinking is not supported on this model` |
+| fold `role:"system"` messages into the adjacent user message | **yes** | kept → 400 `role 'system' is not supported on this model` |
+| cap `max_tokens` at 32000 | **no** | accepted with 64000 |
+| remove `effort-*` and `mid-conversation-system-*` betas | **no** | accepted with them present |
+| `context_management` | keep as is | native Haiku keeps it; never removed |
+
+The minimal working rewrite is therefore three field edits plus the model swap; the extra steps in a native Haiku request are not required, and fewer edits mean less risk. The API reports one validation error at a time, so necessity was established by leave-one-out, not from the messages alone.
+
+**Scope.** One request, first turn, no assistant history. **Not tested:** switching the model in the middle of a conversation (Sonnet-generated `thinking` blocks with signatures already in `messages`), requests with earlier `tool_use`/`tool_result` turns, Opus/Fable targets, the `context-1m` beta, and subagent (5-minute cache) requests. A mid-conversation switch is the likeliest place for a rejection, which is one more reason the main chat is only switched behind a cost guard and every rewrite keeps the retry-with-original safety net.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 

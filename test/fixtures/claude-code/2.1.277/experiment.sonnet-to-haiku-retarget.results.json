@@ -1,0 +1,147 @@
+{
+ "target": "claude-haiku-4-5-20251001",
+ "steps": [
+  "S1_model",
+  "S2_drop_output_config_effort",
+  "S3_thinking_adaptive_to_enabled",
+  "S4_max_tokens_32000",
+  "S5_strip_betas",
+  "S6_fold_system_messages"
+ ],
+ "results": [
+  {
+   "label": "C1:cumulative through S1_model",
+   "steps": [
+    "S1_model"
+   ],
+   "accepted": false,
+   "status": 400,
+   "error": "adaptive thinking is not supported on this model"
+  },
+  {
+   "label": "C2:cumulative through S2_drop_output_config_effort",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort"
+   ],
+   "accepted": false,
+   "status": 400,
+   "error": "adaptive thinking is not supported on this model"
+  },
+  {
+   "label": "C3:cumulative through S3_thinking_adaptive_to_enabled",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort",
+    "S3_thinking_adaptive_to_enabled"
+   ],
+   "accepted": false,
+   "status": 400,
+   "error": "role 'system' is not supported on this model"
+  },
+  {
+   "label": "C4:cumulative through S4_max_tokens_32000",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort",
+    "S3_thinking_adaptive_to_enabled",
+    "S4_max_tokens_32000"
+   ],
+   "accepted": false,
+   "status": 400,
+   "error": "role 'system' is not supported on this model"
+  },
+  {
+   "label": "C5:cumulative through S5_strip_betas",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort",
+    "S3_thinking_adaptive_to_enabled",
+    "S4_max_tokens_32000",
+    "S5_strip_betas"
+   ],
+   "accepted": false,
+   "status": 400,
+   "error": "role 'system' is not supported on this model"
+  },
+  {
+   "label": "C6:cumulative through S6_fold_system_messages",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort",
+    "S3_thinking_adaptive_to_enabled",
+    "S4_max_tokens_32000",
+    "S5_strip_betas",
+    "S6_fold_system_messages"
+   ],
+   "accepted": true,
+   "status": 200,
+   "error": null
+  },
+  {
+   "label": "LOO:all except S2_drop_output_config_effort",
+   "steps": [
+    "S1_model",
+    "S3_thinking_adaptive_to_enabled",
+    "S4_max_tokens_32000",
+    "S5_strip_betas",
+    "S6_fold_system_messages"
+   ],
+   "accepted": false,
+   "status": 400,
+   "error": "This model does not support the effort parameter."
+  },
+  {
+   "label": "LOO:all except S3_thinking_adaptive_to_enabled",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort",
+    "S4_max_tokens_32000",
+    "S5_strip_betas",
+    "S6_fold_system_messages"
+   ],
+   "accepted": false,
+   "status": 400,
+   "error": "adaptive thinking is not supported on this model"
+  },
+  {
+   "label": "LOO:all except S4_max_tokens_32000",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort",
+    "S3_thinking_adaptive_to_enabled",
+    "S5_strip_betas",
+    "S6_fold_system_messages"
+   ],
+   "accepted": true,
+   "status": 200,
+   "error": null
+  },
+  {
+   "label": "LOO:all except S5_strip_betas",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort",
+    "S3_thinking_adaptive_to_enabled",
+    "S4_max_tokens_32000",
+    "S6_fold_system_messages"
+   ],
+   "accepted": true,
+   "status": 200,
+   "error": null
+  },
+  {
+   "label": "LOO:all except S6_fold_system_messages",
+   "steps": [
+    "S1_model",
+    "S2_drop_output_config_effort",
+    "S3_thinking_adaptive_to_enabled",
+    "S4_max_tokens_32000",
+    "S5_strip_betas"
+   ],
+   "accepted": false,
+   "status": 400,
+   "error": "role 'system' is not supported on this model"
+  }
+ ]
+}

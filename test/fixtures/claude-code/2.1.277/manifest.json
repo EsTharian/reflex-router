@@ -154,6 +154,11 @@
   {
    "file": "haiku-mcp-draft4.head-probe.json",
    "description": "startup probe Claude Code sends to the base URL"
+  },
+  {
+   "file": "experiment.sonnet-to-haiku-retarget.results.json",
+   "kind": "experiment",
+   "description": "API acceptance of one real Sonnet 5 main-chat request retargeted to claude-haiku-4-5-20251001 under 11 rewrite variants (cumulative + leave-one-out). Statuses and API error messages only; no prompts, no headers."
   }
  ],
  "findings": {
@@ -170,6 +175,29 @@
     "servers that declare many tools"
    ],
    "interpretation": "Claude Code does not rewrite the schema when a custom base URL is set, and Haiku 4.5 accepted it. This does NOT establish that every model accepts it, so a compat rewrite is not currently required but is not disproven for other targets."
+  },
+  "sonnet_to_haiku_retarget": {
+   "status": "verified_in_scope",
+   "result": "Fully rewritten request accepted (HTTP 200); claude completed the run.",
+   "necessary": {
+    "output_config.effort removed": "400 'This model does not support the effort parameter.' when kept",
+    "thinking adaptive -> {type:enabled, budget_tokens}": "400 'adaptive thinking is not supported on this model' when kept",
+    "role:system messages folded into user messages": "400 \"role 'system' is not supported on this model\" when kept"
+   },
+   "not_necessary": {
+    "max_tokens capped at 32000": "accepted with 64000",
+    "effort-*/mid-conversation-system-* beta headers removed": "accepted with them present"
+   },
+   "scope": "one request, first turn of a fresh conversation (no assistant history), Sonnet 5 -> Haiku 4.5, sdk-cli entrypoint, budget_tokens 31999 with max_tokens 64000",
+   "not_tested": [
+    "mid-conversation switches (Sonnet-generated thinking blocks with signatures already in the history)",
+    "requests with prior tool_use/tool_result turns",
+    "Opus/Fable as target",
+    "the context-1m beta",
+    "subagent (5-minute cache) requests",
+    "thinking.display values other than 'omitted'",
+    "the API reports one error at a time, so 'necessary' comes from leave-one-out, not from the error text alone"
+   ]
   }
  }
 }
