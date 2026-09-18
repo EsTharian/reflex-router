@@ -13,6 +13,8 @@ The request body is `{ state, model, questions }`. `questions` is fixed text fro
 | `context.requesting_tier` | `haiku` / `sonnet` / `opus` / `fable` / `unknown`, derived from the requested model id | — |
 | `context.is_subagent` | boolean | — |
 
+When the worker starts in shadow or route mode it also sends one bare `HEAD /` to the TypeSafe host to open the connection early; it carries no key and no data.
+
 Nothing else: no system prompt, tool list, file contents from tool results, session/agent/device/account ids, headers, paths as separate fields, or Anthropic credentials. The TypeSafe key travels only in the `Authorization` header to the TypeSafe endpoint.
 
 Text is truncated first, then redacted (`src/privacy/redact.ts`): TypeSafe, Anthropic and other `sk-` keys, AWS access keys, GitHub/Slack/Google tokens, JWTs, PEM private keys, `Authorization`/`Bearer` values, the value of every `.env`-style `NAME=value` line, and home-directory prefixes (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>` become `~`). This is best effort, not a guarantee; entropy-based detection is deliberately not attempted because false positives would corrupt the task text.

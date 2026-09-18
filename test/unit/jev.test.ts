@@ -157,6 +157,24 @@ describe("JevBackend", () => {
     fresh.close();
   });
 
+  it("warm() opens the connection with a bare HEAD (no key, no body); the first decision then reuses it", async () => {
+    const fresh = new JevBackend({ baseUrl: jev.url, apiKey: "apikey_unit", deadlineMs: 500 });
+    const before = jev.other.length;
+    await fresh.warm();
+    const w = jev.other[before];
+    assert.ok(w);
+    assert.equal(w.method, "HEAD");
+    assert.equal(w.headers.authorization, undefined, "no key on the warm-up");
+    const d = await fresh.decide(state, questions, { signal });
+    assert.equal(d.connection, "reused");
+    assert.equal(jev.calls.at(-1)?.remotePort, w.remotePort);
+    fresh.close();
+  });
+
+  it("warm() never throws, even when the endpoint is down", async () => {
+    await new JevBackend({ baseUrl: "http://127.0.0.1:9", apiKey: "apikey_unit", deadlineMs: 500 }).warm(200);
+  });
+
   it("an unreachable endpoint is a network error", async () => {
     const dead = new JevBackend({ baseUrl: "http://127.0.0.1:9", apiKey: "apikey_unit", deadlineMs: 500 });
     await rejectsWith(dead.decide(state, questions, { signal }), "network");

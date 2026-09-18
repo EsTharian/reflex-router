@@ -119,6 +119,30 @@ export class JevBackend implements DecisionBackend {
     this.#agent = this.#url.protocol === "https:" ? new https.Agent(agentOpts) : new http.Agent(agentOpts);
   }
 
+  /**
+   * Opens the keep-alive connection ahead of the first decision with a bare `HEAD /`: no key, no body, response
+   * ignored. Best effort; any failure is silent (the first decision then connects as usual).
+   */
+  warm(timeoutMs = 3000): Promise<void> {
+    return new Promise((resolve) => {
+      try {
+        const lib = this.#url.protocol === "https:" ? https : http;
+        const req = lib.request(new URL("/", this.#url), { method: "HEAD", agent: this.#agent, timeout: timeoutMs }, (res) => {
+          res.resume();
+          res.on("error", () => resolve());
+        });
+        // Resolve once the socket is back in the pool (the agent's `free`), so the next request can reuse it.
+        req.on("socket", (socket) => socket.once("free", () => resolve()));
+        req.on("close", () => resolve());
+        req.on("timeout", () => req.destroy());
+        req.on("error", () => resolve());
+        req.end();
+      } catch {
+        resolve(); // e.g. a synchronous connect failure; warming is best effort
+      }
+    });
+  }
+
   /** Closes idle keep-alive connections (worker shutdown, tests). */
   close(): void {
     this.#agent.destroy();

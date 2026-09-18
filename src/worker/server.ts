@@ -48,6 +48,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const startedAt = Date.now();
   const decisionLog = new DecisionLog(opts.config.home, opts.config.logPrompts, { onError: (e) => opts.log("warn", `decision log: ${e.message}`) });
   const backend = opts.backend !== undefined ? opts.backend : backendFor(opts.config);
+  if (Router.active(opts.effectiveMode)) void backend?.warm?.();
   const router = Router.active(opts.effectiveMode)
     ? new Router({
         config: opts.config,

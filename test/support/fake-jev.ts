@@ -22,6 +22,8 @@ export type JevBehaviour =
 export interface FakeJev {
   readonly url: string;
   readonly calls: JevCall[];
+  /** Requests other than POST /v1/systemone (e.g. connection warm-ups), with their headers. */
+  readonly other: { method: string; url: string; headers: http.IncomingHttpHeaders; remotePort: number | undefined }[];
   set(b: JevBehaviour): void;
   /** Closes keep-alive connections that are idle, like a server-side idle timeout would. */
   dropIdle(): void;
@@ -50,7 +52,14 @@ export function answerFor(questions: JevCall["body"]["questions"], tier: string,
 export async function startFakeJev(initial: JevBehaviour = { kind: "answer", tier: "haiku" }): Promise<FakeJev> {
   let behaviour = initial;
   const calls: JevCall[] = [];
+  const other: FakeJev["other"] = [];
   const server = http.createServer((req, res) => {
+    if (req.method !== "POST" || req.url !== "/v1/systemone") {
+      other.push({ method: req.method ?? "", url: req.url ?? "", headers: req.headers, remotePort: req.socket.remotePort });
+      req.resume();
+      res.writeHead(404, { "content-length": 0 }).end();
+      return;
+    }
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
@@ -91,6 +100,7 @@ export async function startFakeJev(initial: JevBehaviour = { kind: "answer", tie
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     calls,
+    other,
     set: (b) => {
       behaviour = b;
     },
