@@ -67,9 +67,18 @@ describe("wire contract: stable facts across a session", () => {
     assert.equal(later?.turn, "new");
   });
 
-  it("the task text excludes harness reminders and local-command wrappers", () => {
+  it("the task text excludes harness reminders, local-command wrappers and pasted-content tags", () => {
     for (const v of fixtures.map(viewOf).filter((x) => x.turn === "new")) {
-      assert.doesNotMatch(v.task ?? "", /<system-reminder>|<local-command-|<command-name>/);
+      assert.doesNotMatch(v.task ?? "", /<system-reminder>|<local-command-|<command-name>|<\/?pasted_content/);
     }
+  });
+
+  it("a pasted prompt (interactive.main-new-turn) keeps its text but loses the <pasted_content id=…> wrapper", () => {
+    const raw = fixtures.find((f) => f.file === "interactive.main-new-turn.request.json")!.body.toString();
+    assert.match(raw, /<pasted_content id=\\"ec1f\\">/, "the fixture really carries the wrapper");
+    const task = byLabel("interactive.main-new-turn.request")[0]?.task ?? "";
+    assert.ok(task.length > 20);
+    assert.doesNotMatch(task, /pasted_content/);
+    assert.match(task, /use a subage/, "the pasted text itself is kept");
   });
 });

@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import {
   BETA_EXTENDED_CACHE_TTL, BETA_MID_CONVERSATION_SYSTEM, BILLING_ENTRYPOINT, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
-  MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
+  MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
 } from "./markers.js";
 
 export type RequestKind = "main" | "subagent" | "unknown";
@@ -91,11 +91,11 @@ const blocksOf = (m: Json): Block[] => {
 };
 /** The harness sends each reminder as its own text block starting with the tag; inline ones are stripped too. */
 const isReminderOnly = (t: string): boolean => t.trimStart().startsWith("<system-reminder>") || t.replace(SYSTEM_REMINDER, "").trim() === "";
-/** The user's own words: reminder blocks dropped, inline reminders and local-command wrappers removed. */
+/** The user's own words: reminder blocks dropped, inline reminders and local-command wrappers removed, pasted-content tags unwrapped. */
 const ownText = (blocks: readonly Block[]): string =>
   blocks
     .filter((b) => b.type === "text" && b.text !== null && !isReminderOnly(b.text))
-    .map((b) => (b.text ?? "").replace(SYSTEM_REMINDER, "").replace(LOCAL_COMMAND_BLOCK, "").trim())
+    .map((b) => (b.text ?? "").replace(SYSTEM_REMINDER, "").replace(LOCAL_COMMAND_BLOCK, "").replace(PASTED_CONTENT_TAG, "").trim())
     .filter(Boolean)
     .join("\n\n");
 

@@ -20,6 +20,8 @@ export const BILLING_ENTRYPOINT = /cc_entrypoint=([^;\s]+)/;
 
 /** Wrappers the harness puts around text that is not the user's own prompt. Stripped before judging a turn. */
 export const SYSTEM_REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
+/** Claude Code wraps pasted text as `<pasted_content id="…">…</pasted_content id="…">`; the tags go, the text stays. */
+export const PASTED_CONTENT_TAG = /<\/?pasted_content(?:\s+id="[^"]*")?\s*>/g;
 export const LOCAL_COMMAND_BLOCK = /<(local-command-caveat|local-command-stdout|local-command-stderr|command-name|command-message|command-args)>[\s\S]*?<\/\1>/g;
 
 export type SideKind = "no_tools" | "suggestion" | "agent_summary" | "compaction" | "cross_session" | "notification" | "unclassified";

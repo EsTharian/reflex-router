@@ -91,6 +91,13 @@ describe("turn classification: only positively identified user turns are `new`",
     for (const [content, kind] of cases) assert.equal(view([{ role: "user", content }]).sideKind, kind);
   });
 
+  it("pasted-content tags are unwrapped, with or without an id, and the pasted text is kept", () => {
+    const v = view([{ role: "user", content: [text('<pasted_content id="ab12">\nfix the bug\n</pasted_content id="ab12">\nplease')] }]);
+    assert.equal(v.task, "fix the bug\n\nplease");
+    assert.equal(view([{ role: "user", content: [text("<pasted_content>x</pasted_content>")] }]).task, "x");
+    assert.equal(view([{ role: "user", content: [text('<pasted_content id="z"></pasted_content id="z">')] }]).turn, "side", "an empty paste is not a user turn");
+  });
+
   it("local-command wrappers are not the user's text", () => {
     const v = view([{ role: "user", content: [text("<local-command-caveat>Caveat</local-command-caveat>"), text("<command-name>/compact</command-name>"), text("did you update it?")] }]);
     assert.equal(v.task, "did you update it?");
