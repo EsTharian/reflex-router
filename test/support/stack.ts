@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Config } from "../../src/config.js";
+import { loadConfig, type Config } from "../../src/config.js";
 import type { InitMessage } from "../../src/ipc.js";
 import { startFrontDoor, type FrontDoor, type FrontDoorOptions } from "../../src/launcher/front-door.js";
 import { Supervisor, type SpawnWorker, type Timings } from "../../src/launcher/supervisor.js";
@@ -13,9 +13,12 @@ export const FAST_TIMINGS: Partial<Timings> = {
   probeIntervalMs: 100, probeTimeoutMs: 200, probeMissLimit: 2, backoffInitialMs: 50, backoffMaxMs: 200, crashWindowMs: 60_000, crashLimit: 3, passthroughMs: 500, readyTimeoutMs: 15_000,
 };
 
-export const testConfig = (upstreamUrl: string, over: Partial<Config> = {}): Config => ({
-  mode: "shadow", backend: "jev", upstreamUrl, claudeBin: undefined, home: fs.mkdtempSync(path.join(os.tmpdir(), "reflex-home-")), ignoreVersionCheck: false, typesafeApiKey: "apikey_test", ...over,
-});
+/** Defaults exactly as loadConfig({}) produces them, plus a fake key and a fresh temp home. */
+export const testConfig = (upstreamUrl: string, over: Partial<Config> = {}): Config => {
+  const loaded = loadConfig({ REFLEX_UPSTREAM_URL: upstreamUrl });
+  if (!loaded.ok) throw new Error(loaded.errors.join("; "));
+  return { ...loaded.config, home: fs.mkdtempSync(path.join(os.tmpdir(), "reflex-home-")), typesafeApiKey: "apikey_test", ...over };
+};
 
 export interface Stack {
   readonly upstream: FakeUpstream;
@@ -23,6 +26,8 @@ export interface Stack {
   readonly supervisor: Supervisor;
   /** Base URL of the front door, i.e. what ANTHROPIC_BASE_URL points at. */
   readonly url: string;
+  /** The configuration the worker runs with (its `home` holds decisions.jsonl). */
+  readonly config: Config;
   workerPid(): Promise<number | null>;
   close(): Promise<void>;
 }
@@ -35,14 +40,17 @@ export interface StackOptions {
   /** Do not start a worker at all (the door must still work). */
   readonly noWorker?: boolean;
   readonly upstream?: FakeUpstream;
+  /** Worker configuration overrides (e.g. jevBaseUrl pointing at a fake Jev). */
+  readonly config?: Partial<Config>;
+  readonly effectiveMode?: InitMessage["effectiveMode"];
 }
 
 /** The real front door + supervisor + worker process, in front of a fake upstream. */
 export async function startStack(opts: StackOptions = {}): Promise<Stack> {
   const upstream = opts.upstream ?? (await startFakeUpstream());
   const upstreamUrl = upstream.url + (opts.upstreamPath ?? "");
-  const config = testConfig(upstreamUrl);
-  const init: InitMessage = { type: "init", config, effectiveMode: "shadow", degradedReason: null, claudeVersion: "2.1.277" };
+  const config = testConfig(upstreamUrl, opts.config);
+  const init: InitMessage = { type: "init", config, effectiveMode: opts.effectiveMode ?? "shadow", degradedReason: null, claudeVersion: "2.1.277" };
   const spawnWorker: SpawnWorker = opts.spawnWorker ?? (() => spawnWorkerProcess({ init, readyTimeoutMs: 15_000, logFile: null, log: () => undefined }));
   const supervisor = new Supervisor({
     spawnWorker: opts.noWorker ? () => Promise.reject(new Error("no worker in this test")) : spawnWorker,
@@ -63,6 +71,7 @@ export async function startStack(opts: StackOptions = {}): Promise<Stack> {
     upstream,
     door,
     supervisor,
+    config,
     url: `http://127.0.0.1:${door.port}`,
     workerPid: async () => {
       const origin = supervisor.workerOrigin();

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Config, Mode } from "../../src/config.js";
+import { loadConfig, type Config, type Mode } from "../../src/config.js";
 import { resolveEffectiveMode } from "../../src/effective-mode.js";
 import type { VersionVerdict } from "../../src/launcher/version.js";
 
-const cfg = (over: Partial<Config> = {}): Config => ({
-  mode: "route", backend: "jev", upstreamUrl: "https://api.anthropic.com", claudeBin: undefined, home: "/h", ignoreVersionCheck: false, typesafeApiKey: "apikey_x", ...over,
-});
+const base = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x" }, "/h");
+const cfg = (over: Partial<Config> = {}): Config => {
+  assert.ok(base.ok);
+  return { ...base.config, ...over };
+};
 const verdict = (level: VersionVerdict["level"]): VersionVerdict => ({ level, reason: level === "degrade" ? "major_mismatch" : "exact_match", running: "3.0.0", tested: ["2.1.277"] });
 
 describe("resolveEffectiveMode", () => {

@@ -1,0 +1,122 @@
+import assert from "node:assert/strict";
+import { after, before, beforeEach, describe, it } from "node:test";
+import { JevBackend, JEV_MODEL } from "../../src/backend/jev.js";
+import { BackendError } from "../../src/backend/types.js";
+import { loadConfig } from "../../src/config.js";
+import { buildQuestions } from "../../src/policy.js";
+import type { DecisionState } from "../../src/types.js";
+import { startFakeJev, type FakeJev } from "../support/fake-jev.js";
+
+const cfgR = loadConfig({});
+assert.ok(cfgR.ok);
+const cfg = cfgR.config;
+const questions = buildQuestions(cfg);
+const state: DecisionState = { task: "rename foo to bar in a.ts", context: { requesting_tier: "sonnet", is_subagent: true } };
+const signal = new AbortController().signal;
+
+const rejectsWith = async (p: Promise<unknown>, kind: string, status?: number): Promise<BackendError> => {
+  try {
+    await p;
+  } catch (e) {
+    assert.ok(e instanceof BackendError, String(e));
+    assert.equal(e.kind, kind);
+    if (status !== undefined) assert.equal(e.status, status);
+    return e;
+  }
+  assert.fail("expected a rejection");
+};
+
+describe("JevBackend", () => {
+  let jev: FakeJev;
+  let backend: JevBackend;
+  before(async () => {
+    jev = await startFakeJev();
+    backend = new JevBackend({ baseUrl: jev.url + "/", apiKey: "apikey_unit", timeoutMs: 300 });
+  });
+  after(async () => {
+    await jev.close();
+  });
+  beforeEach(() => {
+    jev.calls.length = 0;
+    jev.set({ kind: "answer", tier: "haiku", confidence: 0.84, reasoning: 0.4 });
+  });
+
+  it("POSTs {state, model, questions} to /v1/systemone with the key only in the Authorization header", async () => {
+    const d = await backend.decide(state, questions, { signal });
+    const call = jev.calls[0];
+    assert.ok(call);
+    assert.equal(call.headers.authorization, "Bearer apikey_unit");
+    assert.deepEqual(Object.keys(call.body).sort(), ["model", "questions", "state"]);
+    assert.equal(call.body.model, JEV_MODEL);
+    assert.deepEqual(call.body.state, state);
+    assert.equal(call.raw.includes("apikey_unit"), false, "the key is never in the body");
+    assert.equal(d.backendModel, "jev-test");
+    assert.equal(d.tokensIn, 321);
+    const tier = d.answers["tier"];
+    assert.ok(tier?.type === "choice");
+    assert.equal(tier.choice, "haiku");
+    assert.equal(tier.confidence, 0.84);
+    const rd = d.answers["reasoning_demand"];
+    assert.ok(rd?.type === "score");
+    assert.equal(rd.score, 0.4);
+  });
+
+  for (const status of [401, 422, 429, 500, 529]) {
+    it(`HTTP ${status} is an http error carrying only the status, never the body`, async () => {
+      jev.set({ kind: "status", status });
+      const e = await rejectsWith(backend.decide(state, questions, { signal }), "http", status);
+      assert.doesNotMatch(e.message, /shouldnotleak|apikey/);
+    });
+  }
+
+  it("a hang ends at the deadline with a timeout, and is not retried", async () => {
+    jev.set({ kind: "hang" });
+    const t0 = Date.now();
+    await rejectsWith(backend.decide(state, questions, { signal }), "timeout");
+    assert.ok(Date.now() - t0 < 1500);
+    assert.equal(jev.calls.length, 1, "zero retries");
+  });
+
+  it("a slow answer inside the deadline is fine", async () => {
+    jev.set({ kind: "answer", tier: "opus", delayMs: 50 });
+    const d = await backend.decide(state, questions, { signal });
+    assert.ok(d.latencyMs >= 40);
+  });
+
+  it("junk is invalid_response", async () => {
+    jev.set({ kind: "junk" });
+    await rejectsWith(backend.decide(state, questions, { signal }), "invalid_response");
+  });
+
+  it("the caller's abort signal is honoured", async () => {
+    jev.set({ kind: "hang" });
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 20);
+    await rejectsWith(backend.decide(state, questions, { signal: ac.signal }), "aborted");
+  });
+
+  const good = { type: "choice", choice: "haiku", confidence: 0.8, probabilities: { haiku: 0.8, sonnet: 0.15, opus: 0.05 } };
+  const score = { type: "score", score: 1, confidence: 0.5, probabilities: { "0": 0, "1": 1, "2": 0, "3": 0, "4": 0 } };
+  const invalid: [string, unknown][] = [
+    ["answers missing", { model: "m" }],
+    ["a question unanswered", { answers: { tier: good } }],
+    ["choice outside the options (fable not offered)", { answers: { tier: { ...good, choice: "fable" }, reasoning_demand: score } }],
+    ["probabilities that do not sum to 1", { answers: { tier: { ...good, probabilities: { haiku: 0.8, sonnet: 0.8, opus: 0 } }, reasoning_demand: score } }],
+    ["probability for an unknown option", { answers: { tier: { ...good, probabilities: { haiku: 0.5, gpt: 0.5 } }, reasoning_demand: score } }],
+    ["confidence above 1", { answers: { tier: { ...good, confidence: 1.2 }, reasoning_demand: score } }],
+    ["score beyond the last level", { answers: { tier: good, reasoning_demand: { ...score, score: 7 } } }],
+    ["wrong answer type", { answers: { tier: score, reasoning_demand: score } }],
+    ["NaN confidence", { answers: { tier: { ...good, confidence: "NaN" }, reasoning_demand: score } }],
+  ];
+  for (const [what, body] of invalid) {
+    it(`rejects a malformed answer: ${what}`, async () => {
+      jev.set({ kind: "raw", body });
+      await rejectsWith(backend.decide(state, questions, { signal }), "invalid_response");
+    });
+  }
+
+  it("an unreachable endpoint is a network error", async () => {
+    const dead = new JevBackend({ baseUrl: "http://127.0.0.1:9", apiKey: "apikey_unit", timeoutMs: 500 });
+    await rejectsWith(dead.decide(state, questions, { signal }), "network");
+  });
+});
