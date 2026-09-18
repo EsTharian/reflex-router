@@ -2,14 +2,21 @@
 // Milestone 0 spike tooling — turns raw capture dumps (gitignored) into redacted, version-tagged
 // fixtures under test/fixtures/claude-code/<version>/.
 //
-//   node scripts/spike/redact-fixtures.mjs <capture-dir> [--name-prefix p]  (see FIXTURE_PLAN below)
+//   node scripts/spike/redact-fixtures.mjs <capture-dir> --label <name> [--plan <plan.json>] [--user-text-chars N]
+//
+// Without --plan, one request per shape is picked automatically (main/subagent x new/continuation). With --plan,
+// the requests are chosen explicitly: [{ "src": "006", "name": "subagent-new-turn", "description": "...",
+// "expect": { ... } }]. `src` is the dump's sequence number; `expect` is the hand-assigned classification the
+// contract tests compare against (it is written to the manifest verbatim, never computed by the code under test).
 //
 // Redaction rules:
 //   * identifiers (session/agent/device/account/prompt/tool-use/uuids/org ids) -> stable placeholders
 //   * home dir, username, email -> placeholders
 //   * long text (system prompt, reminders, tool results, tool descriptions) is elided; lines carrying
 //     detection markers are ALWAYS preserved, and the script asserts the markers survive
-//   * credential headers were never written to the raw dump; organisation/request ids are masked here
+//   * credential headers were never written to the raw dump; header VALUES are whitelisted (anything not known
+//     to be harmless becomes "[redacted]", names are kept), so a new identifying header cannot slip through
+//   * user-written text and hook payload strings are cut to a short head (--user-text-chars, default 4000)
 //   * a final leak scan fails the run if the original identifiers or common secret shapes remain
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -17,10 +24,16 @@ import { homedir, userInfo } from "node:os";
 
 const [, , dumpDir, ...rest] = process.argv;
 if (!dumpDir) { console.error("usage: redact-fixtures.mjs <capture-dir> [--label name]"); process.exit(2); }
-const label = rest.includes("--label") ? rest[rest.indexOf("--label") + 1] : "run";
+const flag = (name) => (rest.includes(name) ? rest[rest.indexOf(name) + 1] : undefined);
+const label = flag("--label") ?? "run";
+const planFile = flag("--plan");
+const userTextChars = Number(flag("--user-text-chars") ?? 4000);
 const extraSecrets = (process.env.REFLEX_REDACT_EXTRA ?? "").split(",").filter(Boolean); // e.g. an email address
 
 const MARKERS = ["cc_is_subagent=true", "You are an agent for Claude Code", "x-anthropic-billing-header:", "cc_entrypoint=", "cc_version="];
+// Harness side-call markers (see src/wire/markers.ts); lines carrying them are kept and asserted to survive.
+const SIDE_MARKERS = ["[SUGGESTION MODE:", "Describe your most recent action", "CRITICAL: Respond with TEXT ONLY", "Another Claude session sent a message:", "[SYSTEM NOTIFICATION - NOT USER INPUT]"];
+const ALL_MARKERS = [...MARKERS, ...SIDE_MARKERS];
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 // ---- stable placeholder maps ------------------------------------------------------------------
@@ -57,7 +70,7 @@ const elide = (text, keepHead = 240) => {
   const keep = new Set();
   let used = 0;
   lines.forEach((l, i) => { if (used < keepHead) { keep.add(i); used += l.length + 1; } });
-  lines.forEach((l, i) => { if (MARKERS.some((m) => l.includes(m))) keep.add(i); });
+  lines.forEach((l, i) => { if (ALL_MARKERS.some((m) => l.includes(m))) keep.add(i); });
   const out = []; let skipped = 0, skippedChars = 0;
   lines.forEach((l, i) => {
     if (keep.has(i)) { if (skipped) { out.push(`[…elided ${skipped} lines / ${skippedChars} chars…]`); skipped = 0; skippedChars = 0; } out.push(l); }
@@ -72,7 +85,7 @@ const redactBlock = (b) => {
   const o = { ...b };
   if (o.type === "text" && typeof o.text === "string") {
     const isReminder = o.text.trimStart().startsWith("<system-reminder>");
-    o.text = scrubString(isReminder ? elide(o.text, 120) : elide(o.text, 4000));
+    o.text = scrubString(isReminder ? elide(o.text, 120) : elide(o.text, userTextChars));
   }
   if (o.type === "thinking") { o.thinking = "[elided]"; if ("signature" in o) o.signature = "[elided]"; }
   if (o.type === "redacted_thinking") o.data = "[elided]";
@@ -108,7 +121,7 @@ const stripDescriptions = (s) => {
   return s;
 };
 
-const redactMessage = (m) => ({ ...m, content: typeof m.content === "string" ? scrubString(elide(m.content, m.role === "system" ? 120 : 4000)) : (m.content ?? []).map(redactBlock) });
+const redactMessage = (m) => ({ ...m, content: typeof m.content === "string" ? scrubString(elide(m.content, m.role === "system" ? 120 : userTextChars)) : (m.content ?? []).map(redactBlock) });
 
 const redactSystem = (s) => (typeof s === "string" ? scrubString(elide(s, 240)) : Array.isArray(s) ? s.map(redactBlock) : s);
 
@@ -121,8 +134,18 @@ const redactUserId = (raw) => {
 };
 
 const IDENT_HEADERS = { "x-claude-code-session-id": "SESSION", "x-claude-code-agent-id": "AGENT", "x-client-request-id": "REQ" };
-const MASK_HEADER = /organization|request-id|cf-ray|set-cookie|envoy|anthropic-ratelimit|retry-after/i;
-const redactHeaders = (h) => Object.fromEntries(Object.entries(h ?? {}).map(([k, v]) => [k, IDENT_HEADERS[k] ? alias(IDENT_HEADERS[k], String(v)) : MASK_HEADER.test(k) ? "[redacted]" : scrubString(String(v))]));
+// Whitelists: only these header values are kept (scrubbed); every other value becomes "[redacted]".
+const KEEP_REQUEST_HEADERS = new Set(["accept", "accept-encoding", "anthropic-beta", "anthropic-dangerous-direct-browser-access", "anthropic-version", "connection", "content-length", "content-type", "host", "user-agent", "x-app", "authorization", "x-api-key"]);
+const KEEP_RESPONSE_HEADERS = new Set(["cache-control", "connection", "content-encoding", "content-length", "content-type", "transfer-encoding", "vary", "server"]);
+const keepRequestHeader = (k) => KEEP_REQUEST_HEADERS.has(k) || /^x-stainless-(arch|lang|os|package-version|retry-count|runtime|runtime-version|timeout)$/.test(k);
+const headerRedactor = (keep) => (h) => Object.fromEntries(Object.entries(h ?? {}).map(([k, v]) => {
+  const n = k.toLowerCase();
+  if (IDENT_HEADERS[n]) return [k, alias(IDENT_HEADERS[n], String(v))];
+  if (n === "authorization" || n === "x-api-key") return [k, "[omitted]"]; // never in dumps; belt and braces
+  return [k, keep(n) ? scrubString(String(v)) : "[redacted]"];
+}));
+const redactHeaders = headerRedactor(keepRequestHeader);
+const redactResponseHeaders = headerRedactor((n) => KEEP_RESPONSE_HEADERS.has(n));
 
 const redactRequest = (q) => {
   const b = q.body && typeof q.body === "object" ? q.body : q.body;
@@ -138,15 +161,19 @@ const redactRequest = (q) => {
   };
 };
 
+// Thinking signatures are opaque blobs that embed ids (a UUID was found base64-encoded in one); thinking text is private.
+const scrubSse = (text) => scrubString(text.replace(/"signature":"[^"]*"/g, '"signature":"[elided]"').replace(/"thinking":"(?:[^"\\]|\\.)+"/g, '"thinking":"[elided]"'));
 const truncateSse = (text, max = 12000) => {
-  if (text.length <= max) return scrubString(text);
+  text = scrubSse(text);
+  if (text.length <= max) return text;
   const cut = text.lastIndexOf("\n\n", max);
   return scrubString(text.slice(0, cut > 0 ? cut + 2 : max)) + "[…truncated…]\n";
 };
 
 // ---- structural facts used for self-checks ---------------------------------------------------
 const sysText = (b) => (typeof b?.system === "string" ? b.system : Array.isArray(b?.system) ? b.system.map((x) => x?.text ?? "").join("\n") : "");
-const facts = (b) => ({ S1: sysText(b).includes("cc_is_subagent=true"), S2: sysText(b).includes("You are an agent for Claude Code"), S3: sysText(b).includes("x-anthropic-billing-header:"), cc_version: /cc_version=([^;\s]+)/.exec(sysText(b))?.[1], entrypoint: /cc_entrypoint=([^;\s]+)/.exec(sysText(b))?.[1] });
+const sideMarkersIn = (b) => { const t = JSON.stringify(b?.messages ?? []); return SIDE_MARKERS.filter((m) => t.includes(m.replace(/"/g, '\\"'))); };
+const facts = (b) => ({ side_markers: sideMarkersIn(b), S1: sysText(b).includes("cc_is_subagent=true"), S2: sysText(b).includes("You are an agent for Claude Code"), S3: sysText(b).includes("x-anthropic-billing-header:"), cc_version: /cc_version=([^;\s]+)/.exec(sysText(b))?.[1], entrypoint: /cc_entrypoint=([^;\s]+)/.exec(sysText(b))?.[1] });
 const blocksOf = (m) => (typeof m?.content === "string" ? [{ type: "text", text: m.content }] : m?.content ?? []);
 
 // ---- main --------------------------------------------------------------------------------------
@@ -184,7 +211,8 @@ const lastNonSys = (x) => x.q.body.messages.filter((m) => m.role !== "system").a
 const hasResult = (x) => blocksOf(lastNonSys(x)).some((b) => b.type === "tool_result");
 const hasErrResult = (x) => blocksOf(lastNonSys(x)).some((b) => b.type === "tool_result" && b.is_error === true);
 const pickFirst = (pred) => messages.find(pred);
-const plan = [
+const bySrc = (src) => messages.find((x) => x.f.startsWith(`${src}-`));
+const plan = planFile ? readJson(planFile).map((p) => [p.name, bySrc(p.src), p.description, p]) : [
   ["main-new-turn", pickFirst((x) => !isSub(x) && !hasResult(x)), "main chat, first request of a user turn (last message: user text + system-reminders; trailing role:system message)"],
   ["subagent-new-turn", pickFirst((x) => isSub(x) && !hasResult(x)), "subagent, first request (delegation prompt as user text)"],
   ["subagent-continuation", pickFirst((x) => isSub(x) && hasResult(x)), "subagent, tool-loop continuation (last non-system message is a tool_result)"],
@@ -192,19 +220,19 @@ const plan = [
   ["main-continuation-tool-error", pickFirst((x) => !isSub(x) && hasErrResult(x)), "main chat, continuation whose tool_result has is_error=true (failed Bash)"],
 ];
 const summaryFacts = {};
-for (const [name, x, desc] of plan) {
+for (const [name, x, desc, spec] of plan) {
   if (!x) { console.warn(`[skip] ${label}: no request matches ${name}`); continue; }
   const before = facts(x.q.body);
   const red = redactRequest(x.q);
   const after = facts(red.body);
   if (JSON.stringify(before) !== JSON.stringify(after)) { console.error(`FAIL: markers changed by redaction in ${name}`, before, after); process.exit(1); }
-  write(`${label}.${name}.request.json`, red, desc, { facts: after, agent_scoped: isSub(x), response_status: x.res?.status ?? null });
+  write(`${label}.${name}.request.json`, red, desc, { facts: after, agent_scoped: isSub(x), response_status: x.res?.status ?? null, ...(spec ? { source: `${label}#${spec.src}`, expect: spec.expect } : {}) });
   summaryFacts[name] = after;
-  if (name === "subagent-new-turn" && x.res) write(`${label}.${name}.response.sse.txt`, truncateSse(x.res.body_head), "SSE response of a subagent request (LF-separated, identity-encoded because the capture proxy drops accept-encoding)", { status: x.res.status, response_headers: redactHeaders(x.res.headers) });
+  if ((spec ? spec.response : name === "subagent-new-turn") && x.res) write(`${label}.${name}.response.sse.txt`, truncateSse(x.res.body_head), "SSE response of a subagent request (LF-separated, identity-encoded because the capture proxy drops accept-encoding)", { status: x.res.status, response_headers: redactResponseHeaders(x.res.headers) });
 }
 // native model shape: a request whose model differs from the first one (used for capability table)
 const head = reqFiles.find((f) => f.includes("HEAD"));
-if (head) { const r = readJson(join(dumpDir, head)); const rr = readJson(join(dumpDir, head.replace(".req.", ".res."))); write(`${label}.head-probe.json`, { request: { method: r.method, url: r.url, headers: redactHeaders(r.headers) }, response_status: rr.status }, "startup probe Claude Code sends to the base URL"); }
+if (head) { const r = readJson(join(dumpDir, head)); const rr = readJson(join(dumpDir, head.replace(".req.", ".res."))); write(`${label}.head-probe.json`, { request: { method: r.method, url: r.url, headers: redactHeaders(r.headers) }, response_status: rr.status }, "startup probe Claude Code sends to the base URL", { expect: { passthrough: true } }); }
 const hookPath = join(dumpDir, "hooks.jsonl");
 if (existsSync(hookPath)) {
   const evs = readFileSync(hookPath, "utf8").split("\n").filter(Boolean).map((l) => scrubHookEvent(JSON.parse(l).body));
@@ -217,6 +245,10 @@ function scrubHookEvent(h) {
   if (h.prompt_id) o.prompt_id = alias("PROMPT", h.prompt_id);
   for (const k of ["transcript_path", "agent_transcript_path"]) if (h[k]) o[k] = scrubString(String(h[k]).replace(/\/projects\/[^/]+\//, "/projects/PROJECT/"));
   if (o.last_assistant_message) o.last_assistant_message = elide(o.last_assistant_message, 200);
+  if (typeof o.prompt === "string") o.prompt = elide(o.prompt, Math.min(200, userTextChars));
+  const cut = (v) => (typeof v === "string" ? (v.length > 200 ? v.slice(0, 200) + `[…${v.length - 200} chars elided…]` : v) : Array.isArray(v) ? v.map(cut) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cut(x)])) : v);
+  if (o.tool_input) o.tool_input = cut(o.tool_input);
+  if (o.tool_response) o.tool_response = cut(o.tool_response);
   if (o.tool_response && typeof o.tool_response === "object") for (const k of ["originalFile", "stdout", "stderr"]) if (typeof o.tool_response[k] === "string") o.tool_response[k] = elide(o.tool_response[k], 200);
   return o;
 }
@@ -224,20 +256,28 @@ function scrubHookEvent(h) {
 // ---- manifest + leak scan ----------------------------------------------------------------------
 const manifestPath = join(outDir, "manifest.json");
 const prior = existsSync(manifestPath) ? readJson(manifestPath) : { files: [] };
-const merged = [...prior.files.filter((f) => !written.some((w) => w.file === f.file)), ...written];
+// Earlier entries are re-filtered through the response-header whitelist, so older fixtures heal on the next run.
+const healed = prior.files.map((f) => (f.response_headers ? { ...f, response_headers: redactResponseHeaders(f.response_headers) } : f));
+const merged = [...healed.filter((f) => !written.some((w) => w.file === f.file)), ...written];
+const { entrypoint: _oldEntrypoint, ...priorRest } = prior;
 writeFileSync(manifestPath, JSON.stringify({
-  ...prior,
+  ...priorRest,
   claude_code_version: version,
-  captured_at: new Date().toISOString().slice(0, 10),
+  captured_at: prior.captured_at ?? new Date().toISOString().slice(0, 10),
   platform: process.platform,
-  entrypoint: [...new Set(Object.values(summaryFacts).map((f) => f.entrypoint))].join(",") || prior.entrypoint,
-  method: "scripts/spike/capture.mjs (dump-only passthrough proxy) + scripts/spike/redact-fixtures.mjs; claude -p (non-interactive)",
-  gaps: ["interactive TUI (cc_entrypoint=cli) not captured", "no fork / background / parallel-agent runs", "models seen: see request files", "single OS (macOS)"],
+  entrypoints: [...new Set([...merged.map((f) => f.facts?.entrypoint).filter(Boolean)])].sort(),
+  method: prior.method ?? "scripts/spike/capture.mjs (dump-only passthrough proxy) + scripts/spike/redact-fixtures.mjs",
+  gaps: prior.gaps ?? ["see docs/wire-format.md"],
   files: merged,
 }, null, 1) + "\n");
 
 const secrets = [home, user, ...extraSecrets, ...[...(maps.get("UUID") ?? new Map()).keys(), ...(maps.get("SESSION") ?? new Map()).keys(), ...(maps.get("AGENT") ?? new Map()).keys(), ...(maps.get("DEVICE") ?? new Map()).keys(), ...(maps.get("ACCOUNT") ?? new Map()).keys()]].filter((s) => s && s.length >= 4);
-const shapes = [/sk-ant-[A-Za-z0-9_-]{10,}/, /apikey_[A-Za-z0-9]{8,}/, /Bearer\s+[A-Za-z0-9._-]{16,}/i, /ghp_[A-Za-z0-9]{20,}/, /AKIA[0-9A-Z]{16}/, /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./];
+const shapes = [
+  /sk-ant-[A-Za-z0-9_-]{10,}/, /apikey_[A-Za-z0-9]{8,}/, /Bearer\s+[A-Za-z0-9._-]{16,}/i, /ghp_[A-Za-z0-9]{20,}/, /AKIA[0-9A-Z]{16}/, /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,
+  /wrkspc_[A-Za-z0-9]+/, /\borg_[A-Za-z0-9]{8,}/, /\buser_[A-Za-z0-9]{12,}/, // Anthropic workspace / organisation / user ids
+  /\b[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}\b/, /\b[0-9a-f]{32}\b/, // W3C trace context (traceparent/traceresponse) and bare trace ids
+  /\b[0-9a-f]{16}-[A-Z]{3}\b/, // cf-ray
+];
 let leaks = 0;
 for (const f of readdirSync(outDir)) {
   const text = readFileSync(join(outDir, f), "utf8");

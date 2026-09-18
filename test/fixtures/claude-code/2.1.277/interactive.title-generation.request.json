@@ -1,0 +1,82 @@
+{
+ "method": "POST",
+ "url": "/v1/messages?beta=true",
+ "headers": {
+  "accept": "application/json",
+  "authorization": "[omitted]",
+  "content-type": "application/json",
+  "user-agent": "claude-cli/2.1.277 (external, cli)",
+  "x-claude-code-session-id": "SESSION-1",
+  "x-stainless-arch": "arm64",
+  "x-stainless-lang": "js",
+  "x-stainless-os": "MacOS",
+  "x-stainless-package-version": "0.112.1",
+  "x-stainless-retry-count": "0",
+  "x-stainless-runtime": "node",
+  "x-stainless-runtime-version": "v26.3.0",
+  "x-stainless-timeout": "600",
+  "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,thinking-token-count-2026-05-13,context-management-2025-06-27,prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07,advisor-tool-2026-03-01,effort-2025-11-24,structured-outputs-2025-12-15",
+  "anthropic-dangerous-direct-browser-access": "true",
+  "anthropic-version": "2023-06-01",
+  "x-app": "cli",
+  "connection": "keep-alive",
+  "host": "127.0.0.1:52348",
+  "accept-encoding": "gzip, deflate, br, zstd",
+  "content-length": "4201"
+ },
+ "body": {
+  "model": "claude-sonnet-5",
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "<session>\n<pasted_content id=\"ec1f\">\nuse a subagent to summarise the files in this directory\n</pasted_content id=\"ec1f\">\n</session>\n\nWrite the title in the predominant language of the session — a stray word or code token in another language doesn't change it, and neither does the English of these instructions."
+     }
+    ]
+   }
+  ],
+  "system": [
+   {
+    "type": "text",
+    "text": "x-anthropic-billing-header: cc_version=2.1.277.175; cc_entrypoint=cli;"
+   },
+   {
+    "type": "text",
+    "text": "You are Claude Code, Anthropic's official CLI for Claude."
+   },
+   {
+    "type": "text",
+    "text": "You are naming a coding session so the user can pick it out of a long list of sessions. The title is a name for what the session is about, not a sentence describing the task: a short noun phrase of two to five words, in sentence case (capitalize only the first word, plus proper nouns, acronyms, and code identifiers exactly as written). When a draft runs past five words, drop the least identifying ones — articles, prepositions, generic nouns, a secondary detail — never a proper noun, product name, or identifier.\n[…elided 10 lines / 2543 chars…]"
+   }
+  ],
+  "tools": [],
+  "metadata": {
+   "user_id": "{\"device_id\":\"DEVICE-1\",\"account_uuid\":\"ACCOUNT-1\",\"session_id\":\"SESSION-1\"}"
+  },
+  "max_tokens": 64000,
+  "thinking": {
+   "type": "disabled"
+  },
+  "output_config": {
+   "effort": "high",
+   "format": {
+    "type": "json_schema",
+    "schema": {
+     "type": "object",
+     "properties": {
+      "title": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "title"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  "stream": true
+ }
+}

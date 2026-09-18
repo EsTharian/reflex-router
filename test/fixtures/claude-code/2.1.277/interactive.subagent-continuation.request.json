@@ -1,0 +1,450 @@
+{
+ "method": "POST",
+ "url": "/v1/messages?beta=true",
+ "headers": {
+  "accept": "application/json",
+  "authorization": "[omitted]",
+  "content-type": "application/json",
+  "user-agent": "claude-cli/2.1.277 (external, cli)",
+  "x-claude-code-session-id": "SESSION-1",
+  "x-stainless-arch": "arm64",
+  "x-stainless-lang": "js",
+  "x-stainless-os": "MacOS",
+  "x-stainless-package-version": "0.112.1",
+  "x-stainless-retry-count": "0",
+  "x-stainless-runtime": "node",
+  "x-stainless-runtime-version": "v26.3.0",
+  "x-stainless-timeout": "600",
+  "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,thinking-token-count-2026-05-13,context-management-2025-06-27,prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07,advisor-tool-2026-03-01,effort-2025-11-24,afk-mode-2026-01-31",
+  "anthropic-dangerous-direct-browser-access": "true",
+  "anthropic-version": "2023-06-01",
+  "x-app": "cli",
+  "x-claude-code-agent-id": "AGENT-1",
+  "connection": "keep-alive",
+  "host": "127.0.0.1:52348",
+  "accept-encoding": "gzip, deflate, br, zstd",
+  "content-length": "72012"
+ },
+ "body": {
+  "model": "claude-sonnet-5",
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# userEmail\nThe user's email address is REDACTED. Use it only to identify the user, such as for authorship, attribution, or filtering their own work. Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.\n[…elided 3 lines / 168 chars…]"
+     },
+     {
+      "type": "text",
+      "text": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n[…elided 6 lines / 210 chars…]"
+     },
+     {
+      "type": "text",
+      "text": "Summarize the files in the top-level directory of the repository at /Users/USER/Documents/Github/reflex-router.\n\nList the top-level files and directories (not deep recursion into node_modules/dist/.git), and for each give a one-line description of its purpose based on its name, content, and role per the project's CLAUDE.md. Group them logically (e.g. source code dirs, test dirs, config files, docs). Keep the final summary concise but complete enough that someone unfamiliar with the repo could orient themselves quickly.\n[…elided 1 lines / 1 chars…]"
+     },
+     {
+      "type": "text",
+      "text": "<system-reminder>\nYour final report is delivered through SubagentHandback: when your work is complete, call SubagentHandback({message: <your full report>}) and then stop. Only a SubagentHandback call reaches your caller as your result; plain text you write at the end is not delivered.\n[…elided 1 lines / 19 chars…]"
+     }
+    ]
+   },
+   {
+    "role": "system",
+    "content": "<system-reminder>\n# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /Users/USER/Documents/Github/reflex-router\n[…elided 47 lines / 8882 chars…]"
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "TOOLU-2",
+      "name": "Bash",
+      "input": {
+       "command": "cd /Users/USER/Documents/Github/reflex-router && ls -la"
+      },
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "TOOLU-2",
+      "type": "tool_result",
+      "content": "total 224\ndrwxr-xr-x  23 USER  staff    736 Sep 19 01:04 .\ndrwxr-xr-x   5 USER  staff    160 Sep 18 23:58 ..\ndrwxr-xr-x  13 USER  staff    416 Sep 19 01:07 .git\ndrwxr-xr-x@  3 USER  staff     96 Sep 19 00:46 .github\n-rw-r--r--   1 USER  staff    126 Sep 19 00:37 .gitignore\n-rw-r--r--@  1 USER  staff   4196 Sep 19 01:04 CLAUDE.md\n[…elided 17 lines / 1027 chars…]",
+      "is_error": false
+     }
+    ]
+   },
+   {
+    "role": "system",
+    "content": [
+     {
+      "type": "text",
+      "text": "<system-reminder>\n# MCP Server Instructions\n\nThe following MCP servers have provided instructions for how to use their tools and resources:\n[…elided 4 lines / 1914 chars…]",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     }
+    ]
+   }
+  ],
+  "system": [
+   {
+    "type": "text",
+    "text": "x-anthropic-billing-header: cc_version=2.1.277.e1f; cc_entrypoint=cli; cc_is_subagent=true;"
+   },
+   {
+    "type": "text",
+    "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   },
+   {
+    "type": "text",
+    "text": "You are a file search specialist for Claude Code, Anthropic's official CLI for Claude. You excel at thoroughly navigating and exploring codebases.\n\n=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===\n[…elided 39 lines / 3008 chars…]",
+    "cache_control": {
+     "type": "ephemeral"
+    }
+   }
+  ],
+  "tools": [
+   {
+    "name": "Bash",
+    "description": "Executes a bash command and returns its output.\n\n- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.\n[…elided 10 lines / 1033 chars…]",
+    "input_schema": {
+     "$schema": "https://json-schema.org/draft/2020-12/schema",
+     "type": "object",
+     "properties": {
+      "command": {
+       "description": "The command to execute",
+       "type": "string"
+      },
+      "timeout": {
+       "description": "Optional timeout in milliseconds (max 600000)",
+       "type": "number"
+      },
+      "description": {
+       "description": "Clear, concise description of what this command does in active voice. Never use words like \"complex\" or \"risk\" in the description - just describe what it does.\n[…elided 12 lines / 767 chars…]",
+       "type": "string"
+      },
+      "run_in_background": {
+       "description": "Set to true to run this command in the background.",
+       "type": "boolean"
+      },
+      "dangerouslyDisableSandbox": {
+       "description": "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "command"
+     ],
+     "additionalProperties": false
+    }
+   },
+   {
+    "name": "EnterWorktree",
+    "description": "Use this tool ONLY when explicitly instructed to work in a worktree — either by the user directly, or by project instructions (CLAUDE.md / memory). This tool creates an isolated git worktree and switches the current session into it.\n[…elided 35 lines / 2988 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "ExitWorktree",
+    "description": "Exit a worktree session created by EnterWorktree and return the session to the original working directory.\n[…elided 29 lines / 1817 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "Monitor",
+    "description": "Start a background monitor that streams events from a long-running script. Each stdout line is an event — you keep working and notifications arrive in the chat. Events arrive on their own schedule and are not replies from the user, even if one lands while you're waiting for the user to answer a question.\n[…elided 70 lines / 6049 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "Read",
+    "description": "Reads a file from the local filesystem.\n\n- `file_path` must be an absolute path.\n[…elided 6 lines / 710 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "SendMessage",
+    "description": "# SendMessage\n\nSend a message to another agent.\n\n```json\n{\"to\": \"researcher\", \"summary\": \"assign task 1\", \"message\": \"start on task #1\"}\n[…elided 27 lines / 4123 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "Skill",
+    "description": "Invoke a skill.\n\nA skill is a packaged set of instructions the user or project has set up for a particular kind of task (deploy steps, a review checklist, a repo-specific workflow). Available skills appear in a system-reminder listing with one-line descriptions. When the task at hand is one a listed skill covers, call this tool first — the skill's instructions load into the turn for you to follow in place of your default approach; some skills instead run in a subagent and return the finished result. A skill that runs in the background returns only the agent's name — its result arrives later as a task notification, so don't wait on it or invoke it again in the meantime. Users may also ask for one by name (`/<name>`, or \"slash command\"); that's a request to invoke it.\n[…elided 6 lines / 641 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "TaskStop",
+    "description": "\n- Stops a running background task by its ID\n- Takes a task_id parameter identifying the task to stop\n[…elided 5 lines / 277 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "WebFetch",
+    "description": "Fetches a URL, converts the page to markdown, and answers `prompt` against it using a small fast model.\n[…elided 5 lines / 366 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "WebSearch",
+    "description": "Search the web. Returns result blocks with titles and URLs. US-only.\n[…elided 4 lines / 244 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Atlassian_Rovo__authenticate",
+    "description": "The \"claude.ai Atlassian Rovo\" MCP server (claudeai-proxy at https://mcp.atlassian.com) is installed but requires authentication. Call this tool to start the OAuth flow — you'll receive an authorization URL to share with the user. Once the user completes authorization in their browser, the server's real tools will become available automatically.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Atlassian_Rovo__complete_authentication",
+    "description": "Complete an in-progress OAuth flow for the \"claude.ai Atlassian Rovo\" MCP server by submitting the callback URL. Call `mcp__claude_ai_Atlassian_Rovo__authenticate` first to start the flow and get the authorization URL. After the user authorizes in their browser, the browser is redirected to a `http://localhost:<port>/callback?code=...&state=...` URL — on remote sessions that page fails to load, but the URL in the address bar is still valid. Pass that full URL here as `callback_url`.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Claude_Docs__batch",
+    "description": "Create a doc, or apply several operations to one doc atomically.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Claude_Docs__create",
+    "description": "Create one object in a doc: a tab, its contents, a comment, an upload record.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Claude_Docs__delete",
+    "description": "Delete one object from a doc: a tab, its contents, a comment, an upload record. A doc keeps at least one tab (deleting its last refuses `last_tab`): to start over, rewrite that tab's contents with `update`, never delete and recreate the tab.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Claude_Docs__export",
+    "description": "Export one tab inline as base64: pdf, docx, html, text, markdown or notion (Notion-flavored markdown, what notion-create-pages takes). To just keep the file in the doc's files, create a blob {from: {object: \"file\", id}, format} instead (no large result).",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Claude_Docs__guide",
+    "description": "Docs guides: topic.instructions = how to create and edit docs. Also topic.<name>, refusal.<code>. No docs skill or instructions loaded → [\"topic.instructions\"] first; after a doc's birth → [\"topic.index\"].",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Claude_Docs__query",
+    "description": "List a tab's or a doc's comment history (threads, replies, resolves).",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Claude_Docs__read",
+    "description": "Read a doc (lists its tabs), a tab's contents, or a comment. A claude.ai/[code/]artifact/[<title>-]<id> link → `ref {\"object\":\"project\",\"id\":\"<id>\"}` first; reads inside it take `container {\"kind\":\"project\",\"id\":\"<id>\"}`.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Claude_Docs__update",
+    "description": "Edit a tab's contents, rename a doc or tab, or change a stored value.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__copy_file",
+    "description": "Call this tool to copy an existing File in Google Drive.\nThe tool allows specifying a new title and a parent folder for the copy.\n[…elided 3 lines / 386 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__create_file",
+    "description": "Call this tool to create or upload a File to Google Drive.\n\n[…elided 18 lines / 836 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__download_file_content",
+    "description": "Call this tool to download the content of a Drive file as a base64 encoded string.\n[…elided 7 lines / 490 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__get_file_metadata",
+    "description": "Call this tool to find general metadata about a user's Drive file.\n[…elided 5 lines / 282 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__get_file_permissions",
+    "description": "Call this tool to list the permissions of a Drive File.\n",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__list_recent_files",
+    "description": "Call this tool to find recent files for a user specified a sort order. Default sort order is `recency` if orderBy is not set or set to an unsupported value.\n[…elided 11 lines / 502 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__read_file_content",
+    "description": "Call this tool to fetch a natural language representation of a known Drive file, and if specified, its comments.\n[…elided 27 lines / 1561 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__search_files",
+    "description": "Search for Drive files using a structured query (syntax: `query_term operator values`). Only terms in this list are supported.\n[…elided 29 lines / 1675 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__share_file",
+    "description": "Call this tool to share a Google Drive file with a user or group.\n[…elided 3 lines / 190 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__trash_file",
+    "description": "Moves a Google Drive file to the user's trash.\nIt does not permanently delete the file.Returns an empty response upon successful completion.\n[…elided 1 lines / 1 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Google_Drive__update_file",
+    "description": "Call this tool to update the metadata of a Google Drive file.\n[…elided 4 lines / 197 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Slack__authenticate",
+    "description": "The \"claude.ai Slack\" MCP server (claudeai-proxy at https://mcp.slack.com) is installed but requires authentication. Call this tool to start the OAuth flow — you'll receive an authorization URL to share with the user. Once the user completes authorization in their browser, the server's real tools will become available automatically.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "mcp__claude_ai_Slack__complete_authentication",
+    "description": "Complete an in-progress OAuth flow for the \"claude.ai Slack\" MCP server by submitting the callback URL. Call `mcp__claude_ai_Slack__authenticate` first to start the flow and get the authorization URL. After the user authorizes in their browser, the browser is redirected to a `http://localhost:<port>/callback?code=...&state=...` URL — on remote sessions that page fails to load, but the URL in the address bar is still valid. Pass that full URL here as `callback_url`.",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   },
+   {
+    "name": "SubagentHandback",
+    "description": "Deliver your final report to the agent that spawned you (your caller). Use it once, for that hand-off only: when your work is complete, call SubagentHandback({message: <your full report>}) as your last tool call and then stop. It is not a messaging channel: do not use it for progress updates or questions.\n[…elided 2 lines / 206 chars…]",
+    "input_schema": {
+     "_elided": true,
+     "type": "object",
+     "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+   }
+  ],
+  "metadata": {
+   "user_id": "{\"device_id\":\"DEVICE-1\",\"account_uuid\":\"ACCOUNT-1\",\"session_id\":\"SESSION-1\"}"
+  },
+  "max_tokens": 64000,
+  "thinking": {
+   "type": "adaptive"
+  },
+  "context_management": {
+   "edits": [
+    {
+     "type": "clear_thinking_20251015",
+     "keep": "all"
+    }
+   ]
+  },
+  "output_config": {
+   "effort": "medium"
+  },
+  "stream": true
+ }
+}
