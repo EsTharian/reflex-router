@@ -1,0 +1,153 @@
+{
+ "claude_code_version": "2.1.277",
+ "captured_at": "2026-09-18",
+ "platform": "darwin",
+ "entrypoint": "sdk-cli",
+ "method": "scripts/spike/capture.mjs (dump-only passthrough proxy) + scripts/spike/redact-fixtures.mjs; claude -p (non-interactive)",
+ "gaps": [
+  "interactive TUI (cc_entrypoint=cli) not captured",
+  "no fork / background / parallel-agent runs",
+  "models seen: see request files",
+  "single OS (macOS)"
+ ],
+ "files": [
+  {
+   "file": "sonnet-agent-run.main-new-turn.request.json",
+   "description": "main chat, first request of a user turn (last message: user text + system-reminders; trailing role:system message)",
+   "facts": {
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.277.40c",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false
+  },
+  {
+   "file": "sonnet-agent-run.subagent-new-turn.request.json",
+   "description": "subagent, first request (delegation prompt as user text)",
+   "facts": {
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "cc_version": "2.1.277.5f0",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": true
+  },
+  {
+   "file": "sonnet-agent-run.subagent-new-turn.response.sse.txt",
+   "description": "SSE response of a subagent request (LF-separated, identity-encoded because the capture proxy drops accept-encoding)",
+   "status": 200,
+   "response_headers": {
+    "date": "Fri, 18 Sep 2026 21:25:50 GMT",
+    "content-type": "text/event-stream; charset=utf-8",
+    "transfer-encoding": "chunked",
+    "connection": "keep-alive",
+    "cache-control": "no-cache",
+    "anthropic-ratelimit-unified-5h-status": "[redacted]",
+    "anthropic-ratelimit-unified-representative-claim": "[redacted]",
+    "anthropic-ratelimit-unified-overage-status": "[redacted]",
+    "anthropic-ratelimit-unified-reset": "[redacted]",
+    "anthropic-ratelimit-unified-5h-utilization": "[redacted]",
+    "anthropic-ratelimit-unified-7d-reset": "[redacted]",
+    "anthropic-ratelimit-unified-5h-reset": "[redacted]",
+    "anthropic-ratelimit-unified-7d-status": "[redacted]",
+    "anthropic-ratelimit-unified-fallback-percentage": "[redacted]",
+    "anthropic-ratelimit-unified-overage-disabled-reason": "[redacted]",
+    "anthropic-ratelimit-unified-7d-utilization": "[redacted]",
+    "anthropic-ratelimit-unified-status": "[redacted]",
+    "server": "cloudflare",
+    "request-id": "[redacted]",
+    "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+    "anthropic-organization-id": "[redacted]",
+    "anthropic-workspace-id": "[redacted]",
+    "traceresponse": "[redacted]",
+    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+    "vary": "Accept-Encoding",
+    "server-timing": "x-originResponse;dur=2501",
+    "cf-cache-status": "DYNAMIC",
+    "x-robots-tag": "none",
+    "cf-ray": "[redacted]"
+   }
+  },
+  {
+   "file": "sonnet-agent-run.subagent-continuation.request.json",
+   "description": "subagent, tool-loop continuation (last non-system message is a tool_result)",
+   "facts": {
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "cc_version": "2.1.277.5f0",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": true
+  },
+  {
+   "file": "sonnet-agent-run.main-continuation.request.json",
+   "description": "main chat, tool-loop continuation",
+   "facts": {
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.277.40c",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false
+  },
+  {
+   "file": "sonnet-agent-run.main-continuation-tool-error.request.json",
+   "description": "main chat, continuation whose tool_result has is_error=true (failed Bash)",
+   "facts": {
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.277.40c",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false
+  },
+  {
+   "file": "sonnet-agent-run.head-probe.json",
+   "description": "startup probe Claude Code sends to the base URL"
+  },
+  {
+   "file": "sonnet-agent-run.hooks.jsonl",
+   "description": "hook payloads delivered by http hooks injected with --settings (one JSON per line, in arrival order)",
+   "events": [
+    "UserPromptSubmit",
+    "PreToolUse:Agent",
+    "SubagentStart(sub)",
+    "PreToolUse:Glob(sub)",
+    "PostToolUse:Glob(sub)",
+    "SubagentStop(sub)",
+    "PostToolUse:Agent",
+    "PreToolUse:Bash",
+    "PostToolUseFailure:Bash",
+    "PreToolUse:Read",
+    "PostToolUse:Read",
+    "PreToolUse:Edit",
+    "PostToolUse:Edit",
+    "PreToolUse:Bash",
+    "PostToolUse:Bash",
+    "Stop"
+   ]
+  },
+  {
+   "file": "haiku-mcp-draft4.main-new-turn.request.json",
+   "description": "main chat, first request of a user turn (last message: user text + system-reminders; trailing role:system message)",
+   "facts": {
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.277.72c",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false
+  },
+  {
+   "file": "haiku-mcp-draft4.head-probe.json",
+   "description": "startup probe Claude Code sends to the base URL"
+  }
+ ]
+}
