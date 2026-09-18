@@ -61,8 +61,8 @@ describe("overrides", () => {
 });
 
 describe("verified retargets", () => {
-  it("only Sonnet -> Haiku has been verified against the API", () => {
-    assert.equal(isVerifiedRetarget("sonnet", "haiku"), true);
-    for (const [f, t] of [["opus", "sonnet"], ["opus", "haiku"], ["haiku", "sonnet"], ["sonnet", "opus"]] as const) assert.equal(isVerifiedRetarget(f, t), false);
+  it("only the downgrades verified against the API are applied: Sonnet -> Haiku, Opus -> Sonnet, Opus -> Haiku", () => {
+    for (const [f, t] of [["sonnet", "haiku"], ["opus", "sonnet"], ["opus", "haiku"]] as const) assert.equal(isVerifiedRetarget(f, t), true);
+    for (const [f, t] of [["haiku", "sonnet"], ["sonnet", "opus"], ["fable", "opus"], ["fable", "haiku"]] as const) assert.equal(isVerifiedRetarget(f, t), false);
   });
 });

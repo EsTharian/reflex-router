@@ -21,7 +21,7 @@ const MIN_THINKING_BUDGET = 1024;
  * test/fixtures/claude-code/2.1.277/experiment.*). Route mode only rewrites these; anything else is logged as
  * `rewrite_unverified` and forwarded unchanged.
  */
-const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku"]);
+const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>sonnet", "opus>haiku"]);
 export const isVerifiedRetarget = (from: Tier, to: Tier): boolean => VERIFIED_RETARGETS.has(`${from}>${to}`);
 
 export interface RewriteOptions {

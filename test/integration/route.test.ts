@@ -138,6 +138,31 @@ describe("route mode", () => {
     });
   });
 
+  describe("Opus sessions (verified: Opus -> Sonnet, Opus -> Haiku)", () => {
+    const opus = (b: Json): void => {
+      b["model"] = "claude-opus-5";
+    };
+    it("a subagent Jev judges sonnet-level goes to Sonnet with only the model swapped; its continuation follows", async () => {
+      jev.set({ kind: "answer", tier: "sonnet", confidence: 0.9, reasoning: 2 });
+      const n = stack.upstream.seen.length;
+      const { rec } = await replay(stack, inSession(fx("subagent-new-turn"), "s-opus1", opus));
+      assert.deepEqual(rec.forwarded, { requested_model: "claude-opus-5", model: "claude-sonnet-5", rewritten: true, fields: ["model"], fallback: false, fallback_status: null });
+      const orig = JSON.parse(inSession(fx("subagent-new-turn"), "s-opus1", opus).body.toString()) as Json;
+      assert.deepEqual({ ...sentBody(stack, n), model: "claude-opus-5" }, orig, "nothing but the model changed");
+      const c = await replay(stack, inSession(fx("subagent-continuation"), "s-opus1", opus));
+      assert.equal(c.rec.pin, "hit");
+      assert.equal(sentBody(stack, n + 1)["model"], "claude-sonnet-5");
+    });
+
+    it("a subagent Jev judges haiku-level goes to Haiku with the full rewrite", async () => {
+      const n = stack.upstream.seen.length;
+      const { rec } = await replay(stack, inSession(fx("subagent-new-turn"), "s-opus2", opus));
+      assert.equal(rec.forwarded.model, HAIKU);
+      assert.deepEqual(rec.forwarded.fields, ["model", "output_config.effort", "thinking", "messages.system_folded:1"]);
+      assert.equal((sentBody(stack, n)["thinking"] as Json)["type"], "enabled");
+    });
+  });
+
   describe("manual overrides", () => {
     it("`!haiku` on the main chat bypasses Jev; a subagent spawned in that turn records it at its first request", async () => {
       const calls = jev.calls.length;

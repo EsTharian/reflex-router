@@ -599,6 +599,11 @@
    "file": "experiment.route-sonnet-to-haiku.results.json",
    "kind": "experiment",
    "description": "One real claude -p session (Sonnet 5, sdk-cli, tools Bash+Agent) routed like route mode by src/wire/rewrite.ts, with probes at each shape. Statuses, API errors, shape facts, rewritten fields, usage and estimated cost only; no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-opus-to-sonnet-haiku.results.json",
+   "kind": "experiment",
+   "description": "One real claude -p session (Opus 5, sdk-cli, tools Bash+Agent, two subagents) routed like route mode by src/wire/rewrite.ts: subagent #1 and the main chat to Haiku, subagent #2 to Sonnet, with probes to both targets at each shape. Statuses, API errors, shape facts (incl. effort and beta names), rewritten fields, usage and estimated cost only; no prompts, no headers."
   }
  ],
  "findings": {
@@ -661,6 +666,33 @@
     "the context-1m beta",
     "an interactive (cli) session end to end; the cli shapes were emulated on an sdk-cli request",
     "long histories near the context limit"
+   ]
+  },
+  "route_opus_to_sonnet_and_haiku": {
+   "status": "verified_in_scope",
+   "date": "2026-09-19",
+   "est_cost_usd": 0.166,
+   "accepted": {
+    "opus->haiku and opus->sonnet: subagent first request": "200 (x3 subagents)",
+    "opus->haiku: subagent pinned continuation (system mid-list + trailing folded)": "200",
+    "opus->sonnet: subagent pinned continuation": "200",
+    "opus->haiku and opus->sonnet: main continuation with a signed Opus thinking block in history (kept / dropped / no display / +redact-thinking beta)": "200 (8 probes)",
+    "opus->haiku: later pinned main continuations (Haiku turns in history)": "200 (x3)",
+    "un-pin: original bytes to Opus with Opus + Haiku thinking in history": "200",
+    "opus->sonnet on a history made by Opus and Haiku (pin changed mid-loop)": "200"
+   },
+   "observed": {
+    "opus request effort": "medium",
+    "opus request thinking": "adaptive, display omitted",
+    "opus->sonnet rewritten fields": "model only",
+    "opus main request betas": "no extended-cache-ttl in this -p run; adds mid-conversation-tool-changes-2026-07-01, fallback-credit-2026-06-01"
+   },
+   "not_tested": [
+    "effort values other than medium (high/xhigh/max) on Opus->Sonnet",
+    "an interactive (cli) Opus session end to end",
+    "context-1m",
+    "Fable",
+    "upgrades"
    ]
   }
  },

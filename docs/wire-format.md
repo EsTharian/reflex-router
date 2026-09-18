@@ -122,7 +122,24 @@ The minimal working rewrite is therefore three field edits plus the model swap; 
 | later main continuation, pinned (Haiku turns in history) | 200 |
 | **un-pin**: the original bytes to Sonnet, with Sonnet- and Haiku-made thinking blocks in the history | 200 |
 
-So route mode keeps history thinking blocks (fewer edits), and both the retry-with-original safety net and releasing a pin send requests the API accepts. "Accepted" means HTTP 200 and a normal stream; it does not show whether a model uses or ignores thinking blocks signed by another model. **Not tested:** Opus or Fable as source or target, Haiku → Sonnet/Opus (upgrades), `context-1m`, an interactive session end to end (the `cli` shapes were emulated on an `sdk-cli` request), histories near the context limit. Route mode therefore only rewrites Sonnet → Haiku; other pairs are logged as `rewrite_unverified` and forwarded unchanged.
+So route mode keeps history thinking blocks (fewer edits), and both the retry-with-original safety net and releasing a pin send requests the API accepts. "Accepted" means HTTP 200 and a normal stream; it does not show whether a model uses or ignores thinking blocks signed by another model. **Not tested:** Opus or Fable as source or target, Haiku → Sonnet/Opus (upgrades), `context-1m`, an interactive session end to end (the `cli` shapes were emulated on an `sdk-cli` request), histories near the context limit. (Opus was covered next, §5.3.)
+
+### 5.3 Routing a whole session from Opus 5 (experiment, M3)
+
+The same script with `--from opus` ran one real Opus 5 session with two subagents: subagent #1 and the main chat were routed to Haiku, subagent #2 to Sonnet, and each shape was probed against both targets. Results: `test/fixtures/claude-code/2.1.277/experiment.route-opus-to-sonnet-haiku.results.json`. Estimated cost $0.17. The Opus request sent `effort: "medium"` and adaptive thinking with `display: "omitted"`.
+
+| Case | Opus → Haiku | Opus → Sonnet |
+| --- | --- | --- |
+| subagent's first request | 200 (×3) | 200 (×3) |
+| subagent continuation, pinned | 200 (system messages mid-list + trailing folded) | 200 |
+| main continuation with a **signed Opus thinking block** in the history (kept / dropped / no `display` / + redact-thinking beta) | 200 ×4 | 200 ×4 |
+| later main continuations, pinned (target-made turns in history) | 200 ×3 | — |
+| history made by Opus and Haiku, sent to Sonnet (pin changed mid-loop) | — | 200 |
+| **un-pin**: original bytes back to Opus with Opus- and Haiku-made thinking | 200 | |
+
+Opus → Sonnet needs only the model swap (both families take adaptive thinking, `effort` and system messages); Opus → Haiku needs the same three edits as Sonnet → Haiku. **Not tested:** Opus → Sonnet with `effort` other than `medium` (`high`, `xhigh`, `max`), an interactive Opus session end to end, `context-1m`, Fable, upgrades. The Opus main request in this `-p` run had no `extended-cache-ttl` beta; the cost guard reads the TTL from each request.
+
+Route mode applies exactly the verified pairs: **Sonnet → Haiku, Opus → Sonnet, Opus → Haiku**. Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 
