@@ -4,3 +4,6 @@ dist/
 .env
 *.log
 _dumps/
+
+# Phase plans are local working documents, never committed
+docs/plan-*.md
