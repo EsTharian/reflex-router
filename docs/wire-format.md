@@ -1,6 +1,6 @@
 # Claude Code wire format — observed facts
 
-Everything here was **observed**, not inferred from documentation or prior art. Source: Milestone 0 capture of Claude Code **2.1.277**, macOS, non-interactive (`claude -p`, `cc_entrypoint=sdk-cli`), through `scripts/spike/capture.mjs` (a dump-only passthrough proxy). Redacted fixtures: `test/fixtures/claude-code/2.1.277/` (see its `manifest.json`). Raw dumps are gitignored under `_dumps/`.
+Everything here was **observed**, not inferred from documentation or prior art. Source: captures of Claude Code **2.1.277** on macOS, non-interactive (`claude -p`, `cc_entrypoint=sdk-cli`) and interactive (TUI, `cc_entrypoint=cli`), through `scripts/spike/capture.mjs` (a dump-only passthrough proxy). Redacted fixtures: `test/fixtures/claude-code/2.1.277/` (see its `manifest.json`). Raw dumps are gitignored under `_dumps/`.
 
 This format is **not a public contract**. When Claude Code updates, re-run the capture (`docs/wire-format.md` §8) and diff.
 
@@ -11,8 +11,9 @@ This format is **not a public contract**. When Claude Code updates, re-run the c
 | 1 | `--model sonnet`; main chat spawns one `general-purpose` subagent (Glob), then a failing Bash (`exit 1`), an Edit, a passing Bash; `--settings` with http hooks; a project-level command hook in `.claude/settings.json` | 9 | $0.32 |
 | 2 | `--model haiku`; two `--settings` flags (ours + a user command hook) | 2 | $0.09 |
 | 3 | `--model haiku`; local stdio MCP server declaring a JSON Schema **draft-04** tool | 2 | $0.07 |
+| interactive | TUI session (`cc_entrypoint=cli`, Sonnet 5): a prompt that spawns a **background** Explore subagent, further prompts, `/compact`, a message from another session, a system notification | 30 + HEAD | not recorded |
 
-Not captured (gaps, also listed in the manifest): interactive TUI (`cc_entrypoint=cli`), forks, background/parallel agents, custom `.claude/agents/*.md` subagents, an `Agent` call with an explicit `model`, `/resume`, `/compact`, Linux/Windows. To capture an interactive session yourself: `node scripts/spike/capture.mjs` (starts `claude` with the proxy and hooks), use it, then `node scripts/spike/redact-fixtures.mjs _dumps/<dir> --label <name>`.
+Not captured (gaps, also listed in the manifest): forks, several concurrent subagents, custom `.claude/agents/*.md` subagents, an `Agent` call with an explicit `model`, `/resume`, Linux/Windows. To capture an interactive session yourself: `node scripts/spike/capture.mjs` (starts `claude` with the proxy and hooks), use it, then `node scripts/spike/redact-fixtures.mjs _dumps/<dir> --label <name>`.
 
 ## 2. Requests
 
@@ -20,7 +21,8 @@ Not captured (gaps, also listed in the manifest): interactive TUI (`cc_entrypoin
 - Body keys: `model, messages, system, tools, metadata, max_tokens, thinking, context_management, output_config, stream`.
 - `metadata.user_id` is a **JSON string** `{"device_id":…,"account_uuid":…,"session_id":…}`. The device and account ids are personal identifiers → never log or send them.
 - `system` is an array of 3 text blocks. Block 0 is the billing line: `x-anthropic-billing-header: cc_version=2.1.277.<3hex>; cc_entrypoint=sdk-cli;` (+ ` cc_is_subagent=true;` for subagents). The 3-hex suffix of `cc_version` differs between main and subagent requests of the same session. Block 1: `You are a Claude agent, built on Anthropic's Claude Agent SDK.`
-- `messages`: the first user message holds two `<system-reminder>` text blocks followed by the real prompt text. **Every observed Sonnet request ends with a `role:"system"` message** (mid-conversation-system beta), and more accumulate as the tool loop grows (1, 1, 2, 2, 3, 4, 5, 6 over the run-1 requests). The native Haiku request had none (§5). Any "last message" logic must skip `role:"system"` messages.
+- `messages`: the first user message holds `<system-reminder>` text blocks followed by the real prompt text. Sonnet requests carry `role:"system"` messages (mid-conversation-system beta), but **where** differs by entrypoint: with `sdk-cli` one trails the list and more accumulate as the tool loop grows (1, 1, 2, 2, 3, 4, 5, 6 over the run-1 requests); with `cli` they sit **mid-list** (index 1 in the main chat, 1 and 4 in the subagent, 3 after `/compact`) and do not accumulate. The native Haiku request had none (§5). Any "last message" logic must skip `role:"system"` messages wherever they are, and a rewrite that folds them must handle mid-list positions.
+- Interactive-only differences: `thinking: {"type":"adaptive"}` **without** `display`; an extra `redact-thinking-2026-02-12` beta; 55 tools on the main chat and 34 on the Explore subagent (vs 45/43 with `sdk-cli`); the client sends `accept-encoding: gzip, deflate, br, zstd`.
 - `thinking: {"type":"adaptive","display":"omitted"}`, `output_config: {"effort":"medium"}`, `max_tokens: 64000`, `context_management: {"edits":[{"type":"clear_thinking_20251015","keep":"all"}]}` on Sonnet 5.
 - 3–4 `cache_control` markers per request.
 - Tools: 43–45 per request; the set differs between main (45) and subagent (43: no `ScheduleWakeup`, `Workflow`).
@@ -36,18 +38,42 @@ Beyond standard ones: **`x-claude-code-session-id`** (on every request; equals `
 | --- | --- | --- |
 | `x-claude-code-agent-id` header | absent | present, == hook `agent_id` |
 | `cc_is_subagent=true` in billing line | absent | present |
-| `You are an agent for Claude Code` in system | absent | present |
+| `You are an agent for Claude Code` in system | absent | present on the `general-purpose` agent (sdk-cli); **absent** on the interactive Explore agent. Optional: never required, logged when seen |
 | `x-anthropic-billing-header:` in system | present | present |
 | subagent's first user text | — | **exactly equals** the parent's `Agent` tool `tool_input.prompt` |
 | model | requested model | inherited (`Agent` input had no `model`; got `claude-sonnet-5`) |
 
-All three subagent signals co-occurred on both subagent requests; none appeared on any of the 7 main-chat requests. The previously documented markers (from jcm-router) **still exist on 2.1.277**, and there is a new, simpler header signal.
+The header and `cc_is_subagent=true` co-occurred on every subagent request (both entrypoints) and on no main-chat request. The agent-prompt marker is agent-type specific. A **background** subagent's requests interleave with main-chat requests, and its `SubagentStop` hook can arrive during a later user turn.
 
 **Detection priority (our rule).** The header `x-claude-code-agent-id` is the **primary** signal (cheapest, no body parsing, and the exact join key to hooks). The two system-prompt markers are the **fallback** for when the header is absent. Every decision logs which signal fired (`signal: "header" | "marker:cc_is_subagent" | "marker:agent_prompt" | "none"`) and the raw presence of all three (`signals: {header, s1, s2}`), so a signal that starts disappearing shows up in the data before it causes damage. Header and markers disagreeing is itself a shape violation (§10).
 
 ## 4. Turns
 
-Observed on every request: `last non-system message` is either `user` with text blocks (`new`), or `user` with `tool_result` blocks (`continuation`). Failed Bash arrives as `tool_result` with **`is_error: true`, content `"Exit code 1"`** — a wire-level corroboration of the hook signal.
+Only **positively identified** work is ever decided on. `src/wire/claude-code.ts` classifies the last non-system message:
+
+| Turn | Rule |
+| --- | --- |
+| `new` | `user` role, content is an **array** of text blocks whose text, after dropping reminder blocks and `<local-command-…>`/`<command-…>` wrappers, is non-empty, and no side marker (below). A subagent is `new` only on its first request |
+| `continuation` | `user` role with `tool_result` blocks and nothing else except reminder blocks. Failed Bash arrives as `tool_result` with **`is_error: true`, content `"Exit code 1"`** |
+| `side` | everything else, tagged with a `side_kind` |
+
+Every user-typed prompt observed (both entrypoints) and every subagent start arrived as an array of blocks; every plain-string content was a harness side call.
+
+### 4.1 Harness side calls (interactive)
+
+These carry the full tool list and the same `messages[0]` as the real conversation, so they look like turns and share its conversation key. They are matched **only against the last message**, because the injected text stays in the history.
+
+| `side_kind` | Last message | Fixture |
+| --- | --- | --- |
+| `suggestion` | plain string `[SUGGESTION MODE: …` | `interactive.main-suggestion` |
+| `agent_summary` | plain string `Describe your most recent action…`, sent under the subagent's agent id | `interactive.subagent-summary` |
+| `compaction` | `tool_result` + text `CRITICAL: Respond with TEXT ONLY…`; **lacks the `extended-cache-ttl` beta** | `interactive.main-compaction` |
+| `cross_session` | text `Another Claude session sent a message:` (no `UserPromptSubmit` hook) | `interactive.main-cross-session` |
+| `notification` | reminder-only, `[SYSTEM NOTIFICATION - NOT USER INPUT]` (no `UserPromptSubmit`) | `interactive.main-notification` |
+| `no_tools` | no or empty `tools`: title generation (`output_config.format` JSON schema), `max_tokens: 64` side calls, the `max_tokens: 1` quota probe (no system prompt at all) | `interactive.title-generation`, `…side-no-tools`, `…quota-probe` |
+| `unclassified` | anything else not positively identified | — |
+
+Consequences: main-chat model turns are **not** 1:1 with `UserPromptSubmit`; `SubagentStop` also fires for agent ids that never had a `SubagentStart` and never appear as an `x-claude-code-agent-id` header (likely the suggestion forks).
 
 ## 5. Native Haiku request shape (Claude Code choosing Haiku itself)
 
@@ -85,7 +111,7 @@ Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 
 ## 6. Responses
 
-Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_block_start, ping, content_block_delta, content_block_stop, message_delta, message_stop`. The capture proxy drops `accept-encoding`, so compression was **not** observed; the real proxy must still handle gzip/br. `message_start.message.usage` has `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, cache_creation{…}, output_tokens, service_tier, inference_geo`; final usage is in `message_delta.usage` (adds `output_tokens_details`, `iterations[]`).
+Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_block_start, ping, content_block_delta, content_block_stop, message_delta, message_stop`. The capture proxy drops `accept-encoding`, so compression was **not** observed. The interactive client offers `zstd`, which `node:zlib` cannot decode before Node 22.15, so reflex narrows `accept-encoding` toward the upstream to the client's own offer restricted to `gzip, br, deflate` (absent stays absent). A response in any other coding is relayed untouched and logged as `usage_unknown_reason: "encoding:<name>"`. `message_start.message.usage` has `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, cache_creation{…}, output_tokens, service_tier, inference_geo`; final usage is in `message_delta.usage` (adds `output_tokens_details`, `iterations[]`).
 
 ## 7. Hooks (delivered via `type:"http"` hooks injected with `--settings`)
 
@@ -117,15 +143,16 @@ REFLEX_REDACT_EXTRA="<email>,<username>" node scripts/spike/redact-fixtures.mjs 
 
 ## 10. Expected shape (checked at runtime)
 
-The startup version check is only a hint. The worker therefore verifies the shape itself on the first N `/v1/messages` requests that carry `tools` (default N=10). Any violation degrades the session to shadow and logs which check failed and on which signal (never request content). All expectations below are taken from the fixtures and must hold for every fixture:
+The startup version check is only a hint. The worker therefore verifies the shape itself on the first N (default 10, `REFLEX_SHAPE_CHECK_N`) `new`/`continuation` requests of a session; side calls are never checked (they legitimately differ). Any violation degrades the session to shadow and logs `degraded_reason: "shape:<check>"` with the signal booleans (never request content). All expectations below hold for every fixture (`test/unit/wire-contract.test.ts`), and each mutated fixture trips exactly its check (`test/unit/wire.test.ts`):
 
 | Check | Expected |
 | --- | --- |
-| session id | `x-claude-code-session-id` present, or `metadata.user_id` parses to JSON with `session_id`; when both exist they are equal |
-| client identity | system text contains `x-anthropic-billing-header:` |
-| subagent signals agree | header `x-claude-code-agent-id` present ⇔ (`cc_is_subagent=true` ∨ `You are an agent for Claude Code`) present |
-| trailing system messages | `role:"system"` messages are present ⇔ the `mid-conversation-system-*` beta is present; and the message list contains at least one non-system message |
-| cache TTL | main-chat requests carry an `extended-cache-ttl-*` beta (subagent requests are not asserted) |
-| turn structure | the last non-system message has `role:"user"` |
+| `session_id` | `x-claude-code-session-id` present, or `metadata.user_id` parses to JSON with `session_id`; when both exist they are equal |
+| `client_identity` | system text contains `x-anthropic-billing-header:` |
+| `subagent_signals` | header `x-claude-code-agent-id` present ⇔ `cc_is_subagent=true` present; the optional agent-prompt marker, when seen, only on a subagent |
+| `system_messages_beta` | `role:"system"` messages present ⇒ the `mid-conversation-system-*` beta is present (one-way: side calls carry the beta without system messages) |
+| `turn_structure` | at least one non-system message, and the last one has `role:"user"` |
+
+Dropped after the interactive capture: "main-chat requests carry `extended-cache-ttl-*`" (the compaction request lacks it, which would have degraded normal sessions).
 
 The version check is separate and only ever a hint: same major, different minor/patch → warn; different major → degrade to shadow; unparseable → warn. Passing assertions on an unknown minor version continue normally; failing assertions on a matching version still degrade.

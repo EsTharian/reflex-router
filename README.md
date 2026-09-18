@@ -2,7 +2,7 @@
 
 An orchestration layer for [Claude Code](https://docs.claude.com/en/docs/claude-code). `reflex` starts a loopback proxy, runs the real `claude` behind it, and (as decision-making lands) uses a fast decision model to judge how much reasoning a piece of work demands, so that the cheapest adequate model handles it.
 
-**Status: early development.** Today the proxy forwards traffic unchanged: `reflex` is a transparent wrapper around `claude` with a supervised proxy, fail-open behaviour, and a Claude Code version check. It does not make routing decisions yet. Nothing in this repository claims any cost or quality improvement; such claims will appear only with data measured by this project.
+**Status: early development.** The proxy forwards every request unchanged. In `shadow` mode (the default) it also classifies Claude Code's requests, asks the decision backend how much reasoning each new piece of work demands, and records what it *would* have routed where in `~/.reflex/decisions.jsonl`. It does not rewrite anything yet; `route` currently behaves like `shadow`. Nothing in this repository claims any cost or quality improvement; such claims will appear only with data measured by this project.
 
 ## Usage
 
@@ -28,7 +28,16 @@ All settings are environment variables.
 | `TYPESAFE_API_KEY` | `apikey_...` | unset | Key for the Jev backend. Without it reflex runs plain `claude` and says so. |
 | `REFLEX_UPSTREAM_URL` | http(s) URL | your `ANTHROPIC_BASE_URL`, else `https://api.anthropic.com` | Where requests are forwarded. A path prefix (gateway) is kept. |
 | `REFLEX_CLAUDE_BIN` | path or command | `claude` on `PATH` | The real Claude Code binary. |
-| `REFLEX_HOME` | directory | `~/.reflex` | State directory (worker log). |
+| `REFLEX_HOME` | directory | `~/.reflex` | State directory (worker log, `decisions.jsonl`). |
+| `REFLEX_LOG_PROMPTS` | `0` | on | `0` omits the redacted 300-character prompt preview from the decision log. |
+| `REFLEX_MAIN_CHAT` | `guarded`, `never` | `guarded` | Whether main-chat prompts are judged at all (subagent tasks always are). |
+| `REFLEX_TIERS` | comma list of `haiku,sonnet,opus` | all three | Tiers a request may be routed to. Fable additionally needs `REFLEX_ALLOW_FABLE=1`. |
+| `REFLEX_UPGRADES` | `off`, `confident`, `on` | `off` | Whether a stronger tier than requested may be chosen. |
+| `REFLEX_MODEL_<TIER>` | model id | `ANTHROPIC_DEFAULT_<TIER>_MODEL`, else built in | Model id used for a tier. |
+| `REFLEX_BACKEND_TIMEOUT_MS` | integer | `1500` | Hard deadline for one decision; no retries. |
+| `REFLEX_MAX_USER_CHARS`, `REFLEX_MAX_ASSISTANT_CHARS` | integer | `4000`, `1000` | How much text the decision backend may see. |
+
+What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](docs/privacy.md).
 | `REFLEX_IGNORE_VERSION_CHECK` | `1` | unset | Do not degrade `route` to `shadow` on a Claude Code major-version mismatch (the warning stays). |
 
 ## How it stays out of the way
