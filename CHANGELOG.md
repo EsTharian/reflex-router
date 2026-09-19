@@ -2,6 +2,16 @@
 
 None of these versions has been published to a registry.
 
+## 0.2.3-alpha — 2026-09-19
+
+Measurement only: nothing routes differently from 0.2.2-alpha. `REFLEX_ROUTE_SIDE` was designed, priced and **not built** — see `docs/observations.md`, "side-call routing: priced, and parked".
+
+- **`reflex report` section 12, side-call routing estimate.** What sending the harness's own side calls to a cheaper shared tier would have cost on your log, with every cold cache write paid in full, priced for both candidate tiers at both cache-write TTLs, gross and net of the conversations that would lose a free warm cache. It reports warm-vs-cold amortisation against the break-even each tier needs, and flags calls too large for a tier's context window as unroutable rather than counting them as savings.
+- **Section 9 names what the optional Claude Code features cost**, with the switch that turns each off: Session recap (`/config` → Session recap, `awaySummaryEnabled`) and Prompt suggestions (`/config` → Prompt suggestions, `promptSuggestionEnabled`). On one day of the maintainer's own work these were **$11.82 at list prices**, against a best-case side-routing saving of $3.39 and a measured routing saving of $3.33. No advice, just the numbers and the switch names.
+- **`side_marker`** on decision records: which harness marker named a side call. Claude Code's AFK session recap and its background task notifications share the `notification` side kind but only the recap has a switch, so the feature table attributes by marker. Records from older builds carry none and are counted separately rather than attributed by kind.
+- **`cache_ttl_beta`** on decision records: whether the request carried the `extended-cache-ttl` beta. The wire computed this and threw it away, so no log could say whether cache writes were 1-hour or 5-minute — a distinction worth **18×** in the side-routing estimate.
+- `docs/wire-format.md` §5.1 records an unverified branch of the rewrite recipe (an empty `output_config`, and `output_config.format` without `effort`), reached only if side-call routing is ever implemented.
+
 ## 0.2.2-alpha — 2026-09-19
 
 Phase 2b groundwork. Nothing routes differently yet except what is listed here; side-call routing itself is designed but not implemented (`REFLEX_ROUTE_SIDE` does not exist in this version).
