@@ -79,8 +79,14 @@ export const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
 /** Above the first measured cold-connection p95 (1136 ms, docs/observations.md) with some headroom. */
 export const DEFAULT_JEV_DEADLINE_MS = 1500;
 
+/** A setting's trimmed value, or undefined when it is unset, empty or only whitespace: `export X=""` means "not set", never "set to nothing". */
+const setting = (env: NodeJS.ProcessEnv, name: string): string | undefined => {
+  const v = env[name]?.trim();
+  return v === undefined || v === "" ? undefined : v;
+};
+
 /** State directory: REFLEX_HOME, else ~/.reflex. Shared with the env-file loader, which needs it before loadConfig runs. */
-export const defaultHome = (env: NodeJS.ProcessEnv, homedir: string = os.homedir()): string => env["REFLEX_HOME"]?.trim() || path.join(homedir, ".reflex");
+export const defaultHome = (env: NodeJS.ProcessEnv, homedir: string = os.homedir()): string => setting(env, "REFLEX_HOME") ?? path.join(homedir, ".reflex");
 
 /**
  * Every environment variable loadConfig reads (test/unit/config.test.ts keeps this list and the code in step).
@@ -158,26 +164,26 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const mode = parseEnum(env["REFLEX_MODE"], MODES, "shadow", "REFLEX_MODE", errors);
-  const backend = parseEnum(env["REFLEX_BACKEND"], BACKENDS, "jev", "REFLEX_BACKEND", errors);
+  const mode = parseEnum(setting(env, "REFLEX_MODE"), MODES, "shadow", "REFLEX_MODE", errors);
+  const backend = parseEnum(setting(env, "REFLEX_BACKEND"), BACKENDS, "jev", "REFLEX_BACKEND", errors);
 
-  const upstreamRaw = env["REFLEX_UPSTREAM_URL"] ?? env["ANTHROPIC_BASE_URL"] ?? DEFAULT_UPSTREAM;
-  const upstreamName = env["REFLEX_UPSTREAM_URL"] !== undefined ? "REFLEX_UPSTREAM_URL" : "ANTHROPIC_BASE_URL";
+  const upstreamRaw = setting(env, "REFLEX_UPSTREAM_URL") ?? setting(env, "ANTHROPIC_BASE_URL") ?? DEFAULT_UPSTREAM;
+  const upstreamName = setting(env, "REFLEX_UPSTREAM_URL") !== undefined ? "REFLEX_UPSTREAM_URL" : "ANTHROPIC_BASE_URL";
   const upstreamUrl = parseHttpUrl(upstreamRaw, upstreamName, errors);
 
-  const keyRaw = env["TYPESAFE_API_KEY"]?.trim();
+  const keyRaw = setting(env, "TYPESAFE_API_KEY");
   let typesafeApiKey: string | undefined;
   if (keyRaw) {
     if (keyRaw.startsWith(TYPESAFE_KEY_PREFIX)) typesafeApiKey = keyRaw;
     else warnings.push(`TYPESAFE_API_KEY does not start with "${TYPESAFE_KEY_PREFIX}"; ignoring it`);
   }
 
-  const jevRaw = env["REFLEX_JEV_BASE_URL"]?.trim();
+  const jevRaw = setting(env, "REFLEX_JEV_BASE_URL");
   const jevBaseUrl = jevRaw ? parseHttpUrl(jevRaw, "REFLEX_JEV_BASE_URL", errors) : DEFAULT_JEV_BASE_URL;
-  const allowFable = truthy(env["REFLEX_ALLOW_FABLE"]);
-  const tiers = parseTiers(env["REFLEX_TIERS"], allowFable, errors, warnings);
+  const allowFable = truthy(setting(env, "REFLEX_ALLOW_FABLE"));
+  const tiers = parseTiers(setting(env, "REFLEX_TIERS"), allowFable, errors, warnings);
   const models = Object.fromEntries(
-    TIERS.map((t) => [t, env[`REFLEX_MODEL_${t.toUpperCase()}`]?.trim() || env[`ANTHROPIC_DEFAULT_${t.toUpperCase()}_MODEL`]?.trim() || DEFAULT_MODELS[t]]),
+    TIERS.map((t) => [t, setting(env, `REFLEX_MODEL_${t.toUpperCase()}`) ?? setting(env, `ANTHROPIC_DEFAULT_${t.toUpperCase()}_MODEL`) ?? DEFAULT_MODELS[t]]),
   ) as Record<Tier, string>;
 
   if (errors.length > 0 || upstreamUrl === undefined || jevBaseUrl === undefined) return { ok: false, errors: errors.length > 0 ? errors : ["invalid upstream URL"] };
@@ -186,24 +192,24 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     mode,
     backend,
     upstreamUrl,
-    claudeBin: env["REFLEX_CLAUDE_BIN"]?.trim() || undefined,
+    claudeBin: setting(env, "REFLEX_CLAUDE_BIN"),
     home: defaultHome(env, homedir),
-    ignoreVersionCheck: truthy(env["REFLEX_IGNORE_VERSION_CHECK"]),
+    ignoreVersionCheck: truthy(setting(env, "REFLEX_IGNORE_VERSION_CHECK")),
     typesafeApiKey,
     jevBaseUrl,
-    jevDeadlineMs: parseBoundedInt(env["REFLEX_JEV_DEADLINE_MS"], DEFAULT_JEV_DEADLINE_MS, 50, 60_000, "REFLEX_JEV_DEADLINE_MS", errors),
+    jevDeadlineMs: parseBoundedInt(setting(env, "REFLEX_JEV_DEADLINE_MS"), DEFAULT_JEV_DEADLINE_MS, 50, 60_000, "REFLEX_JEV_DEADLINE_MS", errors),
     tiers,
     allowFable,
-    upgrades: parseEnum(env["REFLEX_UPGRADES"], UPGRADE_POLICIES, "off", "REFLEX_UPGRADES", errors),
-    mainChat: parseEnum(env["REFLEX_MAIN_CHAT"], MAIN_CHAT_POLICIES, "guarded", "REFLEX_MAIN_CHAT", errors),
+    upgrades: parseEnum(setting(env, "REFLEX_UPGRADES"), UPGRADE_POLICIES, "off", "REFLEX_UPGRADES", errors),
+    mainChat: parseEnum(setting(env, "REFLEX_MAIN_CHAT"), MAIN_CHAT_POLICIES, "guarded", "REFLEX_MAIN_CHAT", errors),
     models,
-    shapeCheckN: parseBoundedInt(env["REFLEX_SHAPE_CHECK_N"], 10, 1, 10_000, "REFLEX_SHAPE_CHECK_N", errors),
-    maxUserChars: parseBoundedInt(env["REFLEX_MAX_USER_CHARS"], 4000, 200, 60_000, "REFLEX_MAX_USER_CHARS", errors),
-    maxAssistantChars: parseBoundedInt(env["REFLEX_MAX_ASSISTANT_CHARS"], 1000, 0, 60_000, "REFLEX_MAX_ASSISTANT_CHARS", errors),
-    logPrompts: !falsy(env["REFLEX_LOG_PROMPTS"]),
-    decisionRule: parseEnum(env["REFLEX_DECISION_RULE"], DECISION_RULES, "mass", "REFLEX_DECISION_RULE", errors),
-    massEps: parseBoundedNumber(env["REFLEX_MASS_EPS"], 0.1, 0, 0.5, "REFLEX_MASS_EPS", errors),
-    maxSwitchPenaltyUsd: parseBoundedNumber(env["REFLEX_MAX_SWITCH_PENALTY_USD"], 0.01, 0, 100, "REFLEX_MAX_SWITCH_PENALTY_USD", errors),
+    shapeCheckN: parseBoundedInt(setting(env, "REFLEX_SHAPE_CHECK_N"), 10, 1, 10_000, "REFLEX_SHAPE_CHECK_N", errors),
+    maxUserChars: parseBoundedInt(setting(env, "REFLEX_MAX_USER_CHARS"), 4000, 200, 60_000, "REFLEX_MAX_USER_CHARS", errors),
+    maxAssistantChars: parseBoundedInt(setting(env, "REFLEX_MAX_ASSISTANT_CHARS"), 1000, 0, 60_000, "REFLEX_MAX_ASSISTANT_CHARS", errors),
+    logPrompts: !falsy(setting(env, "REFLEX_LOG_PROMPTS")),
+    decisionRule: parseEnum(setting(env, "REFLEX_DECISION_RULE"), DECISION_RULES, "mass", "REFLEX_DECISION_RULE", errors),
+    massEps: parseBoundedNumber(setting(env, "REFLEX_MASS_EPS"), 0.1, 0, 0.5, "REFLEX_MASS_EPS", errors),
+    maxSwitchPenaltyUsd: parseBoundedNumber(setting(env, "REFLEX_MAX_SWITCH_PENALTY_USD"), 0.01, 0, 100, "REFLEX_MAX_SWITCH_PENALTY_USD", errors),
   };
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, config, warnings };

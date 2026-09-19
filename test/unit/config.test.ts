@@ -42,6 +42,25 @@ describe("loadConfig", () => {
     assert.equal(load({ REFLEX_MODE: "" }).config.mode, "shadow");
   });
 
+  it("treats an empty or whitespace-only URL as unset and falls through to the next source", () => {
+    assert.equal(load({ ANTHROPIC_BASE_URL: "" }).config.upstreamUrl, DEFAULT_UPSTREAM);
+    assert.equal(load({ ANTHROPIC_BASE_URL: "   " }).config.upstreamUrl, DEFAULT_UPSTREAM);
+    assert.equal(load({ REFLEX_UPSTREAM_URL: "", ANTHROPIC_BASE_URL: "https://gw.example.com" }).config.upstreamUrl, "https://gw.example.com");
+    assert.equal(load({ REFLEX_UPSTREAM_URL: "", ANTHROPIC_BASE_URL: "" }).config.upstreamUrl, DEFAULT_UPSTREAM);
+  });
+
+  it("treats empty REFLEX_* values as unset: defaults, and the ANTHROPIC_DEFAULT_*_MODEL fallback", () => {
+    const { config } = load({ REFLEX_JEV_DEADLINE_MS: "", REFLEX_TIERS: "", REFLEX_MODEL_HAIKU: "", ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-x" });
+    assert.equal(config.jevDeadlineMs, load({}).config.jevDeadlineMs);
+    assert.deepEqual(config.tiers, ["haiku", "sonnet", "opus"]);
+    assert.equal(config.models.haiku, "claude-haiku-x");
+  });
+
+  it("every setting set to an empty string gives the same config as an empty environment", () => {
+    assert.deepEqual(load(Object.fromEntries(SETTING_NAMES.map((n) => [n, ""]))), load({}));
+    assert.deepEqual(load(Object.fromEntries(SETTING_NAMES.map((n) => [n, " \t"]))), load({}));
+  });
+
   it("upstream precedence: REFLEX_UPSTREAM_URL, then the user's ANTHROPIC_BASE_URL, then the default", () => {
     assert.equal(load({ REFLEX_UPSTREAM_URL: "http://a.test", ANTHROPIC_BASE_URL: "http://b.test" }).config.upstreamUrl, "http://a.test");
     assert.equal(load({ ANTHROPIC_BASE_URL: "https://gw.example.com" }).config.upstreamUrl, "https://gw.example.com");
@@ -91,7 +110,7 @@ describe("SETTING_NAMES", () => {
   const source = fs.readFileSync("src/config.ts", "utf8");
   it("lists every variable loadConfig reads, and nothing it does not", () => {
     const read = new Set<string>();
-    for (const m of source.matchAll(/env\["([A-Z_]+)"\]/g)) read.add(m[1]!);
+    for (const m of source.matchAll(/(?:env\[|setting\(env, )"([A-Z_]+)"/g)) read.add(m[1]!);
     for (const t of ["HAIKU", "SONNET", "OPUS", "FABLE"]) {
       read.add(`REFLEX_MODEL_${t}`);
       read.add(`ANTHROPIC_DEFAULT_${t}_MODEL`);

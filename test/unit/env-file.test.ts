@@ -146,6 +146,12 @@ describe("reflex doctor: env file and setting sources", () => {
     assert.match(text, /REFLEX_CLAUDE_BIN\s.*from process environment/);
     assert.ok(!/REFLEX_MODE/.test(text.split("mode requested")[0]!));
   });
+  it("an exported-but-empty ANTHROPIC_BASE_URL is not an error and is not listed as set", async () => {
+    const { code, text } = await run({ ANTHROPIC_BASE_URL: "", REFLEX_MODE: "" }, {});
+    assert.equal(code, 0);
+    assert.ok(!/config error/.test(text), text);
+    assert.ok(!/ANTHROPIC_BASE_URL/.test(text), text);
+  });
   it("shows URL settings without credentials or query", async () => {
     const { text } = await run({ REFLEX_UPSTREAM_URL: "https://user:pw@gw.example.com/anthropic?token=abc" }, {});
     assert.match(text, /REFLEX_UPSTREAM_URL\s+https:\/\/gw\.example\.com\/anthropic/);

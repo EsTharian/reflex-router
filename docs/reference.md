@@ -4,7 +4,7 @@ Details behind the [README](../README.md). Nothing here is a performance claim; 
 
 ## Configuration
 
-Settings are environment variables, optionally supplied by `~/.reflex/env`. Defaults below are provisional settings, not measured optima; where one is derived from a measurement its row says so and points at [`docs/observations.md`](observations.md).
+Settings are environment variables, optionally supplied by `~/.reflex/env`. A variable that is set to an empty or whitespace-only value (`export ANTHROPIC_BASE_URL=""`) counts as unset, so the next source or the default applies. Defaults below are provisional settings, not measured optima; where one is derived from a measurement its row says so and points at [`docs/observations.md`](observations.md).
 
 **`~/.reflex/env`** (in `REFLEX_HOME` if that is set in the environment) holds `KEY=value` lines for `REFLEX_*` settings and `TYPESAFE_API_KEY`; `#` comments, `export ` and quotes around a value are accepted, other names are ignored with a warning. It is merged **under** the process environment: a variable already set in the environment (and not empty) wins. `REFLEX_HOME` cannot be set in the file, since it says where the file is. A file that contains `TYPESAFE_API_KEY` and is readable by group or others (`chmod 600` fixes it; not checked on Windows) is refused whole: reflex warns, ignores every value in it, and runs without the key, i.e. as plain `claude`. A file it cannot read is skipped with a warning. `reflex doctor` shows the file's state, why a file was refused, and for every setting that is set whether its value came from the process environment or the file; it never prints the key.
 
