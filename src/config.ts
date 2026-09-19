@@ -47,6 +47,8 @@ export interface Config {
   readonly jevBaseUrl: string;
   /** Hard deadline for one Jev decision, connection setup included (REFLEX_JEV_DEADLINE_MS). Expiry fails open. */
   readonly jevDeadlineMs: number;
+  /** Interval of the decision backend's keep-alive ping; 0 disables it. */
+  readonly warmIntervalMs: number;
   /** Tiers a request may be routed to (REFLEX_TIERS). Fable is only present when REFLEX_ALLOW_FABLE=1. */
   readonly tiers: readonly Tier[];
   readonly allowFable: boolean;
@@ -80,6 +82,12 @@ export const TYPESAFE_KEY_PREFIX = "apikey_";
 export const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
 /** Above the first measured cold-connection p95 (1136 ms, docs/observations.md) with some headroom. */
 export const DEFAULT_JEV_DEADLINE_MS = 1500;
+/**
+ * How often the worker pings the decision backend to keep its keep-alive connection open while nothing is being
+ * decided. 0 disables it. The first decision after an idle gap otherwise pays a fresh TCP+TLS handshake
+ * (docs/observations.md: p50 823 ms on a new connection vs 382 ms reused).
+ */
+export const DEFAULT_WARM_INTERVAL_MS = 60_000;
 
 /** A setting's trimmed value, or undefined when it is unset, empty or only whitespace: `export X=""` means "not set", never "set to nothing". */
 const setting = (env: NodeJS.ProcessEnv, name: string): string | undefined => {
@@ -95,7 +103,7 @@ export const defaultHome = (env: NodeJS.ProcessEnv, homedir: string = os.homedir
  * `reflex doctor` reports the source of each one; only REFLEX_* and TYPESAFE_API_KEY may come from ~/.reflex/env.
  */
 export const SETTING_NAMES: readonly string[] = [
-  "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_DEADLINE_MS",
+  "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_DEADLINE_MS", "REFLEX_WARM_INTERVAL_MS",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
   "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_DELEGATE", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
@@ -200,6 +208,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     typesafeApiKey,
     jevBaseUrl,
     jevDeadlineMs: parseBoundedInt(setting(env, "REFLEX_JEV_DEADLINE_MS"), DEFAULT_JEV_DEADLINE_MS, 50, 60_000, "REFLEX_JEV_DEADLINE_MS", errors),
+    warmIntervalMs: parseBoundedInt(setting(env, "REFLEX_WARM_INTERVAL_MS"), DEFAULT_WARM_INTERVAL_MS, 0, 3_600_000, "REFLEX_WARM_INTERVAL_MS", errors),
     tiers,
     allowFable,
     upgrades: parseEnum(setting(env, "REFLEX_UPGRADES"), UPGRADE_POLICIES, "off", "REFLEX_UPGRADES", errors),

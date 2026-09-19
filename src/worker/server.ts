@@ -85,7 +85,17 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     ? new OutcomeTracker({ emit: (r) => void decisionLog.appendRecord(r) })
     : null;
   const prompts = new RecentPrompts();
-  if (Router.active(opts.effectiveMode)) void backend?.warm?.();
+  // Keep the backend's keep-alive connection open while nothing is being decided: the first decision after an idle gap
+  // otherwise pays a fresh TCP+TLS handshake (observations.md: p50 823 ms new vs 382 ms reused). Best effort and
+  // fire-and-forget, exactly like the start-up warm; `connection` on each decision record measures whether it worked.
+  let warmTimer: NodeJS.Timeout | null = null;
+  if (Router.active(opts.effectiveMode)) {
+    void backend?.warm?.();
+    if (opts.config.warmIntervalMs > 0 && backend?.warm !== undefined) {
+      warmTimer = setInterval(() => void backend.warm?.(), opts.config.warmIntervalMs);
+      warmTimer.unref(); // never holds the worker open
+    }
+  }
   const router = Router.active(opts.effectiveMode)
     ? new Router({
         config: opts.config,
@@ -191,6 +201,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     port: (server.address() as AddressInfo).port,
     close: () =>
       new Promise<void>((resolve) => {
+        if (warmTimer) clearInterval(warmTimer);
         tracker?.flush();
         server.close(() => void decisionLog.flush().then(() => {
           backend?.close?.();
