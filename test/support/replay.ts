@@ -33,7 +33,7 @@ export type Rec = Record<string, unknown> & {
   override: string | null;
   mode_effective: string;
   guard: { allowed: boolean; reason: string; ctx: number | null; penalty_usd: number | null } | null;
-  forwarded: { requested_model: string | null; model: string | null; rewritten: boolean; fields: string[]; fallback: boolean; fallback_status: number | null };
+  forwarded: { requested_model: string | null; model: string | null; rewritten: boolean; fields: string[]; fallback: boolean; fallback_status: number | null; fallback_error: string | null };
 };
 export const records = (stack: Stack): Rec[] => {
   const f = path.join(stack.config.home, "decisions.jsonl");

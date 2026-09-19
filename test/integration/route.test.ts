@@ -2,6 +2,7 @@
 // Each describe block uses its own session ids so pins, overrides and disabled tiers never leak between cases.
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
+import zlib from "node:zlib";
 import { startFakeJev, type FakeJev } from "../support/fake-jev.js";
 import { loadFixtures, type Fixture } from "../support/fixtures.js";
 import { replay, requestHeaders, sseHandler } from "../support/replay.js";
@@ -61,7 +62,7 @@ describe("route mode", () => {
       assert.ok(!(b["messages"] as Json[]).some((m) => m["role"] === "system"));
       assert.equal(rec.mode_effective, "route");
       assert.equal(rec.pin, "set");
-      assert.deepEqual(rec.forwarded, { requested_model: "claude-sonnet-5", model: HAIKU, rewritten: true, fields: ["model", "output_config.effort", "thinking", "messages.system_folded:1"], fallback: false, fallback_status: null });
+      assert.deepEqual(rec.forwarded, { requested_model: "claude-sonnet-5", model: HAIKU, rewritten: true, fields: ["model", "output_config.effort", "thinking", "messages.system_folded:1"], fallback: false, fallback_status: null, fallback_error: null });
       assert.equal(rec.plan?.routed_to, HAIKU);
     });
 
@@ -146,7 +147,7 @@ describe("route mode", () => {
       jev.set({ kind: "answer", tier: "sonnet", confidence: 0.9, reasoning: 2 });
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, inSession(fx("subagent-new-turn"), "s-opus1", opus));
-      assert.deepEqual(rec.forwarded, { requested_model: "claude-opus-5", model: "claude-sonnet-5", rewritten: true, fields: ["model"], fallback: false, fallback_status: null });
+      assert.deepEqual(rec.forwarded, { requested_model: "claude-opus-5", model: "claude-sonnet-5", rewritten: true, fields: ["model"], fallback: false, fallback_status: null, fallback_error: null });
       const orig = JSON.parse(inSession(fx("subagent-new-turn"), "s-opus1", opus).body.toString()) as Json;
       assert.deepEqual({ ...sentBody(stack, n), model: "claude-opus-5" }, orig, "nothing but the model changed");
       const c = await replay(stack, inSession(fx("subagent-continuation"), "s-opus1", opus));
@@ -190,8 +191,9 @@ describe("route mode", () => {
     it("a rejected rewrite is retried once with the original bytes; the tier is then disabled for the session", async () => {
       stack.upstream.setHandler((req, res, body) => {
         if (body.toString().includes(HAIKU)) {
-          res.writeHead(400, { "content-type": "application/json" });
-          res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "nope" } }));
+          const err = zlib.gzipSync(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "nope" } }));
+          res.writeHead(400, { "content-type": "application/json", "content-encoding": "gzip" });
+          res.end(err);
           return;
         }
         sseHandler(req, res, body);
@@ -205,6 +207,7 @@ describe("route mode", () => {
       assert.ok(stack.upstream.seen[n + 1]!.body.equals(f.body), "the retry is the original bytes");
       assert.equal(rec.forwarded.fallback, true);
       assert.equal(rec.forwarded.fallback_status, 400);
+      assert.equal(rec.forwarded.fallback_error, "invalid_request_error: nope", "the upstream's error is kept (redacted)");
       assert.equal(rec.forwarded.model, "claude-sonnet-5");
 
       const again = await replay(stack, inSession(fx("subagent-new-turn"), "s-rej", (b) => ((b["messages"] as Json[]).length = 1)));

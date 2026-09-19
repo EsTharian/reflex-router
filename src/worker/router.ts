@@ -48,8 +48,8 @@ export interface RouterDeps {
 export interface Observation {
   headers(status: number, headers: IncomingHttpHeaders): void;
   readonly tap: (chunk: Buffer) => void;
-  /** The rewritten request was rejected with `status`; the original bytes are being sent instead. */
-  fallback(status: number): void;
+  /** The rewritten request was rejected with `status` (redacted error summary); the original bytes are sent instead. */
+  fallback(status: number, error: string | null): void;
   /** Called once: `complete` = the response was relayed to the end. Never throws; the record is written async. */
   finish(complete: boolean): void;
 }
@@ -214,6 +214,7 @@ export class Router {
     let tee: UsageTee | null = null;
     let finished = false;
     let fallbackStatus: number | null = null;
+    let fallbackError: string | null = null;
     const rewritten = sendBody !== body;
     const routedTier = rewritten ? tierOfModel(sentModel) : null;
 
@@ -226,8 +227,9 @@ export class Router {
         tee = new UsageTee(typeof ct === "string" ? ct : undefined, typeof ce === "string" ? ce : undefined);
       },
       tap: (chunk) => tee?.write(chunk),
-      fallback: (st) => {
+      fallback: (st, err) => {
         fallbackStatus = st;
+        fallbackError = err;
         sentModel = v.requestedModel;
         if (routedTier) s.disabledUntil.set(routedTier, this.#now() + TIER_DISABLE_MS);
         if (conv) conv.pin = { target: null, from: requestedTier }; // the rest of this loop stays on the requested model
@@ -265,7 +267,7 @@ export class Router {
               ...outcome.part,
               plan: p ? { ...p, routed_to: sentModel, reasons: [...p.reasons, ...extraReasons] } : extraReasons.length > 0 ? { target: null, would_route_to: null, routed_to: sentModel, reasons: extraReasons, would_upgrade: false } : null,
               pin: pinState,
-              forwarded: { requested_model: v.requestedModel, model: sentModel, rewritten: rewritten && fallbackStatus === null, fields: rewritten ? fields : [], fallback: fallbackStatus !== null, fallback_status: fallbackStatus },
+              forwarded: { requested_model: v.requestedModel, model: sentModel, rewritten: rewritten && fallbackStatus === null, fields: rewritten ? fields : [], fallback: fallbackStatus !== null, fallback_status: fallbackStatus, fallback_error: fallbackError },
               upstream: { status, msToHeaders },
               usage: u.usage ? { input: u.usage.input, output: u.usage.output, cache_read: u.usage.cacheRead, cache_create: u.usage.cacheCreate } : null,
               usage_unknown_reason: u.unknownReason,

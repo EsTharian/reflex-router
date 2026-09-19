@@ -5,6 +5,8 @@ import type { EffectiveMode } from "../effective-mode.js";
 import { forward, relay } from "../net/forward.js";
 import { BodyTooLargeError, readBody, sendAnthropicError } from "../net/http-util.js";
 import type { Log } from "../util/log.js";
+import { redact } from "../privacy/redact.js";
+import { errorSummary } from "../wire/anthropic.js";
 import { JevBackend } from "../backend/jev.js";
 import { LocalBackend } from "../backend/local.js";
 import type { DecisionBackend } from "../backend/types.js";
@@ -35,6 +37,30 @@ export interface WorkerServer {
 
 const MAX_BODY_BYTES = 128 * 1024 * 1024;
 /** A 4xx that means "this request is not acceptable" (not auth, not rate limiting): the trigger for retry-with-original. */
+/** How much of a rejected rewrite's error body is read (and how long we wait for it) before retrying. */
+const REJECTION_BODY_MAX = 16 * 1024;
+const REJECTION_BODY_TIMEOUT_MS = 2000;
+
+/** Reads up to `max` bytes of a response, then discards the rest; resolves null on error or timeout. */
+function readBounded(res: http.IncomingMessage, max: number, timeoutMs: number): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const done = (v: Buffer | null): void => {
+      clearTimeout(timer);
+      res.destroy();
+      resolve(v);
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    res.on("data", (c: Buffer) => {
+      if (size < max) chunks.push(c.subarray(0, max - size));
+      size += c.length;
+    });
+    res.on("end", () => done(Buffer.concat(chunks)));
+    res.on("error", () => done(null));
+  });
+}
+
 export const isRejection = (status: number): boolean => status >= 400 && status < 500 && ![401, 403, 408, 429].includes(status);
 const asError = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e)));
 
@@ -99,10 +125,11 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
       if (prepared.rewritten && isRejection(up.statusCode ?? 0)) {
         // The target model refused the rewritten request: send the client's original bytes instead.
         const rejected = up.statusCode ?? 0;
-        up.resume();
-        up.destroy();
+        const errorBody = await readBounded(up, REJECTION_BODY_MAX, REJECTION_BODY_TIMEOUT_MS);
+        const ce = up.headers["content-encoding"];
+        const summary = errorBody ? errorSummary(errorBody, typeof ce === "string" ? ce : undefined) : null;
         opts.log("warn", `rewritten request rejected with ${rejected}; retrying with the original request`);
-        obs?.fallback(rejected);
+        obs?.fallback(rejected, summary === null ? null : redact(summary));
         up = await forward(upstream, { method, url, headers: req.headers, body }, { signal: ac.signal });
       }
       obs?.headers(up.statusCode ?? 0, up.headers);

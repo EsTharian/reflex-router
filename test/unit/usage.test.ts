@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { describe, it } from "node:test";
 import zlib from "node:zlib";
-import { UsageParser, usageFormat } from "../../src/wire/anthropic.js";
+import { errorSummary, UsageParser, usageFormat } from "../../src/wire/anthropic.js";
 import { UsageTee } from "../../src/worker/usage-tee.js";
 
 const SSE = [
@@ -87,5 +87,17 @@ describe("UsageTee (decompression side branch)", () => {
     const tee = new UsageTee("text/html", undefined);
     tee.write(Buffer.from("<html>"));
     assert.deepEqual(await tee.end(true), { usage: null, unknownReason: "content_type" });
+  });
+});
+
+describe("errorSummary", () => {
+  it("reads type and message from an Anthropic error, gzip or plain; falls back to raw text", () => {
+    const body = JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "max_tokens: 128000 > 64000" } });
+    assert.equal(errorSummary(Buffer.from(body), undefined), "invalid_request_error: max_tokens: 128000 > 64000");
+    assert.equal(errorSummary(zlib.gzipSync(body), "gzip"), "invalid_request_error: max_tokens: 128000 > 64000");
+    assert.equal(errorSummary(Buffer.from("<html>bad gateway</html>"), undefined), "<html>bad gateway</html>");
+    assert.equal(errorSummary(Buffer.from("not gzip"), "gzip"), "undecodable body");
+    assert.equal(errorSummary(Buffer.from(""), undefined), null);
+    assert.equal(errorSummary(Buffer.from("x".repeat(2000)), undefined)?.length, 500);
   });
 });

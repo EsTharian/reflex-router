@@ -1,6 +1,8 @@
-// Anthropic Messages API response shapes: token usage from an SSE stream or a JSON body. Fed already-decoded text in
+// Anthropic Messages API response shapes: token usage from an SSE stream or a JSON body, and error summaries. Fed already-decoded text in
 // arbitrary chunks; never throws. Observed on 2.1.277 (docs/wire-format.md §6): `message_start.message.usage` holds
 // input/cache counts, `message_delta.usage` the final output count (and sometimes updated input counts).
+
+import zlib from "node:zlib";
 
 export interface Usage {
   readonly input: number;
@@ -104,4 +106,38 @@ export function usageFormat(contentType: string | undefined): "sse" | "json" | n
   if (ct.startsWith("text/event-stream")) return "sse";
   if (ct.startsWith("application/json")) return "json";
   return null;
+}
+
+/** Longest error summary kept; enough for the API's validation messages. */
+export const ERROR_SUMMARY_MAX = 500;
+
+/**
+ * `<error.type>: <error.message>` from an Anthropic error body (`{type:"error", error:{type, message}}`), decoded
+ * per content-encoding; the first characters of the raw text when it is not that shape; null when unreadable.
+ * The caller redacts it before storing.
+ */
+export function errorSummary(body: Buffer, contentEncoding: string | undefined): string | null {
+  let bytes = body;
+  try {
+    const enc = (contentEncoding ?? "").trim().toLowerCase();
+    if (enc === "gzip" || enc === "x-gzip") bytes = zlib.gunzipSync(body);
+    else if (enc === "br") bytes = zlib.brotliDecompressSync(body);
+    else if (enc === "deflate") bytes = zlib.inflateSync(body);
+    else if (enc !== "" && enc !== "identity") return `undecodable body (${enc})`;
+  } catch {
+    return "undecodable body";
+  }
+  const text = bytes.toString("utf8");
+  if (text.trim() === "") return null;
+  try {
+    const o: unknown = JSON.parse(text);
+    if (isObj(o) && isObj(o["error"])) {
+      const e = o["error"];
+      const s = [typeof e["type"] === "string" ? e["type"] : null, typeof e["message"] === "string" ? e["message"] : null].filter(Boolean).join(": ");
+      if (s !== "") return s.slice(0, ERROR_SUMMARY_MAX);
+    }
+  } catch {
+    // not JSON
+  }
+  return text.slice(0, ERROR_SUMMARY_MAX);
 }

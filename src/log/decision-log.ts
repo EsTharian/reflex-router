@@ -76,6 +76,8 @@ export interface DecisionRecord {
     /** The rewritten request was rejected and the original bytes were sent instead. */
     readonly fallback: boolean;
     readonly fallback_status: number | null;
+    /** The upstream's error for the rejected rewrite, `type: message`, redacted and capped at 500 characters. */
+    readonly fallback_error: string | null;
   };
   readonly upstream: { readonly status: number | null; readonly msToHeaders: number | null };
   readonly usage: { readonly input: number; readonly output: number; readonly cache_read: number; readonly cache_create: number } | null;
