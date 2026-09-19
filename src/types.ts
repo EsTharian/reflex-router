@@ -95,6 +95,8 @@ export type ReasonCode =
   | "main_chat_disabled"
   | "override"
   | "guard_blocked"
+  | "stay_pinned"
+  | "return_up"
   | "tier_disabled"
   | "rewrite_unverified"
   | "rewrite_failed";

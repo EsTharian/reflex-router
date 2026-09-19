@@ -37,7 +37,7 @@ All settings are environment variables.
 | `REFLEX_MASS_EPS` | 0–0.5 | `0.10` | Probability the `mass` rule may leave on more expensive tiers. |
 | `REFLEX_UPGRADES` | `off`, `confident`, `on` | `off` | Whether a stronger tier than requested may be chosen. |
 | `REFLEX_MODEL_<TIER>` | model id | `ANTHROPIC_DEFAULT_<TIER>_MODEL`, else built in | Model id used for a tier. |
-| `REFLEX_JEV_DEADLINE_MS` | integer | `1500` | Hard deadline for one Jev decision, connection setup included. On expiry the request is forwarded unchanged (fail-open). |
+| `REFLEX_JEV_DEADLINE_MS` | integer, 50–60000 | `1500` | Hard deadline for one Jev decision, connection setup included. On expiry the request is forwarded unchanged (fail-open). Values below 50 ms are rejected as a configuration error. |
 | `REFLEX_MAX_USER_CHARS`, `REFLEX_MAX_ASSISTANT_CHARS` | integer | `4000`, `1000` | How much text the decision backend may see. |
 
 What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](docs/privacy.md).
@@ -45,8 +45,8 @@ What is sent to the decision backend and what is stored locally is listed in [`d
 ### Route mode
 
 - Only a positively identified start of work is decided: a user-typed main-chat prompt, or a subagent's first request. Its tool loop stays on the same model (a pin per conversation; per agent id for subagents). Harness side calls, notifications and anything unclassified are never touched.
-- **Main chat** is only switched behind the cost guard: switching throws away the conversation's prompt cache, so a downgrade is allowed on a conversation's first turn (nothing cached yet) or when the measured one-time cache penalty is at most `REFLEX_MAX_SWITCH_PENALTY_USD`. Unknown context is refused.
-- **Overrides:** start a prompt with `!haiku`, `!sonnet` or `!opus` to choose the tier for that turn and the subagents it spawns (recorded at each subagent's first request). The token stays in your prompt; reflex never edits prompt text.
+- **Main chat** is only switched behind the cost guard: switching throws away the conversation's prompt cache, so a downgrade is allowed on a conversation's first turn (nothing cached yet) or when the measured one-time cache penalty is at most `REFLEX_MAX_SWITCH_PENALTY_USD`. Unknown context is refused. A refusal keeps the conversation on the model it is on now: a conversation already moved to a cheaper model stays there, is re-judged every turn, moves back up (never blocked) when the decision backend asks for more, and moves further down only through the guard. If the backend fails, the turn goes out unchanged on the requested model.
+- **Overrides:** start a prompt with `reflex:haiku`, `reflex:sonnet` or `reflex:opus` to choose the tier for that turn and the subagents it spawns (recorded at each subagent's first request). It also works at the start of pasted text. `!`, `/`, `@` and `#` are not used because Claude Code consumes them (`!` is bash mode). The token stays in your prompt; reflex never edits prompt text.
 - **Safety nets:** a decision that takes longer than `REFLEX_JEV_DEADLINE_MS` is dropped (request unchanged); a rewritten request the API rejects is re-sent with the original bytes and that tier is switched off for the session for 30 minutes; a failed runtime shape check turns the session back into shadow mode.
 - Every routed record lists the requested model, the model actually sent, and the fields that were rewritten.
 | `REFLEX_IGNORE_VERSION_CHECK` | `1` | unset | Do not degrade `route` to `shadow` on a Claude Code major-version mismatch (the warning stays). |

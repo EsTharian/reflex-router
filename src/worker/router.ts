@@ -336,12 +336,18 @@ export class Router {
     }
     if (kind === "main" && cfg.mainChat === "never") return none({ plan: planRecord(null, ["main_chat_disabled"]) });
 
-    // Main-chat cost guard, evaluated before the backend in route mode: if even the cheapest enabled tier below the
-    // requested one cannot pass, the backend is not called at all.
+    // The tier this main-chat conversation is pinned to now (its last decided target); the requested tier when it
+    // has none. The guard only ever decides whether to LEAVE that tier for a cheaper one; a refusal keeps it.
+    const current: Tier | null = kind === "main" && conv?.pin ? (conv.pin.target?.tier ?? requested) : requested;
+    const belowRequested = current !== null && requested !== null && tierRank(current) < tierRank(requested);
+
+    // Main-chat cost guard, evaluated before the backend in route mode: a conversation still on the requested tier
+    // skips the backend when even the cheapest enabled tier cannot pass. A conversation pinned below the requested
+    // tier always asks (the answer may move it back up).
     const fresh = v.facts.nonSystemMessages === 1;
     const guardFor = (to: Tier): GuardResult =>
       guard({ cacheTier: conv?.cacheTier ?? null, to, ctxTokens: conv?.lastCtx ?? null, ttl: v.facts.betaExtendedCacheTtl ? "1h" : "5m", fresh, maxPenaltyUsd: cfg.maxSwitchPenaltyUsd });
-    if (kind === "main" && routing && requested !== null) {
+    if (kind === "main" && routing && requested !== null && !belowRequested) {
       const cheapest = cfg.tiers.find((t) => tierRank(t) < tierRank(requested));
       if (cheapest === undefined) return none({ plan: planRecord(null, ["no_enabled_tier"]) });
       const pre = guardFor(cheapest);
@@ -380,12 +386,24 @@ export class Router {
       let candidate = policyTarget;
       const reasons = [...p.reasons];
       let g: GuardResult | null = null;
-      // Downgrades on the main chat must pass the guard; returning to the requested tier never needs to.
-      if (kind === "main" && candidate !== null && requested !== null && tierRank(candidate) < tierRank(requested)) {
-        g = guardFor(candidate);
-        if (!g.allowed) {
-          reasons.push("guard_blocked");
-          candidate = null;
+      if (kind === "main" && requested !== null && current !== null) {
+        // Where the policy would put this turn; "no target" means "stay on the requested tier".
+        const desired = policyTarget ?? requested;
+        if (tierRank(desired) > tierRank(current)) {
+          // Moving up is never guarded: quality first, and the backend asked for more than the current tier.
+          candidate = desired === requested ? null : desired;
+          if (belowRequested) reasons.push("return_up");
+        } else if (desired === current) {
+          candidate = current === requested ? null : current;
+          if (belowRequested) reasons.push("stay_pinned");
+        } else {
+          // Moving further down leaves the conversation's cache: the guard decides; a refusal keeps the current tier.
+          g = guardFor(desired);
+          if (!g.allowed) {
+            reasons.push("guard_blocked");
+            candidate = current === requested ? null : current;
+            if (belowRequested) reasons.push("stay_pinned");
+          }
         }
       }
       return finalize(policyTarget, candidate, reasons, part, g);
