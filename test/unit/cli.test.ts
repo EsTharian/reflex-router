@@ -8,9 +8,10 @@ describe("route", () => {
       assert.deepEqual(route(argv), { kind: "claude", args: argv });
     }
   });
-  it("owns doctor, version and report only when they are the first argument", () => {
+  it("owns doctor, version, report and share only when they are the first argument", () => {
     assert.deepEqual(route(["doctor"]), { kind: "reflex", command: "doctor", args: [] });
     assert.deepEqual(route(["report", "--since", "2h"]), { kind: "reflex", command: "report", args: ["--since", "2h"] });
+    assert.deepEqual(route(["share", "--out", "x.jsonl"]), { kind: "reflex", command: "share", args: ["--out", "x.jsonl"] });
     assert.deepEqual(route(["version"]), { kind: "reflex", command: "version", args: [] });
     assert.deepEqual(route(["-p", "doctor"]), { kind: "claude", args: ["-p", "doctor"] });
   });

@@ -1,6 +1,6 @@
 # reflex-router
 
-**Model routers ask "which model?" reflex asks: how should this work be done, was it done right, and what did we learn?**
+**Model routers ask "which model?" reflex also asks what happened next — and writes it down so the routing can eventually be judged against something.**
 
 `reflex` runs the real [Claude Code](https://docs.claude.com/en/docs/claude-code) behind a loopback proxy and does three things with it:
 
@@ -8,7 +8,7 @@
 2. **Route** (opt-in). When it is safe, and does not throw away the conversation's prompt cache for nothing, send the work to a cheaper model. Otherwise leave it exactly as it was.
 3. **Observe.** For every decision, record whether it looked wrong afterwards (the next prompt reads like a correction, a test failed after an edit, an edit was undone) and read the result back with `reflex report`.
 
-What v0.1.0 does **not** do yet, so you don't have to find out: it decides the model tier only (not reasoning effort), it records outcome signals but nothing acts on them yet, and **we have not measured a cost saving**. See [What we have measured](#what-we-have-measured) and [Benchmarks](#benchmarks).
+What this alpha does **not** do, so you don't have to find out: it decides the model tier only (not reasoning effort); **no threshold in it is calibrated**, because calibrating one needs far more data than one person's log holds; and **no cost saving has been measured** — the dollar figures below are list-price estimates over recorded token counts, not bills. See [What reflex found](#what-reflex-found), [Status](#status) and [Contributing data](#contributing-data).
 
 ## How it works
 
@@ -35,11 +35,15 @@ What v0.1.0 does **not** do yet, so you don't have to find out: it decides the m
 
 ## Quick start
 
-reflex is not on npm yet. Install from a checkout:
+```sh
+npm install -g reflex-router@alpha      # puts `reflex` on your PATH (Node.js 20+)
+```
+
+Or from a checkout, if you would rather read it first:
 
 ```sh
 git clone https://github.com/ziyacivan/reflex-router && cd reflex-router
-npm ci && npm run build && npm link      # puts `reflex` on your PATH (Node.js 20+)
+npm ci && npm run build && npm link
 ```
 
 Give it a Jev key, either in the environment or in a file that survives new shells:
@@ -79,15 +83,15 @@ Here is what the report looks like. This is real output (`reflex report` on the 
     connection not logged  12  823 ms  1,136 ms
 ```
 
-The full report has ten sections: decisions by kind and tier; `mass` vs `argmax`; shadow vs actual; guard refusals; fallbacks and breaker; latency (Jev by new vs reused connection, the decision wait and the upstream's first byte); outcome rates for routed vs unchanged turns, with sample sizes and an explicit "insufficient data" line below 20 windows; cost at list prices; side-call usage on its own line; and cache writes by move type. `reflex report --json` prints the same sections as one JSON object, keyed by section number, for scripting against. Settings, route-mode details and safety nets: [`docs/reference.md`](docs/reference.md).
+The full report has fourteen sections (0–13): a workflow profile of where your tokens went; decisions by kind and tier; `mass` vs `argmax`; shadow vs actual; guard refusals; fallbacks and breaker; latency (Jev by new vs reused connection, the decision wait and the upstream's first byte); outcome rates for routed vs unchanged turns, with sample sizes and an explicit "insufficient data" line below 20 windows; cost at list prices; side-call usage on its own line; cache writes by move type; unclassified side-call fingerprints; a side-call routing estimate; and escalations. `reflex report --json` prints the same sections as one JSON object, keyed by section number, for scripting against. Settings, route-mode details and safety nets: [`docs/reference.md`](docs/reference.md).
 
 ## How it compares
 
 Capabilities only. This table has no speed or savings figures, ours or theirs, and it does not claim reflex is better on any number. It compares reflex-router with two existing Claude Code routers as we read them in [`docs/prior-art.md`](docs/prior-art.md) (their READMEs and code at the commits named there); both projects move, so check theirs: [jev-router](https://github.com/gargpratyush/jev-router/blob/0d39e5b/README.md) (`0d39e5b`) and [jcm-router](https://github.com/adarshmishra07/jcm-router/blob/083df7f/README.md) (`083df7f`).
 
-| Capability | reflex-router v0.1.0 | jev-router | jcm-router |
+| Capability | reflex-router (alpha) | jev-router | jcm-router |
 | --- | --- | --- | --- |
-| Outcome capture (correction, failing test after an edit, reverted edit, per decision) | Yes, **record-only**: nothing acts on it yet | Not in what we read; cost only ([§5](docs/prior-art.md#5-what-reflex-router-does-differently)) | Not in what we read; cost only ([§5](docs/prior-art.md#5-what-reflex-router-does-differently)) |
+| Outcome capture (correction, failing test after an edit, reverted edit, per decision) | Yes. Record-only by default; `REFLEX_ESCALATE` can raise a later turn's tier, off unless you set it | Not in what we read; cost only ([§5](docs/prior-art.md#5-what-reflex-router-does-differently)) | Not in what we read; cost only ([§5](docs/prior-art.md#5-what-reflex-router-does-differently)) |
 | Quality-aware reporting | `reflex report`: outcome signals for routed vs unchanged turns with sample sizes, next to a stated cost estimate | Status line showing scores (display only, [§3](docs/prior-art.md#3-jev-router)) | Dashboard of cost, cache health and Jev latency; offline eval of decisions on hand-labelled prompts ([§2](docs/prior-art.md#2-jcm-router)) |
 | Shadow mode | Default mode; report compares would-route with actual | No | `dry_run` |
 | Pluggable / local decision backend | `DecisionBackend` interface; only Jev is implemented, the local backend is a placeholder | Jev only | Jev only |
@@ -123,7 +127,8 @@ Per-turn routing can only reach work that starts a turn or a subagent. In long s
 - **The wire format is not a public contract.** reflex checks the request's shape at runtime and only fixtures for Claude Code 2.1.277 have been captured; a different version warns, a different major version runs `route` as `shadow`. A failed shape check turns the session back into `shadow`.
 - **Restarts lose pins.** If the worker crashes it is restarted, but pins and open outcome windows live in its memory: a routed tool loop then continues on the requested model. A response that is already streaming when the worker dies fails (Claude Code retries it), and killing the reflex launcher itself ends the session's connection.
 - **Route mode adds a wait.** A new turn waits for the backend decision, bounded by `REFLEX_JEV_DEADLINE_MS` (a setting), after which the request goes out unchanged. Every decision record splits the wait from the upstream's first byte.
-- **Outcome capture is a record, not a verdict.** Correction scores are heuristics. One attribution case is known and open: an "undo" correction lands on the turn before the prompt that asked for it, while the revert it triggers is linked to the turn that made the edit.
+- **Outcome capture is a record, not a verdict.** Correction scores are heuristics, and the rules are English and Turkish only — which means the signal is weakest, for everyone else, exactly where escalation would use it.
+- **Escalation is a mechanism, not a tuned feature.** `REFLEX_ESCALATE` is off by default and has a `shadow` mode for a reason: no threshold in it has been calibrated, because the data to calibrate it does not exist yet ([Status](#status)).
 - **Not verified on Windows or against a published package**; the [Phase 1 acceptance record](docs/acceptance-phase1.md) lists what was and was not exercised in real sessions.
 
 ## What we have measured
@@ -136,17 +141,21 @@ Each line is in [`docs/observations.md`](docs/observations.md) with its conditio
 - **Reasoning, not length.** One prompt in that session asked for a one-sentence answer to a hard question, and Jev picked Opus for it (reasoning demand 3.24 of 0–4). A 30-prompt labelled comparison of length-framed and reasoning-framed instructions is in `test/live/` (synthetic prompts, labels are the author's judgment, so at best indicative); its result is not recorded in `docs/observations.md` yet, so we do not state one.
 - **Prompt cache cost of switching (route sessions A and B, Opus 5 requested).** Moving a conversation down wrote its whole context once on the target (63,689 tokens on Sonnet in one case). Moving up one tier from a cheaper pin wrote more (13,385 tokens) than returning to the requested model (5,924 tokens). This is why the guard exists and why `reflex report` shows cache writes by move type.
 
-### What reflex found in its first week
+### What reflex found
 
-Three findings from the week's dogfooding, each with the session(s) it came from. These are the same [`docs/observations.md`](docs/observations.md) entries in prose form — read there for the full numbers and caveats.
+Findings from the first week's dogfooding, each with the session(s) it came from. These are the same [`docs/observations.md`](docs/observations.md) entries in prose form — read there for the full numbers and caveats.
 
-- **Two Claude Code toggles cost more than routing saves, and neither is a routing problem.** One day of real route-mode work (615+ decisions, 7 sessions, ~108M tokens, list prices) found Session recap and Prompt suggestions — two optional, user-facing Claude Code features — billing **$11.82** between them, against routing's own measured saving of $3.33 and side-call routing's best-case $3.39. Both switch off in `/config`. *Condition:* the `notification` side kind merges Claude Code's AFK recap with background task notifications, so the $5.60 recap figure is an upper bound until the log is rewritten by a build that records `side_marker` (from v0.2.3-alpha), which this one was not; one day, one machine, mostly one codebase.
+- **Two Claude Code toggles cost more than routing saves, and neither is a routing problem.** One day of real route-mode work (615+ decisions, 7 sessions, ~108M tokens, list prices) found Session recap and Prompt suggestions — two optional, user-facing Claude Code features — billing **$11.82** between them, against routing's own estimated saving of $3.33 on that log and side-call routing's best case of $3.39 (both list-price estimates over recorded tokens, not bills). Both switch off in `/config`. *Condition:* the `notification` side kind merges Claude Code's AFK recap with background task notifications, so the $5.60 recap figure is an upper bound until the log is rewritten by a build that records `side_marker` (from v0.2.3-alpha), which this one was not; one day, one machine, mostly one codebase.
 
 - **The workflow profile's verdict, on the sessions it's seen so far: routing had nothing to reach.** Two sessions of real company-codebase work (not this repo) logged 2 user turns and 43 pinned tool-loop continuations, zero subagents. Both turns were already judged `opus`, and a tool loop stays on the tier its turn started on — so per-turn routing could touch 0% of those tokens by construction. This is the reasoning behind the delegation hint (`REFLEX_DELEGATE=1`) and the workflow-profile section `reflex report` now leads with. *Condition:* two sessions, one external codebase — this describes that work, not work in general; the hint's own payoff is still unmeasured.
 
 - **One `ultracode` fan-out cost $3.02 for a single prompt, and a polling cap couldn't hold it.** A read-only review of `src/wire/` and `src/outcome/`, run against the real API under a $1.50 spend cap, hit $3.02 before being killed mid-workflow — worker traffic alone was 65.8% of tokens and 74.7% of the dollars. Between two 18-second cap-check polls, spend went from $0.44 to $2.55: parallel workers write their context to the cache all at once, faster than sampling can catch. *Condition:* one session, one prompt, killed early — this is a lower bound on what the run would have cost, and a first data point for the warning above that delegation "can raise total spend," not a general figure for `ultracode` cost.
 
-These are single-session or single-day figures, same as the rest of this section: not benchmarks.
+- **The first calibration read: both arms finally big enough, and they still say nothing.** On 1,525 decisions across 16 sessions, section 7's two main arms passed the n≥20 floor for the first time — routed 26 windows, unchanged 27. Correction rate 1/23 = **4.3%** [0.8, 21.0] routed against 0/21 = **0.0%** [0.0, 15.5] unchanged (Wilson 95%); restricted to the turns where the two decision rules disagree — the only turns the rule choice can affect — 0/9 and 0/1. Across the whole log there is **one** organic correction in 44 scored windows and **one** revert. The intervals overlap over almost their whole range: this cannot distinguish the rules, and one window moves the routed rate by 4.3 points. *What would:* about **73 scored windows per arm** for a ±5-point interval, about **430 per arm** to detect 5% vs 10% at 80% power — and since disagreements are 43% of decided turns, ~430 per arm means on the order of **2,000 decided main turns**. That is hundreds of sessions. *Condition:* one machine, one person, largely one codebase, and **the arms are not randomised** — a turn is routed because the backend judged it easy, so the two arms differ in the difficulty of their work before any outcome is measured. No rate there is a causal estimate. `REFLEX_AB` exists to fix exactly that ([Contributing data](#contributing-data)).
+
+- **The delegation hint, measured on one day instead of across days.** The all-time hint table compares 8 sessions with the hint against 8 without and reports $2.64 per user turn without and $4.04 with — but those sessions span different days, builds and work, so it is **confounded**, and the report now says so. Over one day, one build and one codebase (5 sessions, 29 user turns): subagent share **22.0%** with the hint against **11.7%** without, and $0.39 per user turn against $0.61 — both in the direction the hint intends, and the opposite of the confounded table. *Condition:* **2 sessions against 3**, not randomised (the hint was on or off because of what was being worked on). A direction, not a result.
+
+These are single-session or single-day figures, same as the rest of this section: not benchmarks. Every number here is a list-price estimate over recorded token counts unless it says otherwise, and none of them is a bill.
 
 ## Benchmarks
 
@@ -158,17 +167,85 @@ reflex report --since 7d --usd
 
 You can run the same command on your own traffic today. It prices the same measured token counts at the model sent and at the model requested, at list prices, and says what it does not model (tokenizer differences, what the requested model's cache would have held, cache TTL, discounts, subscription limits). Until our numbers are published, treat any figure about savings, ours or anyone's, as unmeasured.
 
+## Contributing data
+
+**reflex has no telemetry.** It makes exactly two kinds of network connection: to Anthropic, because that is your
+Claude Code session, and to TypeSafe Jev, to ask one question per start of work. There is no third. Nothing about your
+usage is sent anywhere, ever, and there is no setting that turns such a thing on.
+
+Which is also the problem. Every threshold in reflex is tuned on **one person's log**, and the section above says what
+that is worth: one organic correction in 44 scored windows, and telling the two decision rules apart would need
+roughly **430 disagreement windows per arm** — on the order of 2,000 decided main turns, hundreds of sessions. That is
+not reachable from one machine. It is very reachable from thirty.
+
+So if you want to help, you send the data yourself:
+
+```sh
+reflex share            # writes ~/.reflex/reflex-share-<date>.jsonl and prints exactly what is in it
+head -3 ~/.reflex/reflex-share-*.jsonl
+```
+
+`reflex share` is an **allow-list**, not a redactor: a field reaches the file only because it is named in
+[`src/report/share.ts`](src/report/share.ts), so a field added to the log in future is absent from a shared file until
+someone adds it deliberately. It writes a file and makes **no network connection of any kind**.
+
+| In the file | Not in the file |
+| --- | --- |
+| Hashed session and conversation ids; reflex's own record ids (random UUIDs) | Any prompt, reply, code, command or file path — hashed or not, those fields are simply not copied |
+| Timestamps, tiers, model names, which tier was picked and sent, and the reason codes | Your Anthropic credentials or TypeSafe key (reflex never records them anywhere) |
+| The backend's answer: probabilities, confidence, rule, latency, version | Your machine name, user name, working directory or any environment variable |
+| Token counts, HTTP status codes, timings | Prompt previews, error text, side-call fingerprints |
+| Outcome counts (edits, bash runs, test runs), correction **rule ids** and scores, test-runner kinds | |
+
+Read the file before you send it. If anything in it looks like something you would not want public, **do not send
+it** — open an issue saying what you saw instead. That is a bug in `reflex share`, and it is worth more than the data.
+
+Attach it to a [calibration data issue](.github/ISSUE_TEMPLATE/calibration-data.md), with your Claude Code version, OS,
+the model you request and roughly what the work was.
+
+**The most useful thing you can do** is run with `REFLEX_AB=0.2` for a while. It holds a random 20% of routable turns
+on the model you asked for, as a control arm, and tags both arms. It is the only setting that produces data supporting
+a *causal* read: every other comparison in the report is between turns the backend judged easy and turns it did not,
+which differ in difficulty before any outcome is measured. It costs you the cheaper tier on one turn in five.
+
 ## Status
 
-**v0.2.0-alpha: early, and measured numbers are pending.** Phase 2a added the workflow profile, side-call fingerprints and the opt-in delegation hint ([`CHANGELOG.md`](CHANGELOG.md)). Shadow and route modes, outcome capture, `reflex report` and `~/.reflex/env` work and are covered by tests that run offline (a guard fails any non-loopback connection); the live Jev tests and a final real session on this build are still to be run. Not published to npm. Release notes for what was and was not exercised: [`docs/acceptance-phase1.md`](docs/acceptance-phase1.md).
+**Alpha.** Published to npm under the `alpha` dist-tag (`npm install -g reflex-router@alpha`); the plain `latest` tag
+is deliberately not used. It works and it is covered by tests, but almost nothing in it is calibrated, and the
+honest summary is below rather than in a footnote.
+
+- **Routing is measured on one user.** Every figure in this README and in [`docs/observations.md`](docs/observations.md)
+  comes from one person's machine, largely one codebase, over about a week. Nothing here is a benchmark, and no cost
+  saving has been measured — the dollar figures are list-price estimates over recorded token counts.
+- **No threshold is calibrated, and per-rule calibration needs community data.** The `mass`/`argmax` choice, the
+  reasoning-demand vetoes, the confidence floor and the escalation threshold are all chosen values, not fitted ones.
+  Telling the two decision rules apart would need roughly **430 disagreement windows per arm** (~2,000 decided main
+  turns); the whole log to date has 12. See [Contributing data](#contributing-data).
+- **Escalation is a mechanism, not a tuned feature.** `REFLEX_ESCALATE` is **off by default** and has a `shadow` mode
+  (`REFLEX_ESCALATE=shadow` records what it would have done and changes nothing) precisely because nobody has
+  evidence about when it should fire. It can only ever raise a tier, never above the one your client asked for, so its
+  worst case is a session on the model you already chose. Its correction rules are English and Turkish only.
+- **Fable routes are unverified and disabled.** `REFLEX_ALLOW_FABLE` exists, but no Fable retarget has been verified
+  against the API, so Fable is not in the default tier set and a Fable retarget is recorded and left alone.
+- **Tested on Claude Code 2.1.277 and 2.1.278, macOS only.** Not verified on Windows or Linux beyond CI
+  (Ubuntu + macOS, Node 20/22/24). Fixtures exist only for those two Claude Code versions.
+- **The wire format is not a public contract**, and it has already broken once: 2.1.278 changed how typed prompts are
+  encoded and a whole session was silently not routed. reflex checks each request's shape at runtime, warns on a
+  different minor version and runs `route` as `shadow` on a different major one. It also carries a **drift check**: if
+  a session has seen at least 3 prompts you typed but the classifier has found at most 1 start of work, the worker
+  warns and the decision record carries `drift`, counted in report section 1. The drift check is an alarm only — it
+  never changes a classification or degrades the session, because the classifier's own fail-safe already forwards an
+  unrecognised request unchanged. It exists so the next wire-format change is visible on day one instead of a session
+  later.
+- **What has not been exercised** in real sessions is listed in [`docs/acceptance-phase1.md`](docs/acceptance-phase1.md).
 
 ```sh
 npm ci
-npm test             # typecheck + lint + offline tests
+npm test             # typecheck + lint + offline tests (a guard fails any non-loopback connection)
 npm run test:live    # needs a real TYPESAFE_API_KEY; skipped without one
 npm run build
 ```
 
-Notes on what Claude Code sends, with redacted captures: [`docs/wire-format.md`](docs/wire-format.md). Prior art: [`docs/prior-art.md`](docs/prior-art.md).
+Notes on what Claude Code sends, with redacted captures: [`docs/wire-format.md`](docs/wire-format.md). Prior art: [`docs/prior-art.md`](docs/prior-art.md). Changes: [`CHANGELOG.md`](CHANGELOG.md).
 
 MIT. See [`LICENSE`](LICENSE) and [`THIRD_PARTY.md`](THIRD_PARTY.md).

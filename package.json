@@ -7,9 +7,29 @@
     "type": "git",
     "url": "git+https://github.com/ziyacivan/reflex-router.git"
   },
+  "bugs": {
+    "url": "https://github.com/ziyacivan/reflex-router/issues"
+  },
+  "homepage": "https://github.com/ziyacivan/reflex-router#readme",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "llm",
+    "router",
+    "model-routing",
+    "proxy",
+    "cli",
+    "cost",
+    "typesafe",
+    "jev"
+  ],
   "type": "module",
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "bin": {
     "reflex": "bin/reflex.js"

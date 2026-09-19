@@ -13,6 +13,7 @@ npm run gen:versions                       # regenerate src/wire/tested-versions
 node bin/reflex.js doctor                  # run the built CLI (after `npm run build`); shows where each setting came from
 node bin/reflex.js report [--since 2h] [--usd] [--json]   # summarise ~/.reflex/decisions.jsonl (reads files only); section 0 = workflow profile, 13 = escalations; --json emits the same sections keyed by section number
 node bin/reflex.js report --fingerprints   # unclassified side-call fingerprints as JSON lines (what users send back)
+node bin/reflex.js share [--since 7d] [--out f.jsonl]      # structural-only log for calibration; allow-list, writes a file, never uploads
 node scripts/report/strip-archive.mjs <in> <out>   # structural copy of an archived log (allow-listed fields) for test/fixtures/report/archives/
 node scripts/acceptance/check-archives.mjs # Phase 1 acceptance checks over ~/.reflex/archive/*.jsonl (docs/acceptance-phase1.md)
 ```
@@ -33,6 +34,7 @@ src/worker/escalation.ts REFLEX_ESCALATE: the tier arithmetic and the decay of a
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
 src/config.ts the ONLY interpreter of settings (and of process.env); src/env-file.ts only reads/permission-checks ~/.reflex/env and merges it under the process env
 src/report/   `reflex report`: tolerant JSONL reader, pure sections 0-13 (0 = workflow profile, 11 = side-call fingerprints, 12 = side-call routing estimate, 13 = escalations), no network
+src/report/share.ts  `reflex share`: the ALLOW-LIST of fields a shared log may contain. Adding a field to the decision record does NOT add it here; that is deliberate and test/unit/share.test.ts pins it
 src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, tested versions, unclassified side-call fingerprints, typed-vs-injected hook prompts
 ```
 
@@ -45,7 +47,8 @@ Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacte
 - **Wire format is unstable.** Isolate everything that depends on Claude Code's request/response shapes in `src/wire/`. Treat the Claude Code version as a hint only; verify shape at runtime.
 - **Byte-identical passthrough** unless a rewrite is deliberately applied; never re-serialise a body that did not change.
 - **Loopback only**, and never edit the user's `~/.claude/settings.json`.
-- **No unmeasured claims** (cost, speed, quality) in README or docs.
+- **No unmeasured claims** (cost, speed, quality) in README or docs. Dollar figures are list-price estimates over recorded token counts and must say so.
+- **No telemetry, ever.** reflex opens exactly two kinds of connection: Anthropic (the user's own session) and the decision backend (one question per start of work). `reflex share` writes a file and never uploads it. A field reaches a shared log only by being named in `src/report/share.ts`.
 - **Pricing** lives in `src/pricing.ts` with a "last verified" date and must be checked against Anthropic's pricing page before release (not present yet).
 - **Attribution.** Any code adapted from another project is listed in `THIRD_PARTY.md` (tracked, shipped in the npm package) in the same commit.
 - **Hook answers carry nothing but the delegation hint.** Every hook is answered `204` except, with `REFLEX_DELEGATE=1`, a user-typed main-chat `UserPromptSubmit`, answered with `hookSpecificOutput.additionalContext` only (never `decision`, `continue` or anything that can block or change a prompt); any failure is a `204`. Changing the hint text means bumping `HINT_VERSION`.
