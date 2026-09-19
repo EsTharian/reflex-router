@@ -139,6 +139,10 @@ The same script with `--from opus` ran one real Opus 5 session with two subagent
 
 Opus → Sonnet needs only the model swap (both families take adaptive thinking, `effort` and system messages); Opus → Haiku needs the same three edits as Sonnet → Haiku. **Not tested:** Opus → Sonnet with `effort` other than `medium` (`high`, `xhigh`, `max`), an interactive Opus session end to end, `context-1m`, Fable, upgrades. The Opus main request in this `-p` run had no `extended-cache-ttl` beta; the cost guard reads the TTL from each request.
 
+### 5.4 Interactive Opus first turn → Haiku (probe, M3 acceptance follow-up)
+
+Route-mode acceptance session A saw one Opus → Haiku main-chat first turn rejected with 400 (the fallback worked; the error text was not recorded then). Hypothesis: the interactive main chat's 1-hour cache TTL. `scripts/spike/first-turn-probe.mjs` started an **interactive** Opus session in a pseudo-terminal (`scripts/spike/pty-run.py`), intercepted its first main-chat request and probed Haiku with the product rewrite; the real turn was not sent. That request had `max_tokens` 64000, adaptive thinking without `display`, `effort: "medium"`, `cache_control` TTL `1h`, the `extended-cache-ttl-2025-04-11` beta, 55 tools and 14 betas. **Result: 200 with the unchanged rewrite** (`experiment.interactive-opus-first-turn-to-haiku.results.json`, est. $0.10). The 1-hour TTL is therefore not the cause; session A's request is not reproduced, and every fallback record now carries the upstream error (`forwarded.fallback_error`, redacted) so the next occurrence is diagnosable.
+
 Route mode applies exactly the verified pairs: **Sonnet → Haiku, Opus → Sonnet, Opus → Haiku**. Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.

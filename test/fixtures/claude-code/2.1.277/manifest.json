@@ -604,6 +604,11 @@
    "file": "experiment.route-opus-to-sonnet-haiku.results.json",
    "kind": "experiment",
    "description": "One real claude -p session (Opus 5, sdk-cli, tools Bash+Agent, two subagents) routed like route mode by src/wire/rewrite.ts: subagent #1 and the main chat to Haiku, subagent #2 to Sonnet, with probes to both targets at each shape. Statuses, API errors, shape facts (incl. effort and beta names), rewritten fields, usage and estimated cost only; no prompts, no headers."
+  },
+  {
+   "file": "experiment.interactive-opus-first-turn-to-haiku.results.json",
+   "kind": "experiment",
+   "description": "The first main-chat request of an INTERACTIVE Opus 5 session (TUI in a pseudo-terminal, cc_entrypoint=cli), retargeted to Haiku by src/wire/rewrite.ts and probed; the real turn was not sent. Shape facts (max_tokens, thinking, effort, cache TTLs, beta names, tool count), status, usage, estimated cost; no prompts, no headers."
   }
  ],
  "findings": {
@@ -694,6 +699,14 @@
     "Fable",
     "upgrades"
    ]
+  },
+  "interactive_opus_first_turn_to_haiku": {
+   "status": "accepted",
+   "date": "2026-09-19",
+   "est_cost_usd": 0.104,
+   "shape": "max_tokens 64000, thinking adaptive (no display), effort medium, cache_control ttl 1h, extended-cache-ttl-2025-04-11 beta present, 55 tools, 14 betas",
+   "result": "200 with the unchanged product rewrite (model, output_config.effort, thinking, 1 system message folded)",
+   "interpretation": "the 1h cache TTL (beta and cache_control ttl) is accepted by Haiku 4.5; it does not explain the 400 seen on route-mode acceptance session A. That request is not reproduced; the error text is now stored on every fallback record (forwarded.fallback_error)."
   }
  },
  "entrypoints": [
