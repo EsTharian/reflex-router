@@ -41,6 +41,7 @@ Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacte
 - **No unmeasured claims** (cost, speed, quality) in README or docs.
 - **Pricing** lives in `src/pricing.ts` with a "last verified" date and must be checked against Anthropic's pricing page before release (not present yet).
 - **Attribution.** Any code adapted from another project is listed in `THIRD_PARTY.md` (tracked, shipped in the npm package) in the same commit.
+- **Outcome capture is record-only.** Hook payload text (prompts, commands, paths, code) stays in the worker's memory; `decisions.jsonl` gets hashes, counts, rule ids and runner kinds only. Nothing about a request or session changes because of an outcome signal. Every outcome record without a `decision_id` says why (`no_decision`).
 - **Real-API experiments** run with the user's actual Claude Code settings: no `--model` (or other settings) override in the `claude` invocation, and the experiment's results file records the settings it ran under (model setting, entrypoint, betas seen). State the cost cap before running.
 - Small, well-described commits; run `npm test` first. Phase/plan documents are local working files (`docs/plan-*.md`, gitignored) and are never committed or referenced from tracked files.
 
