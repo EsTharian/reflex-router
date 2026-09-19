@@ -2,7 +2,7 @@
 // Milestone 0 spike — NOT product code. Throwaway tooling for observing what Claude Code
 // actually sends. Dump-only passthrough proxy + hook receiver + `claude` launcher.
 //
-//   node scripts/spike/capture.mjs [--out DIR] [--no-hooks] [--] <claude args...>
+//   node scripts/spike/capture.mjs [--out DIR] [--no-hooks] [--cap-usd N] [--] <claude args...>
 //
 // Guarantees:
 //   * request/response bytes are forwarded untouched (except accept-encoding is dropped so the
@@ -10,20 +10,27 @@
 //   * credential headers (authorization, x-api-key, cookie, ...) are never written to disk
 //   * raw dumps contain prompts and identifiers; they live under _dumps/ (gitignored) and are
 //     turned into redacted fixtures by redact-fixtures.mjs
+//   * --cap-usd refuses to FORWARD a request once the running list-price total would cross the cap, and logs the
+//     refusal to cap-refusals.jsonl. A cap polled from outside cannot hold against a parallel fan-out.
 import http from "node:http";
 import https from "node:https";
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
+// The product's own list prices, so a cap here means the same thing a cap in a report does. Imported as .ts: needs
+// Node's type stripping (>= 22.18) or `node --import tsx`.
+import { usageCostUsd } from "../../src/pricing.ts";
 
 const argv = process.argv.slice(2);
 let out = join("_dumps", new Date().toISOString().replace(/[:.]/g, "-"));
 let hooks = true;
+let capUsd = Infinity;
 const claudeArgs = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--out") out = argv[++i];
   else if (a === "--no-hooks") hooks = false;
+  else if (a === "--cap-usd") capUsd = Number(argv[++i]);
   else if (a === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
   else claudeArgs.push(a);
 }
@@ -42,6 +49,31 @@ const scrubHeaders = (h) => {
 const parse = (s) => { try { return JSON.parse(s); } catch { return s; } };
 const slug = (p) => p.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || "root";
 
+// ---- spend cap --------------------------------------------------------------------------------
+// A cap checked by polling the dump cannot hold against a parallel fan-out: four workflow workers each write their
+// whole context at once, and a sampling monitor is always one interval behind them (docs/observations.md,
+// 2026-09-19, measured at ~$2.10 committed inside one 18-second gap). So the cap is enforced HERE, in the only place
+// every request passes, and it is checked BEFORE a request is forwarded rather than after it is billed.
+const TIER_OF = (m) => (/haiku/.test(m ?? "") ? "haiku" : /sonnet/.test(m ?? "") ? "sonnet" : /fable/.test(m ?? "") ? "fable" : "opus");
+let spentUsd = 0;
+let refusals = 0;
+/** Adds one response's usage to the running total. `ttl` follows the request's cache_control, 1h being the worst case. */
+const chargeResponse = (sseText, model) => {
+  let u = null, out = 0;
+  for (const line of sseText.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    let d;
+    try { d = JSON.parse(line.slice(6)); } catch { continue; }
+    if (d.type === "message_start") { u = d.message?.usage ?? null; model = d.message?.model ?? model; }
+    if (d.type === "message_delta" && d.usage?.output_tokens) out = d.usage.output_tokens;
+  }
+  if (!u) return;
+  spentUsd += usageCostUsd(TIER_OF(model), {
+    input: u.input_tokens ?? 0, output: out,
+    cacheRead: u.cache_read_input_tokens ?? 0, cacheCreate: u.cache_creation_input_tokens ?? 0,
+  }, "1h");
+};
+
 const server = http.createServer((req, res) => {
   const chunks = [];
   req.on("data", (c) => chunks.push(c));
@@ -58,6 +90,23 @@ const server = http.createServer((req, res) => {
     const n = String(++seq).padStart(3, "0");
     const base = `${n}-${req.method}-${slug(url.pathname)}`;
     const started = Date.now();
+
+    // Pre-charge from the request's own bytes (~4 bytes/token, priced as a 1-hour cache write, the worst case) so a
+    // burst of parallel requests is counted the moment it is sent, not when it returns. Replaced by the real usage
+    // once the response is read. A request that would cross the cap is REFUSED, never forwarded.
+    const reqModel = raw.length ? (parse(raw.toString("utf8"))?.model ?? null) : null;
+    const preUsd = url.pathname === "/v1/messages"
+      ? usageCostUsd(TIER_OF(reqModel), { input: 0, output: 0, cacheRead: 0, cacheCreate: Math.ceil(raw.length / 4) }, "1h")
+      : 0;
+    if (spentUsd + preUsd > capUsd) {
+      refusals++;
+      const msg = `spike cap: $${capUsd} reached (spent $${spentUsd.toFixed(4)}, this request ~$${preUsd.toFixed(4)}); not forwarded`;
+      appendFileSync(join(out, "cap-refusals.jsonl"), JSON.stringify({ t: started, seq: n, url: req.url, model: reqModel, req_bytes: raw.length, pre_usd: Number(preUsd.toFixed(4)), spent_usd: Number(spentUsd.toFixed(4)), cap_usd: capUsd }) + "\n");
+      process.stderr.write(`[spike] REFUSED #${n}: ${msg}\n`);
+      res.writeHead(429, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: msg } }));
+      return;
+    }
+    spentUsd += preUsd;
     writeFileSync(join(out, `${base}.req.json`), JSON.stringify({
       t: started, method: req.method, url: req.url, headers: scrubHeaders(req.headers),
       body_bytes: raw.length, body: raw.length ? parse(raw.toString("utf8")) : null,
@@ -81,6 +130,9 @@ const server = http.createServer((req, res) => {
       ur.on("end", () => {
         res.end();
         const text = Buffer.concat(rc).toString("utf8");
+        spentUsd -= preUsd; // the estimate did its job; charge what was actually billed
+        chargeResponse(text, reqModel);
+        if (capUsd !== Infinity) process.stderr.write(`[spike] #${n} spent $${spentUsd.toFixed(4)} / $${capUsd}\n`);
         writeFileSync(join(out, `${base}.res.json`), JSON.stringify({
           ms: Date.now() - started, status: ur.statusCode, headers: scrubHeaders(ur.headers),
           body_bytes: text.length, body_head: text.slice(0, 200_000),
@@ -88,6 +140,7 @@ const server = http.createServer((req, res) => {
       });
     });
     up.on("error", (e) => {
+      spentUsd -= preUsd; // nothing was billed
       process.stderr.write(`[spike] upstream error: ${e.message}\n`);
       if (!res.headersSent) res.writeHead(502, { "content-type": "application/json" });
       res.end(JSON.stringify({ type: "error", error: { message: `spike proxy: ${e.message}` } }));
@@ -130,7 +183,7 @@ server.listen(0, "127.0.0.1", () => {
   for (const s of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(s, () => child.kill(s));
   child.on("exit", (code, signal) => {
     server.close();
-    process.stderr.write(`[spike] claude exited code=${code} signal=${signal}; ${seq} requests captured in ${out}\n`);
+    process.stderr.write(`[spike] claude exited code=${code} signal=${signal}; ${seq} requests captured in ${out}; spent ~$${spentUsd.toFixed(4)}${capUsd === Infinity ? "" : ` of $${capUsd} cap, ${refusals} refused`}\n`);
     process.exit(signal ? 1 : (code ?? 0));
   });
   child.on("error", (e) => { process.stderr.write(`[spike] cannot start claude: ${e.message}\n`); process.exit(1); });
