@@ -136,6 +136,18 @@ Each line is in [`docs/observations.md`](docs/observations.md) with its conditio
 - **Reasoning, not length.** One prompt in that session asked for a one-sentence answer to a hard question, and Jev picked Opus for it (reasoning demand 3.24 of 0–4). A 30-prompt labelled comparison of length-framed and reasoning-framed instructions is in `test/live/` (synthetic prompts, labels are the author's judgment, so at best indicative); its result is not recorded in `docs/observations.md` yet, so we do not state one.
 - **Prompt cache cost of switching (route sessions A and B, Opus 5 requested).** Moving a conversation down wrote its whole context once on the target (63,689 tokens on Sonnet in one case). Moving up one tier from a cheaper pin wrote more (13,385 tokens) than returning to the requested model (5,924 tokens). This is why the guard exists and why `reflex report` shows cache writes by move type.
 
+### What reflex found in its first week
+
+Three findings from the week's dogfooding, each with the session(s) it came from. These are the same [`docs/observations.md`](docs/observations.md) entries in prose form — read there for the full numbers and caveats.
+
+- **Two Claude Code toggles cost more than routing saves, and neither is a routing problem.** One day of real route-mode work (615+ decisions, 7 sessions, ~108M tokens, list prices) found Session recap and Prompt suggestions — two optional, user-facing Claude Code features — billing **$11.82** between them, against routing's own measured saving of $3.33 and side-call routing's best-case $3.39. Both switch off in `/config`. *Condition:* the `notification` side kind merges Claude Code's AFK recap with background task notifications, so the $5.60 recap figure is an upper bound until the log is rewritten by a build that records `side_marker` (from v0.2.3-alpha), which this one was not; one day, one machine, mostly one codebase.
+
+- **The workflow profile's verdict, on the sessions it's seen so far: routing had nothing to reach.** Two sessions of real company-codebase work (not this repo) logged 2 user turns and 43 pinned tool-loop continuations, zero subagents. Both turns were already judged `opus`, and a tool loop stays on the tier its turn started on — so per-turn routing could touch 0% of those tokens by construction. This is the reasoning behind the delegation hint (`REFLEX_DELEGATE=1`) and the workflow-profile section `reflex report` now leads with. *Condition:* two sessions, one external codebase — this describes that work, not work in general; the hint's own payoff is still unmeasured.
+
+- **One `ultracode` fan-out cost $3.02 for a single prompt, and a polling cap couldn't hold it.** A read-only review of `src/wire/` and `src/outcome/`, run against the real API under a $1.50 spend cap, hit $3.02 before being killed mid-workflow — worker traffic alone was 65.8% of tokens and 74.7% of the dollars. Between two 18-second cap-check polls, spend went from $0.44 to $2.55: parallel workers write their context to the cache all at once, faster than sampling can catch. *Condition:* one session, one prompt, killed early — this is a lower bound on what the run would have cost, and a first data point for the warning above that delegation "can raise total spend," not a general figure for `ultracode` cost.
+
+These are single-session or single-day figures, same as the rest of this section: not benchmarks.
+
 ## Benchmarks
 
 There are no benchmark or savings figures yet, on purpose. A measured cost report lands after a week of real use of v0.1.0 in route mode. It will come from this command on our own traffic, published with its sample sizes and conditions:
