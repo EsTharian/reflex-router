@@ -111,10 +111,21 @@ contains that request and **nothing else**. The betas in force: `afk-mode-2026-0
 `dangerous-tool-use-2026-09-03`, `effort-2025-11-24`, `fallback-credit-2026-06-01`,
 `mid-conversation-tool-changes-2026-07-01`, `extended-cache-ttl-2025-04-11`, `context-1m-2025-08-07`.
 
-**Proven: the plain-string form is not universal in 2.1.278.** The capture above ran the same minor version with a
-*different* beta set (none of `afk-mode`, `advisor-tool`, `dangerous-tool-use`, `effort`, `fallback-credit`,
-`mid-conversation-tool-changes`) and sent all four of its typed prompts as arrays; the current classifier labels all
-four `new`. A 2.1.278 session is not by itself enough to produce the regression.
+**Proven: the plain-string form is not universal in 2.1.278, and the betas are not what decides it.** The capture above
+ran the same minor version and sent all four of its typed prompts as arrays; the current classifier labels all four
+`new`. Its main requests carry **exactly the same 16 betas** as the regression session — `advisor-tool`, `afk-mode`,
+`dangerous-tool-use`, `effort`, `fallback-credit`, `mid-conversation-tool-changes`, `extended-cache-ttl` included;
+set-identical, no difference in either direction. (An earlier revision of this section claimed a beta difference. It was
+read off request 002, the `tools: 0` quota probe, which carries a shorter list than the session's real requests.)
+
+**The strongest surviving lead: reflex's own delegation hint.** With `REFLEX_DELEGATE=1` reflex answers a user-typed
+`UserPromptSubmit` with `hookSpecificOutput.additionalContext`; `scripts/spike/capture.mjs` answers every hook `204`
+and never injects anything. Across the maintainer's logs, plain-string `unclassified` residuals appear **only** in
+sessions where the hint was being injected — 20 of them across four such sessions, and **zero** in any session without
+it. (Two plain-string residuals in a no-hint session are the AFK session recap, a genuine harness side call, not a
+missed prompt.) This is a correlation with one known exception: a short hint-enabled session of four turns produced no
+residuals at all, so injection alone is not sufficient — conversation length, or something that accumulates with it,
+is likely also involved. **Not established.** It does mean the capture proxy cannot reproduce the shape on its own.
 
 **Inferred, not proven.** That those ten plain-string requests carried the *newest* prompt rather than an older one.
 The timing (first in window, +0.0 s) and the monotonically growing message counts make a history-replaying side call
