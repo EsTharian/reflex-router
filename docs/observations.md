@@ -106,3 +106,55 @@ Every logged main-chat `new` turn joined to a user prompt; the one miss in a fir
 **Result.** The hook was answered with the hint, a `delegate_hint` record was written, and the one model request carried the hint text verbatim at the end of its trailing `role:"system"` message, prefixed `UserPromptSubmit hook additional context:` (details: `docs/wire-format.md` §7). The decision record carried `delegate_hint: "delegate-1"`, its task sent to the backend was the 114-character prompt alone (the hint is not in it, nor in the preview), and the Jev failure was recorded as `backend:network` with the request forwarded unchanged.
 
 **Not run.** The same command against the real API: the request was about 98 KB (68 KB of tool schemas), roughly 28–31k tokens, all marked for a 1-hour cache write (2× input, $10/M on Opus 5 at list price), so a cold run would cost about $0.28–0.31, at or over the $0.30 cap set for it. Whether the model follows the hint, and whether that pays, is what the week in route mode is for.
+
+## 2026-09-19 — Dynamic Workflow (`ultracode`) on 2.1.278: what a fan-out costs, and why a polling cap cannot hold one
+
+**Setup.** One interactive Claude Code 2.1.278 session on this repository, the maintainer's own settings (`opus[1m]`,
+effort `medium`, no `--model` or other override), driven through a pty by `scripts/spike/pty-run.py` into the dump-only
+capture proxy (`scripts/spike/capture.mjs`), permission mode `plan` (read-only), real Anthropic upstream. One prompt
+containing the `ultracode` keyword, asking for a read-only review of `src/wire/` and `src/outcome/`. A first attempt
+stalled on a permission prompt for the `Workflow` tool and was killed after $0.3735; the second attempt is the one
+measured here. **The run was killed at the spend cap, mid-workflow**, so every figure below is a lower bound.
+
+**Cost.** 22 requests with usage, 1,504,782 tokens, **$2.6491** at list prices (Opus 5, 1-hour cache writes), plus
+$0.3735 for the abandoned first attempt: **$3.02 for one prompt**. Split by scope:
+
+| scope | requests | tokens | $ | % tokens | % $ |
+| --- | --- | --- | --- | --- | --- |
+| main chat | 7 | 515,248 | 0.6707 | 34.2% | 25.3% |
+| workflow workers | 15 | 989,534 | 1.9784 | 65.8% | 74.7% |
+
+Four workers ran. Each worker's **first** request pays a cache write of its own context (58,976 tokens for the first;
+~9,530 each for the next three, which reused the shared prefix), and every worker step after that pays a further
+2,000–10,500 tokens of cache write. Worker traffic was **two thirds of the tokens and three quarters of the dollars**
+in a run that never finished.
+
+**A polling kill-switch cannot hold a cap against a parallel fan-out.** The run was guarded by a monitor that
+re-priced the captured SSE usage every 18 seconds and killed the session above the cap. Between two consecutive polls
+the session went from **4 requests / $0.44 to 21 requests / $2.55** — about **$2.10 committed inside one 18-second
+sampling gap** — because the workers start together and each writes its context to the cache at once. By the time the
+check fired the money was already spent; killing the process cannot recall requests that have been billed. The agreed
+cap was $1.50 and the actual spend was $3.02, an overrun of $1.52.
+
+The conclusion is structural, not a tuning problem: **a cap enforced by sampling is always one poll interval behind a
+fan-out that can commit its whole budget in parallel.** A cap has to be enforced where the requests pass, before they
+are forwarded. `capture.mjs` now does that (it refuses to forward once a running total crosses `--cap-usd`). The
+product proxy does not yet, and a per-session spend guard for workflow fan-outs is an open plan item — Claude Code's
+own 25-agent / 1.5M-token warning is disabled by the `ultracode` session setting, so a user who turns it on has no
+ceiling from either side.
+
+**This is the first measurement behind the README's warning that the delegation hint "can raise total spend."** The
+hint asks for delegation one turn at a time; `ultracode` delegates by default and, on this one prompt, put 65.8% of the
+tokens into workers. One session, one prompt, killed early: it bounds nothing, but it is a data point with a price tag.
+
+**Wire findings** (fixtures `test/fixtures/claude-code/2.1.278/ultracode.*`, details in `docs/wire-format.md` §7.1):
+workflow workers are ordinary subagents on the wire (header **and** `cc_is_subagent=true`), classified correctly with
+no code change; they request the **session's own model** (`claude-opus-5`, effort `medium`), so the third-party claim
+that workers use a stock model did not reproduce; hook `agent_type` is the new value `workflow-subagent`;
+`SubagentStart` fired for each worker, `SubagentStop` was not observed **because the session was killed**; zero
+requests were `unclassified`.
+
+**Not possible: the 452k comparison.** The two 452k-token unclassified side calls from the company dogfood cannot be
+compared against these. No archived log on this machine carries a `side_fingerprint` field at all — fingerprints landed
+in v0.2.0-alpha, after every archived session — and the company log stays on that machine. The only two `unclassified`
+side calls present locally are 38k and 71k tokens from this repository's own acceptance sessions.
