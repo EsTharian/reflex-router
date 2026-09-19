@@ -6,6 +6,68 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.1 — 2026-09-20
+
+**The first version published to npm**, under the `alpha` dist-tag. Two wire/tracker bugs found by reading the
+2026-09-19 log against Claude Code's own transcripts, the settings that make escalation safe to ship, and the
+reporting and tooling needed for anyone but the author to contribute calibration data.
+
+### Fixed
+
+- **A message you type during a tool loop is no longer invisible.** Claude Code wraps a mid-loop prompt in a
+  `<system-reminder>` and delivers it inside the running turn's next request, beside the tool results. Every
+  reminder-stripping rule dropped it, so the step classified as an ordinary continuation and the words never reached
+  the wire. Observed on session 805b3287 (docs/observations.md), where it left an outcome window closing
+  `no_wire_turn`. That is not only a reporting gap: a correction typed mid-loop is exactly the signal escalation runs
+  on, and in this shape it could never be scored against the turn it criticises. The wrapper is now recognised and the
+  inner text matched against the newest unclaimed typed prompt — the same positive evidence a plain-string turn needs.
+  No hook stream, no promotion.
+- **`SubagentStart` no longer manufactures a main-chat window.** It carries the subagent's own prompt id, which the
+  main chat never saw, so the tracker created a window for it that no wire turn could ever join: zero counts, open
+  until `session_end`, closing `no_wire_turn`. Observed as 29d16aa2 seq 4, where the phantom and the subagent's own
+  window share a `turn_seq` and an `openedAt` to the millisecond. A subagent now attaches to the turn that spawned it
+  or to none, and its record says which in a new `parent_turn` field.
+
+### Escalation
+
+- **`REFLEX_ESCALATE_TARGET` (`requested` | `next`, default `requested`).** Escalation goes straight back to the
+  requested tier. "One tier up" is the intuitive choice and the measurement says it is the expensive one: moving a
+  Haiku pin to Sonnet paid 13,385 tokens of cache write where moving to the requested Opus paid 5,924, because Claude
+  Code's own side calls keep the requested model's cache warm for free. `next` keeps the old behaviour.
+- **`REFLEX_ESCALATE=shadow`** records `would_escalate` and changes nothing — no tier change, no `escalated:` reason.
+  Section 13 lists shadow rows as shadow and counts only applied escalations. `REFLEX_ESCALATE` is now
+  `off | on | shadow`; a value that is neither a mode nor a boolean spelling is a configuration error rather than a
+  silent `off`.
+
+### Measurement
+
+- **`REFLEX_AB=<fraction>` (default 0): a randomised control arm.** Of the turns the backend would route below the
+  requested tier, that fraction is held on the requested model at random and tagged `ab: "control"`; the rest are
+  tagged `ab: "routed"`. Section 7 compares only the tagged turns and refuses the comparison until both arms pass
+  `MIN_OUTCOME_N`. This is the only setting that produces data supporting a causal read: every other comparison in the
+  report is between turns the backend judged easy and turns it did not, which differ in difficulty before any outcome
+  is measured. Only a conversation currently on the requested tier is eligible; an escalated turn is never randomised.
+- **`prompt_encoding` on every main new turn.** 2.1.277 sent typed prompts as blocks, 2.1.278 sends plain strings too,
+  and once a turn is recognised the two left identical records — so the question "did the delegation hint change the
+  encoding?" was unanswerable from a log and could only be inferred from the Claude Code version. Report section 1 now
+  counts new turns by encoding, split by hint.
+
+### Publishing
+
+- **`reflex share`** writes a structural-only copy of the log and prints exactly what is in it. It is an allow-list,
+  not a redactor: a field reaches the file only because `src/report/share.ts` names it, so a field added to the record
+  later is absent until someone adds it deliberately. It writes a file and opens no socket — reflex has no telemetry
+  and no upload path — and it says so in its own output. A `calibration-data` issue template says where to attach it
+  and to report anything that looks wrong rather than sending it.
+- **README:** "Contributing data" (why one person's log cannot calibrate anything, and what `REFLEX_AB` is for) and a
+  rewritten "Status" stating plainly that this is an alpha measured on one user, that nothing is calibrated, that
+  escalation is an uncalibrated mechanism which is off by default, that Fable routes are unverified and disabled, and
+  that only Claude Code 2.1.277/2.1.278 on macOS have been exercised. Several overclaims corrected: routing's $3.33 is
+  an estimate over recorded tokens, not a measured saving; the tagline no longer implies reflex knows whether work was
+  done right.
+- **package.json:** `bugs`, `homepage`, `keywords`, `publishConfig.access: public`. The `files` list was re-checked
+  against `npm pack`: 63 files, no tests, fixtures, sourcemaps or scripts. CI runs tests only and publishes nothing.
+
 ## 0.3.0-alpha — 2026-09-20
 
 The first release in which an outcome signal can change a later request — opt-in, off by default, and bounded so that

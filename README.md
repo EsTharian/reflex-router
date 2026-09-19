@@ -36,7 +36,7 @@ What this alpha does **not** do, so you don't have to find out: it decides the m
 ## Quick start
 
 ```sh
-npm install -g reflex-router@alpha      # puts `reflex` on your PATH (Node.js 20+)
+npm install -g reflex-router@alpha      # puts `reflex` on your PATH (Node.js 20+); alpha, see Status
 ```
 
 Or from a checkout, if you would rather read it first:
@@ -210,9 +210,9 @@ which differ in difficulty before any outcome is measured. It costs you the chea
 
 ## Status
 
-**Alpha.** Published to npm under the `alpha` dist-tag (`npm install -g reflex-router@alpha`); the plain `latest` tag
-is deliberately not used. It works and it is covered by tests, but almost nothing in it is calibrated, and the
-honest summary is below rather than in a footnote.
+**Alpha.** Published to npm under the `alpha` dist-tag — install it by name: `npm install -g reflex-router@alpha`.
+It works and it is covered by tests, but almost nothing in it is calibrated, and the honest summary is below rather
+than in a footnote.
 
 - **Routing is measured on one user.** Every figure in this README and in [`docs/observations.md`](docs/observations.md)
   comes from one person's machine, largely one codebase, over about a week. Nothing here is a benchmark, and no cost
