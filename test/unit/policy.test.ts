@@ -234,7 +234,13 @@ describe("config for policy", () => {
     assert.ok(!r.ok);
     assert.match(r.errors.join(), /REFLEX_JEV_DEADLINE_MS/);
     assert.equal(cfg({ REFLEX_SHAPE_CHECK_N: "3" }).shapeCheckN, 3);
+  });
+
+  it("REFLEX_LOG_PROMPTS is off by default and only on when explicitly truthy", () => {
+    assert.equal(cfg({}).logPrompts, false);
     assert.equal(cfg({ REFLEX_LOG_PROMPTS: "0" }).logPrompts, false);
-    assert.equal(cfg({}).logPrompts, true);
+    assert.equal(cfg({ REFLEX_LOG_PROMPTS: "" }).logPrompts, false);
+    assert.equal(cfg({ REFLEX_LOG_PROMPTS: "1" }).logPrompts, true);
+    assert.equal(cfg({ REFLEX_LOG_PROMPTS: "true" }).logPrompts, true);
   });
 });

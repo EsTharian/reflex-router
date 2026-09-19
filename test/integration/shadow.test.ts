@@ -17,7 +17,9 @@ describe("shadow mode, end to end", () => {
   let stack: Stack;
   before(async () => {
     jev = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.9, reasoning: 0.4 });
-    stack = await startStack({ config: { jevBaseUrl: jev.url, jevDeadlineMs: 800 } });
+    // logPrompts: true so this suite can assert the preview's shape on decided fixtures; the default (off) is
+    // covered separately (test/unit/policy.test.ts, test/unit/env-file.test.ts "prompt preview" doctor line).
+    stack = await startStack({ config: { jevBaseUrl: jev.url, jevDeadlineMs: 800, logPrompts: true } });
     stack.upstream.setHandler(sseHandler);
   });
   after(async () => {

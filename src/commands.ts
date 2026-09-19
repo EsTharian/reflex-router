@@ -78,6 +78,7 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
   out(`backend:         ${c.backend} (key ${c.typesafeApiKey ? "present" : merged.state === "refused" ? "missing: the env file was refused (see above)" : "missing"})`);
   out(`upstream:        ${new URL(c.upstreamUrl).origin}${new URL(c.upstreamUrl).pathname === "/" ? "" : new URL(c.upstreamUrl).pathname}`);
   out(`state directory: ${c.home}`);
+  out(`prompt preview:  ${c.logPrompts ? "on (REFLEX_LOG_PROMPTS) - decisions.jsonl includes a redacted, 300-char preview of each decided prompt" : "off (REFLEX_LOG_PROMPTS=1 to add a redacted prompt preview to decisions.jsonl)"}`);
   out(`delegation hint: ${c.delegate ? `on (${HINT_VERSION}; REFLEX_DELEGATE)` : "off"}`);
   // Escalation is the only setting that lets a past event change a future request, so doctor spells out what it does.
   const escWhat = `a routed turn whose outcome window closes with a correction >= ${c.escalateThreshold}, a test failure after an edit, or a reverted edit raises that conversation's next ${c.escalateWindowTurns} new turn(s) to ${c.escalateTarget === "requested" ? "the requested tier" : "one tier up"}, never above the requested tier`;

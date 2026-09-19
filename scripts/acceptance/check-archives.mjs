@@ -197,7 +197,7 @@ const check = (id, ok, pass, fail) => out(ok ? "PASS" : "FAIL", id, ok ? pass : 
   check("10a", Object.keys(hits).length === 0, `${lines} records scanned: no home-directory path, API key, token, JWT, PEM or Authorization value`, `secret/path shapes found: ${Object.entries(hits).map(([k, v]) => `${k} ${v.join(",")}`).join("; ")}`);
   check("10b", freeText.size === 0, "no free-text field other than prompt_preview and forwarded.fallback_error (the upstream's redacted error message) in any record; outcome / outcome_update / harness_injected records hold only hashes, counts and rule ids", `unexpected free-text fields: ${[...freeText].join(", ")}`);
   check("10c", maxPreview <= 300, `${previews} prompt_preview fields, longest ${maxPreview} code points (cap 300)`, `a preview exceeds the 300-code-point cap (${maxPreview})`);
-  out("NOTE", "10d", `${relPaths} of ${previews} previews contain a project-relative path (e.g. src/...): acceptable under the criterion; home-directory prefixes are redacted to ~ (10a). The preview is on by default and will be revisited before a public release; REFLEX_LOG_PROMPTS=0 removes it (test/unit/decision-log.test.ts).`);
+  out("NOTE", "10d", `${relPaths} of ${previews} previews contain a project-relative path (e.g. src/...): acceptable under the criterion; home-directory prefixes are redacted to ~ (10a). These archives predate the 2026-09-20 revisit: the preview is now off by default; REFLEX_LOG_PROMPTS=1 turns it on (test/unit/decision-log.test.ts).`);
 }
 
 console.log(failed === 0 ? "\nno FAIL lines" : `\n${failed} FAIL line(s)`);

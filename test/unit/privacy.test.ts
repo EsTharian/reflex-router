@@ -40,6 +40,10 @@ describe("redact", () => {
     assert.equal(redact("C:\\Users\\carol\\repo"), "~\\repo");
   });
 
+  it("replaces the home prefix of a bare path, keeping the rest of it verbatim", () => {
+    assert.equal(redact("/Users/testuser/projects/x/"), "~/projects/x/");
+  });
+
   it("leaves ordinary code and prose alone (false-positive corpus)", () => {
     const corpus = [
       "const skipped = items.filter((x) => x.sk);",

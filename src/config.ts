@@ -78,7 +78,14 @@ export interface Config {
   /** Privacy budget for what is sent to the decision backend. */
   readonly maxUserChars: number;
   readonly maxAssistantChars: number;
-  /** REFLEX_LOG_PROMPTS=0 omits the (redacted, 300-char) prompt preview from the decision log. */
+  /**
+   * REFLEX_LOG_PROMPTS=1 adds a redacted, 300-character preview of each decided prompt to the decision log.
+   * **Off by default.** It was on through the pre-release versions so decisions could be reviewed while the routing
+   * rules were being written, with a stated promise to revisit that before a public release; this is that revisit.
+   * The preview is the only field in the log that can hold the user's own words, redaction removes secrets and
+   * home-directory prefixes but not project-relative paths or the words themselves, and an alpha nobody has read the
+   * source of should not write a user's prompts to disk because its author found it convenient.
+   */
   readonly logPrompts: boolean;
   /** REFLEX_DECISION_RULE: `mass` (ordered, default) or `argmax` (Jev's own choice + confidence floor). */
   readonly decisionRule: DecisionRule;
@@ -282,7 +289,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     shapeCheckN: parseBoundedInt(setting(env, "REFLEX_SHAPE_CHECK_N"), 10, 1, 10_000, "REFLEX_SHAPE_CHECK_N", errors),
     maxUserChars: parseBoundedInt(setting(env, "REFLEX_MAX_USER_CHARS"), 4000, 200, 60_000, "REFLEX_MAX_USER_CHARS", errors),
     maxAssistantChars: parseBoundedInt(setting(env, "REFLEX_MAX_ASSISTANT_CHARS"), 1000, 0, 60_000, "REFLEX_MAX_ASSISTANT_CHARS", errors),
-    logPrompts: !falsy(setting(env, "REFLEX_LOG_PROMPTS")),
+    logPrompts: truthy(setting(env, "REFLEX_LOG_PROMPTS")),
     decisionRule: parseEnum(setting(env, "REFLEX_DECISION_RULE"), DECISION_RULES, "mass", "REFLEX_DECISION_RULE", errors),
     massEps: parseBoundedNumber(setting(env, "REFLEX_MASS_EPS"), 0.1, 0, 0.5, "REFLEX_MASS_EPS", errors),
     maxSwitchPenaltyUsd: parseBoundedNumber(setting(env, "REFLEX_MAX_SWITCH_PENALTY_USD"), 0.01, 0, 100, "REFLEX_MAX_SWITCH_PENALTY_USD", errors),

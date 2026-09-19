@@ -18,7 +18,7 @@ Settings are environment variables, optionally supplied by `~/.reflex/env`. A va
 | `REFLEX_UPSTREAM_URL` | http(s) URL | your `ANTHROPIC_BASE_URL`, else `https://api.anthropic.com` | Where requests are forwarded. A path prefix (gateway) is kept. |
 | `REFLEX_CLAUDE_BIN` | path or command | `claude` on `PATH` | The real Claude Code binary. |
 | `REFLEX_HOME` | directory | `~/.reflex` | State directory (worker log, `decisions.jsonl`). |
-| `REFLEX_LOG_PROMPTS` | `0` | on | `0` omits the redacted 300-character prompt preview from the decision log. |
+| `REFLEX_LOG_PROMPTS` | `1` | off | `1` adds the redacted 300-character prompt preview to the decision log. |
 | `REFLEX_MAIN_CHAT` | `guarded`, `never` | `guarded` | Whether main-chat prompts are judged at all (subagent tasks always are). `guarded`: a main-chat switch must pass the cost guard. |
 | `REFLEX_MAX_SWITCH_PENALTY_USD` | number | `0.01` | Cost guard: the most a main-chat model switch may cost in lost prompt cache (list prices, `src/pricing.ts`). |
 | `REFLEX_TIERS` | comma list of `haiku,sonnet,opus` | all three | Tiers a request may be routed to. Fable additionally needs `REFLEX_ALLOW_FABLE=1`. |
@@ -37,7 +37,7 @@ Settings are environment variables, optionally supplied by `~/.reflex/env`. A va
 | `REFLEX_ESCALATE_THRESHOLD` | number, 0–3 | `1` | Correction score at or above which a closed window escalates. Scores run 0–3 (`CORRECTION_SCORE_CAP`); the default is the lowest score ever recorded from a real correction (1.0, rule `en:thats_wrong`). The other two signals are binary and have no threshold. |
 | `REFLEX_ESCALATE_WINDOW_TURNS` | integer, 1–20 | `3` | How many of the conversation's later new turns one signal covers before it decays. Deliberately small: a sticky escalation turns one complaint into "reflex is off for this session". |
 
-What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](privacy.md). In short: the decision log holds no secrets and no home-directory paths, and no user text beyond a redacted preview of at most 300 characters of each decided prompt (project-relative paths in it are not removed). The preview is **on by default** so that decisions can be reviewed and tuned; that default will be revisited before a public release. `REFLEX_LOG_PROMPTS=0` removes it.
+What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](privacy.md). In short: the decision log holds no secrets and no home-directory paths, and no user text beyond a redacted preview of at most 300 characters of each decided prompt (project-relative paths in it are not removed). The preview is **off by default**; `REFLEX_LOG_PROMPTS=1` turns it on so decisions can be reviewed and tuned.
 
 ## Route mode
 

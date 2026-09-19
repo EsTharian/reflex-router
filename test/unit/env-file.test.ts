@@ -152,6 +152,12 @@ describe("reflex doctor: env file and setting sources", () => {
     assert.ok(!/config error/.test(text), text);
     assert.ok(!/ANTHROPIC_BASE_URL/.test(text), text);
   });
+  it("prompt preview is off by default and on when REFLEX_LOG_PROMPTS is set", async () => {
+    const off = await run({}, {});
+    assert.match(off.text, /prompt preview:\s+off \(REFLEX_LOG_PROMPTS=1 to add/);
+    const on = await run({ REFLEX_LOG_PROMPTS: "1" }, {});
+    assert.match(on.text, /prompt preview:\s+on \(REFLEX_LOG_PROMPTS\) - decisions\.jsonl includes/);
+  });
   it("REFLEX_DELEGATE=1 with no backend key: the hint cannot inject, said loudly, exit 1", async () => {
     // passthrough runs claude directly, so reflex's UserPromptSubmit hook is never installed and the hint is silently lost.
     const { code, text } = await run({ REFLEX_DELEGATE: "1", REFLEX_MODE: "route" }, {});
