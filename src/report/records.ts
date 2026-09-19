@@ -88,7 +88,10 @@ export interface Records {
   /** Timestamps of `harness_injected` records. */
   readonly harnessInjected: readonly number[];
   readonly other: number;
-  readonly malformed: number;
+  /** Lines not turned into a record: not valid JSON objects, plus every unterminated final line (below). */
+  readonly skippedLines: number;
+  /** Files whose last line has no newline yet: the worker may still be writing it, so it is skipped now and read by the next report. */
+  readonly unterminatedLines: number;
   readonly sources: readonly string[];
 }
 
@@ -165,7 +168,11 @@ function toOutcome(o: J): OutcomeRec | null {
   };
 }
 
-/** Parses JSONL text (one or more files' worth). Lines that are not JSON objects are counted as malformed. */
+/**
+ * Parses JSONL text (one or more files' worth). Lines that are not JSON objects count in `skippedLines`. Records end in a
+ * newline, so text after a file's last newline is a line still being written (a report run during a session): it is
+ * skipped and counted, never parsed.
+ */
 export function parseRecords(texts: readonly { readonly source: string; readonly text: string }[]): Records {
   const decisions: Dec[] = [];
   const outcomes: OutcomeRec[] = [];
@@ -173,19 +180,26 @@ export function parseRecords(texts: readonly { readonly source: string; readonly
   const seen = new Set<string>();
   const harnessInjected: number[] = [];
   let other = 0;
-  let malformed = 0;
+  let skippedLines = 0;
+  let unterminatedLines = 0;
   for (const { text } of texts) {
-    for (const line of text.split("\n")) {
+    const lines = text.split("\n");
+    const tail = lines.pop() ?? "";
+    if (tail.trim() !== "") {
+      skippedLines++;
+      unterminatedLines++;
+    }
+    for (const line of lines) {
       if (line.trim() === "") continue;
       let o: unknown;
       try {
         o = JSON.parse(line);
       } catch {
-        malformed++;
+        skippedLines++;
         continue;
       }
       if (!isObj(o)) {
-        malformed++;
+        skippedLines++;
         continue;
       }
       // The same record can sit in a live file and its archived copy; count it once.
@@ -198,11 +212,11 @@ export function parseRecords(texts: readonly { readonly source: string; readonly
       const atMs = Date.parse(str(o["at"]) ?? "");
       if (kind === "decision") {
         const d = toDec(o);
-        if (d === null) malformed++;
+        if (d === null) skippedLines++;
         else decisions.push(d);
       } else if (kind === "outcome") {
         const r = toOutcome(o);
-        if (r === null) malformed++;
+        if (r === null) skippedLines++;
         else outcomes.push(r);
       } else if (kind === "outcome_update") {
         const decisionId = str(o["decision_id"]);
@@ -212,7 +226,7 @@ export function parseRecords(texts: readonly { readonly source: string; readonly
       else other++;
     }
   }
-  return { decisions, outcomes, updates, harnessInjected, other, malformed, sources: texts.map((t) => t.source) };
+  return { decisions, outcomes, updates, harnessInjected, other, skippedLines, unterminatedLines, sources: texts.map((t) => t.source) };
 }
 
 /** Keeps what happened at or after `fromMs`. Outcome joins still look decisions up in the unfiltered set (see `allDecisions`). */

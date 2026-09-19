@@ -25,7 +25,9 @@ export function buildReport(all: Records, opts: ReportOptions): string {
     `  files: ${all.sources.length === 0 ? "(none)" : all.sources.join(", ")}`,
     `  records in range: ${rec.decisions.length} decisions, ${rec.outcomes.length} outcomes, ${rec.updates.length} outcome updates, ${rec.harnessInjected.length} harness_injected${rec.decisions.length > 0 ? `, ${sessions} session${sessions === 1 ? "" : "s"}` : ""}`,
     `  span: ${span}${opts.sinceText ? ` (--since ${opts.sinceText})` : ""}`,
-    ...(all.malformed > 0 ? [`  skipped ${all.malformed} line(s) that are not valid records`] : []),
+    ...(all.unterminatedLines === 0
+      ? all.skippedLines > 0 ? [`  skipped ${all.skippedLines} line(s) that are not valid records`] : []
+      : [`  skipped ${all.skippedLines} line(s): ${all.skippedLines - all.unterminatedLines} not valid records, ${all.unterminatedLines} unterminated last line(s) (still being written; the next report has it)`]),
     ...(all.other > 0 ? [`  ${all.other} record(s) of an unknown type ignored`] : []),
     "  Every figure below is computed from these records only; small samples are marked, and none of it is a benchmark (see docs/observations.md).",
   ];

@@ -53,9 +53,31 @@ describe("report: golden files", () => {
 describe("report: reading", () => {
   it("counts lines that are not records and ignores unknown record types, without failing", () => {
     const r = parse(mixed());
-    assert.equal(r.malformed, 1);
+    assert.equal(r.skippedLines, 1);
+    assert.equal(r.unterminatedLines, 0);
     assert.equal(r.other, 1);
     assert.equal(r.decisions.length, 8 + 14);
+  });
+  it("ignores an unterminated last line (a log being written) and counts it as skipped; the next read has it", () => {
+    const a = JSON.stringify(dec({ id: "a", t: 0 }));
+    const full = JSON.stringify(dec({ id: "b", t: 1, error: "x".repeat(900) }));
+    const torn = full.slice(0, 954); // cut mid-string, the shape of the CI failure
+    const r = parse(`${a}\n${torn}`);
+    assert.deepEqual(r.decisions.map((d) => d.id), ["a"]);
+    assert.equal(r.skippedLines, 1);
+    assert.equal(r.unterminatedLines, 1);
+    assert.match(buildReport(r, { usd: false }), /skipped 1 line\(s\): 0 not valid records, 1 unterminated last line\(s\) \(still being written/);
+    const later = parse(`${a}\n${full}\n`);
+    assert.deepEqual(later.decisions.map((d) => d.id), ["a", "b"]);
+    assert.equal(later.skippedLines, 0);
+  });
+  it("skips a last line that has no newline even if it happens to parse, and counts it separately per file", () => {
+    const line = JSON.stringify(dec({ id: "only", t: 0 }));
+    const r = parseRecords([{ source: "live", text: `${JSON.stringify(dec({ id: "a", t: 0 }))}\n${line}` }, { source: "rotated", text: `${JSON.stringify(dec({ id: "c", t: 2 }))}\nnot json\n` }]);
+    assert.deepEqual(r.decisions.map((d) => d.id), ["a", "c"]);
+    assert.equal(r.unterminatedLines, 1);
+    assert.equal(r.skippedLines, 2, "the unterminated line plus one complete line that is not JSON");
+    assert.match(buildReport(r, { usd: false }), /skipped 2 line\(s\): 1 not valid records, 1 unterminated last line\(s\)/);
   });
   it("reads records from before M4 (no `record` field, no pick_mass, no connection)", () => {
     const legacy = { v: 1, id: "old", at: at(0), session: "s", conv: "s:m:1", kind: "main", turn: "new", side_kind: null, mode_requested: "shadow", mode_effective: "shadow", requested: { model: "claude-opus-5", tier: "opus" }, forwarded: { model: "claude-opus-5", rewritten: false, fallback: false }, upstream: { status: 200, msToHeaders: 1000 }, usage: { input: 1, output: 2, cache_read: 3, cache_create: 4 }, decision: { picks: { tier: { value: "haiku", confidence: 0.99, probabilities: { haiku: 1 } } }, vetoes: {}, latencyMs: 800, tokensIn: 1, backendModel: "jev" }, plan: { target: { tier: "haiku" }, would_route_to: "claude-haiku-4-5-20251001", routed_to: "claude-opus-5", reasons: ["guard_not_evaluated", "downgrade"], would_upgrade: false } };
