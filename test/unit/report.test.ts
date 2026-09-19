@@ -6,8 +6,8 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, reportCommand } from "../../src/report/index.js";
 import { parseDuration, parseRecords } from "../../src/report/records.js";
-import { classifyMoves, costOf, hintArms, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, SECTIONS, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
-import { at, dec, large, mixed, outcome, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
+import { classifyMoves, costOf, hintArms, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, s12SideRouting, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
 const parse = (text: string) => parseRecords([{ source: "test.jsonl", text }]);
@@ -47,6 +47,56 @@ describe("report: golden files", () => {
     const out = buildReport(parse(text), { usd: true });
     assert.ok(Date.now() - started < 5000, "report over 6000 records takes under 5 s");
     golden("large", out);
+  });
+});
+
+describe("report: side-call routing estimate", () => {
+  const archiveDir = path.join(GOLDEN_DIR, "archives");
+  it("golden: a synthetic log with warm clusters, a cold gap and an exposed conversation", () => {
+    golden("side-routing-synthetic", s12SideRouting(ctxOf(sideCallLog(), true)).join("\n") + "\n");
+  });
+  it("golden: the archived real sessions", () => {
+    const files = fs.readdirSync(archiveDir).filter((f) => f.endsWith(".jsonl")).sort();
+    const rec = parseRecords(files.map((f) => ({ source: f, text: fs.readFileSync(path.join(archiveDir, f), "utf8") })));
+    golden("side-routing-archives", s12SideRouting({ rec, byId: new Map(), usd: true }).join("\n") + "\n");
+  });
+
+  it("only go-list kinds count; cross_session and the rest are never estimated", () => {
+    const e = sideRoutingEstimate(parse(sideCallLog()).decisions);
+    assert.deepEqual(e.perKind.map((k) => k.kind).sort(), ["no_tools", "notification", "suggestion"]);
+    assert.equal(e.calls, 6, "the cross_session call and both non-side turns are excluded");
+  });
+
+  it("warm follows the TTL: calls inside it reuse the prefix, one past it pays a full write again", () => {
+    const e = sideRoutingEstimate(parse(sideCallLog()).decisions);
+    // a-s1 cold (first), a-s2/a-s3/a-n1 warm, a-n2 cold (40 min later), a-t1 warm (10 s after a-n2)
+    assert.equal(e.cold, 2);
+    assert.equal(e.warm, 4);
+  });
+
+  it("a cold call is priced as a full write of the whole prompt, so it costs more than leaving it alone", () => {
+    // One lone side call in its own conversation can never be warm: the estimate must not show it as a saving.
+    const lone = toJsonl([dec({ id: "c-new", t: 0, conv: "c", turn: "new" }), dec({ id: "c-s", t: 10, conv: "c", turn: "side", side: "notification", usage: [2, 50, 200_000, 500] })]);
+    const e = sideRoutingEstimate(parse(lone).decisions);
+    assert.equal(e.warm, 0);
+    assert.equal(e.cold, 1);
+    assert.ok(e.usdAtSide > e.usdAtRequested, `a cold swap must cost more: at side ${e.usdAtSide}, at requested ${e.usdAtRequested}`);
+  });
+
+  it("exposure lists only conversations routed below requested or moving up, with each up-move's cache write", () => {
+    const e = sideRoutingEstimate(parse(sideCallLog()).decisions);
+    const b = e.convs.find((c) => c.conv === "conv-exposed-b");
+    assert.ok(b, "the routed conversation is listed");
+    assert.equal(b.pinnedBelow, true);
+    assert.equal(b.upMoves, 1);
+    assert.deepEqual(b.upMoveCacheWrites, [47_000]);
+    assert.ok(!e.convs.some((c) => c.conv === "conv-side-a"), "a conversation that never moved tier is not exposed");
+  });
+
+  it("the TTL is flagged as assumed when no record logged the beta", () => {
+    assert.equal(sideRoutingEstimate(parse(sideCallLog()).decisions).ttlAssumed, true);
+    const withBeta = toJsonl([{ ...dec({ id: "z", t: 0, conv: "z", turn: "side", side: "notification" }), cache_ttl_beta: true }]);
+    assert.equal(sideRoutingEstimate(parse(withBeta).decisions).ttlAssumed, false);
   });
 });
 

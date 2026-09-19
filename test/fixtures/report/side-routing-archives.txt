@@ -1,0 +1,23 @@
+  ESTIMATE, not a measurement: what sending no_tools, notification, suggestion to a shared haiku tier would have cost, over the tokens actually recorded.
+  A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.
+  Both columns are priced at the same TTL per request (the one the record's extended-cache-ttl beta implies); no record in range logged it, so 5m was assumed throughout.
+    side kind     calls  warm  cold     tokens  cache read  gap p50  $ at requested  $ at haiku   $ saved
+    suggestion       38    29     9  3,024,636       97.9%     26 s           $1.80       $1.19   $0.6059
+    no_tools         45    30    15  1,705,465       96.3%     20 s         $0.5137     $0.5166  $-0.0029
+    notification      4     4     0    310,534       97.5%      0 s         $0.2043     $0.0324   $0.1719
+    total            87    63    24  5,040,635                                $2.51       $1.74   $0.7749
+  amortisation (break-even 3.1 warm calls per cold write; applies to kinds above 80.0% cache read, whose cost is the cached prefix):
+    suggestion: 3.2 warm per cold, saves $0.6059
+    no_tools: 2.0 warm per cold - BELOW break-even, COSTS $0.0029
+    notification: no cold write, saves $0.1719
+  simulated net over all routable kinds: saves $0.7749 - gross, before the exposure below.
+
+  exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).
+  conversations ever pinned below requested: 6 of 32
+    conversation              pinned below  up-moves  cache write on each up-move
+    caacab3b41fd5352:m:52a61           yes         2                13,385, 5,924
+    1cc8b7156defcb36:m:ca6c1           yes         1                           52
+    86d1d76f3ae021a0:m:2c2ee           yes         1                       17,545
+    86577c30c0196bfc:a:a074b           yes         0                            -
+    86577c30c0196bfc:a:b41ae           yes         0                            -
+    86d1d76f3ae021a0:a:2d27f           yes         0                            -

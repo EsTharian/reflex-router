@@ -304,6 +304,7 @@ export class Router {
               degraded_reason: degraded.length > 0 ? degraded.join(";") : null,
               shape: { status: s.shape.status, violations: violations.map((x) => x.check) },
               claude_version: v.clientVersion ?? this.d.claudeVersion,
+              cache_ttl_beta: v.facts.betaExtendedCacheTtl,
               requested: { model: v.requestedModel, tier: requestedTier, effort: v.requestedEffort },
               ...outcome.part,
               plan: p ? { ...p, routed_to: sentModel, reasons: [...p.reasons, ...extraReasons] } : extraReasons.length > 0 ? { target: null, would_route_to: null, routed_to: sentModel, reasons: extraReasons, would_upgrade: false } : null,

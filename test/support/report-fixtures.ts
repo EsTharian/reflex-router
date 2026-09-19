@@ -237,3 +237,33 @@ export function singleTurnLongLoop(): string {
   session("d2d2d2d2d2d2d2d2", 5000, 23, true);
   return toJsonl(out);
 }
+
+/**
+ * A log shaped like the side-call traffic the routing estimate is about: one conversation whose routable side calls
+ * cluster inside the 5-minute TTL (warm) with one long gap that goes cold, a second conversation routed DOWN and then
+ * back up (the exposure case), and one non-routable kind that must be ignored.
+ */
+export function sideCallLog(): string {
+  const A = "conv-side-a";
+  const B = "conv-exposed-b";
+  const recs: Rec[] = [
+    dec({ id: "a-new", t: 0, conv: A, turn: "new", usage: [10, 300, 0, 60_000] }),
+    // three suggestion calls 60 s apart: the 2nd and 3rd are warm on a 5-minute TTL
+    dec({ id: "a-s1", t: 60, conv: A, turn: "side", side: "suggestion", usage: [5, 40, 60_000, 800] }),
+    dec({ id: "a-s2", t: 120, conv: A, turn: "side", side: "suggestion", usage: [5, 40, 61_000, 600] }),
+    dec({ id: "a-s3", t: 180, conv: A, turn: "side", side: "suggestion", usage: [5, 40, 62_000, 600] }),
+    // a notification 20 s later: warm, and it shares the conversation prefix with the suggestions
+    dec({ id: "a-n1", t: 200, conv: A, turn: "side", side: "notification", usage: [2, 90, 63_000, 400] }),
+    // 40 minutes later: past the 5-minute TTL, so this one is cold again
+    dec({ id: "a-n2", t: 2600, conv: A, turn: "side", side: "notification", usage: [2, 90, 70_000, 500] }),
+    // a small no_tools call: little prefix, the amortisation rule does not apply to it
+    dec({ id: "a-t1", t: 2610, conv: A, turn: "side", side: "no_tools", usage: [4_000, 30, 2_000, 100] }),
+    // never routable: must not appear in the estimate at all
+    dec({ id: "a-x1", t: 2620, conv: A, turn: "side", side: "cross_session", usage: [5, 60, 64_000, 300] }),
+    // conversation B: routed down, then back to the requested tier (an up-move paying a cold write)
+    dec({ id: "b-new", t: 300, conv: B, turn: "new", sent: "haiku", rewritten: true, usage: [10, 200, 0, 45_000] }),
+    dec({ id: "b-c1", t: 360, conv: B, turn: "continuation", sent: "haiku", rewritten: true, usage: [5, 150, 45_000, 900] }),
+    dec({ id: "b-up", t: 420, conv: B, turn: "new", sent: "opus", usage: [10, 250, 1_000, 47_000] }),
+  ];
+  return toJsonl(recs);
+}

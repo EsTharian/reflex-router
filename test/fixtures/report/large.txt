@@ -137,3 +137,688 @@ reflex report
 
 11. Unclassified side-call fingerprints
   (no unclassified side calls)
+
+12. Side-call routing estimate
+  ESTIMATE, not a measurement: what sending no_tools, notification, suggestion to a shared haiku tier would have cost, over the tokens actually recorded.
+  A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.
+  Both columns are priced at the same TTL per request (the one the record's extended-cache-ttl beta implies); no record in range logged it, so 5m was assumed throughout.
+    side kind     calls   warm  cold      tokens  cache read  gap p50  $ at requested  $ at haiku  $ saved
+    notification    808    549   259  33,637,116       96.3%     40 s          $24.35      $23.79  $0.5585
+    suggestion      790    530   260  32,484,998       96.3%     40 s          $23.61      $23.46  $0.1475
+    no_tools        775    552   223  30,811,499       96.1%     40 s          $22.75      $21.88  $0.8742
+    total         2,373  1,631   742  96,933,613                               $70.71      $69.13    $1.58
+  amortisation (break-even 3.1 warm calls per cold write; applies to kinds above 80.0% cache read, whose cost is the cached prefix):
+    notification: 2.1 warm per cold - BELOW break-even, saves $0.5585
+    suggestion: 2.0 warm per cold - BELOW break-even, saves $0.1475
+    no_tools: 2.5 warm per cold - BELOW break-even, saves $0.8742
+  simulated net over all routable kinds: saves $1.58 - gross, before the exposure below.
+
+  exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).
+  conversations ever pinned below requested: 666 of 750
+    conversation              pinned below  up-moves  cache write on each up-move
+    cccccccccccccccc:m:00000           yes         3          5,266, 1,444, 7,148
+    cccccccccccccccc:m:00000           yes         3         6,068, 3,614, 10,887
+    cccccccccccccccc:m:00000           yes         3          7,902, 1,662, 1,242
+    cccccccccccccccc:m:00000           yes         3          4,735, 1,945, 4,656
+    cccccccccccccccc:m:00000           yes         3         8,051, 12,154, 5,218
+    cccccccccccccccc:m:00000           yes         3         12,442, 2,991, 6,210
+    cccccccccccccccc:m:00000           yes         3           13,055, 363, 8,776
+    cccccccccccccccc:m:00000           yes         2                   798, 6,005
+    cccccccccccccccc:m:00000           yes         2                11,489, 5,348
+    cccccccccccccccc:m:00000           yes         2                  536, 14,055
+    cccccccccccccccc:m:00000           yes         2                 5,038, 2,582
+    cccccccccccccccc:m:00000           yes         2                   1,798, 319
+    cccccccccccccccc:m:00000           yes         2                 2,540, 3,482
+    cccccccccccccccc:m:00000           yes         2                7,807, 10,299
+    cccccccccccccccc:m:00000           yes         2                 4,373, 8,150
+    cccccccccccccccc:m:00000           yes         2                 2,078, 8,967
+    cccccccccccccccc:m:00000           yes         2                   754, 7,783
+    cccccccccccccccc:m:00000           yes         2                 1,709, 6,153
+    cccccccccccccccc:m:00000           yes         2                 1,289, 1,956
+    cccccccccccccccc:m:00000           yes         2                 2,875, 3,614
+    cccccccccccccccc:m:00000           yes         2                 4,735, 7,952
+    cccccccccccccccc:m:00000           yes         2                   574, 7,825
+    cccccccccccccccc:m:00000           yes         2                 9,832, 3,997
+    cccccccccccccccc:m:00000           yes         2                17,142, 3,159
+    cccccccccccccccc:m:00000           yes         2                 5,794, 1,050
+    cccccccccccccccc:m:00000           yes         2                 1,921, 6,181
+    cccccccccccccccc:m:00000           yes         2                 3,679, 5,239
+    cccccccccccccccc:m:00000           yes         2                16,776, 6,057
+    cccccccccccccccc:m:00000           yes         2                  242, 13,697
+    cccccccccccccccc:m:00000           yes         2                11,493, 5,614
+    cccccccccccccccc:m:00000           yes         2                4,426, 11,819
+    cccccccccccccccc:m:00000           yes         2                11,491, 7,581
+    cccccccccccccccc:m:00000           yes         2               14,367, 14,336
+    cccccccccccccccc:m:00000           yes         2                 8,541, 6,712
+    cccccccccccccccc:m:00000           yes         2                4,628, 17,766
+    cccccccccccccccc:m:00000           yes         2                 3,691, 3,520
+    cccccccccccccccc:m:00000           yes         2                2,428, 14,016
+    cccccccccccccccc:m:00000           yes         2                   881, 5,191
+    cccccccccccccccc:m:00000           yes         2                 3,520, 2,754
+    cccccccccccccccc:m:00000           yes         2                 4,630, 4,831
+    cccccccccccccccc:m:00000           yes         2                 7,263, 3,811
+    cccccccccccccccc:m:00000           yes         2                     288, 471
+    cccccccccccccccc:m:00000           yes         2                 4,783, 6,894
+    cccccccccccccccc:m:00000           yes         2                  248, 16,302
+    cccccccccccccccc:m:00000           yes         2                 8,253, 4,919
+    cccccccccccccccc:m:00000           yes         2                 5,826, 2,719
+    cccccccccccccccc:m:00000           yes         2                 6,510, 6,196
+    cccccccccccccccc:m:00000           yes         2                 7,092, 7,644
+    cccccccccccccccc:m:00000           yes         2                 8,249, 7,621
+    cccccccccccccccc:m:00000           yes         2                1,370, 17,907
+    cccccccccccccccc:m:00000           yes         2                      961, 46
+    cccccccccccccccc:m:00000           yes         2                 5,556, 7,836
+    cccccccccccccccc:m:00000           yes         2                 4,276, 6,931
+    cccccccccccccccc:m:00000           yes         2                 8,771, 5,710
+    cccccccccccccccc:m:00000           yes         2                 2,098, 7,197
+    cccccccccccccccc:m:00000           yes         2                  18,235, 862
+    cccccccccccccccc:m:00000           yes         2                  734, 19,082
+    cccccccccccccccc:m:00000           yes         2                 6,301, 5,154
+    cccccccccccccccc:m:00000           yes         2                 6,010, 2,985
+    cccccccccccccccc:m:00000           yes         2                17,826, 2,440
+    cccccccccccccccc:m:00000           yes         2                 6,547, 6,270
+    cccccccccccccccc:m:00000           yes         2                 4,167, 3,594
+    cccccccccccccccc:m:00000           yes         2                 8,100, 2,035
+    cccccccccccccccc:m:00000           yes         2                14,648, 3,783
+    cccccccccccccccc:m:00000           yes         2                7,062, 12,157
+    cccccccccccccccc:m:00000           yes         2                10,687, 6,372
+    cccccccccccccccc:m:00000           yes         2                 3,562, 7,566
+    cccccccccccccccc:m:00000           yes         2                 6,107, 1,363
+    cccccccccccccccc:m:00000           yes         2                17,406, 2,605
+    cccccccccccccccc:m:00000           yes         2                2,175, 11,210
+    cccccccccccccccc:m:00000           yes         2                 1,076, 5,831
+    cccccccccccccccc:m:00000           yes         2                   8,516, 248
+    cccccccccccccccc:m:00000           yes         2                 7,216, 5,783
+    cccccccccccccccc:m:00000           yes         2                 7,387, 8,997
+    cccccccccccccccc:m:00000           yes         2                1,256, 17,237
+    cccccccccccccccc:m:00000           yes         2                 5,743, 5,475
+    cccccccccccccccc:m:00000           yes         2                 5,553, 3,755
+    cccccccccccccccc:m:00000           yes         2                1,170, 15,821
+    cccccccccccccccc:m:00000           yes         2                13,557, 8,188
+    cccccccccccccccc:m:00000           yes         2                2,961, 14,586
+    cccccccccccccccc:m:00000           yes         2                   8,551, 186
+    cccccccccccccccc:m:00000           yes         2                 3,867, 4,133
+    cccccccccccccccc:m:00000           yes         2                19,885, 5,984
+    cccccccccccccccc:m:00000           yes         2                  14,693, 386
+    cccccccccccccccc:m:00000           yes         2                1,656, 17,493
+    cccccccccccccccc:m:00000           yes         2                   986, 4,603
+    cccccccccccccccc:m:00000           yes         2                    48, 1,723
+    cccccccccccccccc:m:00000           yes         2                 7,667, 2,990
+    cccccccccccccccc:m:00000           yes         2                 1,844, 4,281
+    cccccccccccccccc:m:00000           yes         2                7,423, 16,767
+    cccccccccccccccc:m:00000           yes         2                 3,400, 2,941
+    cccccccccccccccc:m:00000           yes         2                13,844, 1,714
+    cccccccccccccccc:m:00000           yes         2                 7,726, 3,946
+    cccccccccccccccc:m:00000           yes         2                 2,368, 1,952
+    cccccccccccccccc:m:00000           yes         2                 7,738, 7,683
+    cccccccccccccccc:m:00000           yes         2                 8,889, 2,334
+    cccccccccccccccc:m:00000           yes         2                 5,777, 4,263
+    cccccccccccccccc:m:00000           yes         2                18,915, 8,903
+    cccccccccccccccc:m:00000           yes         2                 2,069, 7,754
+    cccccccccccccccc:m:00000           yes         2                 9,857, 1,191
+    cccccccccccccccc:m:00000           yes         2                 4,749, 2,344
+    cccccccccccccccc:m:00000           yes         2                 7,497, 8,316
+    cccccccccccccccc:m:00000           yes         2                17,433, 3,517
+    cccccccccccccccc:m:00000           yes         2                 8,886, 3,667
+    cccccccccccccccc:m:00000           yes         2                 1,298, 2,253
+    cccccccccccccccc:m:00000           yes         2                 8,391, 4,281
+    cccccccccccccccc:m:00000           yes         2                 5,304, 7,217
+    cccccccccccccccc:m:00000           yes         2                   7,487, 264
+    cccccccccccccccc:m:00000           yes         2                 6,488, 4,758
+    cccccccccccccccc:m:00000           yes         2                 6,286, 7,199
+    cccccccccccccccc:m:00000           yes         2                19,623, 8,605
+    cccccccccccccccc:m:00000           yes         2                 6,167, 8,816
+    cccccccccccccccc:m:00000           yes         2                13,536, 8,954
+    cccccccccccccccc:m:00000           yes         2                 3,892, 6,799
+    cccccccccccccccc:m:00000           yes         2                 4,551, 4,879
+    cccccccccccccccc:m:00000           yes         2                 2,229, 7,732
+    cccccccccccccccc:m:00000           yes         2                   536, 6,465
+    cccccccccccccccc:m:00000           yes         2                 9,016, 6,325
+    cccccccccccccccc:m:00000           yes         2                10,902, 7,254
+    cccccccccccccccc:m:00000           yes         2                 7,388, 4,830
+    cccccccccccccccc:m:00000           yes         2                 4,197, 3,897
+    cccccccccccccccc:m:00000           yes         2                 6,282, 6,768
+    cccccccccccccccc:m:00000           yes         2                 2,578, 5,854
+    cccccccccccccccc:m:00000           yes         2                 7,081, 6,863
+    cccccccccccccccc:m:00000           yes         2                2,681, 15,755
+    cccccccccccccccc:m:00000           yes         2                 8,290, 4,037
+    cccccccccccccccc:m:00000           yes         2                 1,316, 6,733
+    cccccccccccccccc:m:00000           yes         2                 5,819, 8,357
+    cccccccccccccccc:m:00000           yes         2                 7,772, 1,247
+    cccccccccccccccc:m:00000           yes         2                13,787, 6,812
+    cccccccccccccccc:m:00000           yes         2                   874, 2,493
+    cccccccccccccccc:m:00000           yes         2                 1,943, 3,631
+    cccccccccccccccc:m:00000           yes         2                 1,529, 5,344
+    cccccccccccccccc:m:00000           yes         2                5,253, 10,597
+    cccccccccccccccc:m:00000           yes         2                 6,158, 5,741
+    cccccccccccccccc:m:00000           yes         2                17,650, 5,259
+    cccccccccccccccc:m:00000           yes         2                3,454, 16,538
+    cccccccccccccccc:m:00000           yes         2                 5,129, 3,080
+    cccccccccccccccc:m:00000           yes         2                19,881, 4,593
+    cccccccccccccccc:m:00000           yes         2                17,208, 2,714
+    cccccccccccccccc:m:00000           yes         2                   599, 7,839
+    cccccccccccccccc:m:00000           yes         2                 8,662, 6,544
+    cccccccccccccccc:m:00000           yes         2                6,787, 19,068
+    cccccccccccccccc:m:00000           yes         2                6,041, 11,261
+    cccccccccccccccc:m:00000           yes         2                1,813, 19,647
+    cccccccccccccccc:m:00000           yes         2               13,913, 15,201
+    cccccccccccccccc:m:00000           yes         2                 8,497, 7,591
+    cccccccccccccccc:m:00000           yes         2                 6,031, 5,018
+    cccccccccccccccc:m:00000           yes         2                   745, 8,443
+    cccccccccccccccc:m:00000           yes         2                 4,023, 1,642
+    cccccccccccccccc:m:00000           yes         2                 5,431, 8,503
+    cccccccccccccccc:m:00000           yes         2                     529, 745
+    cccccccccccccccc:m:00000           yes         2                17,160, 7,616
+    cccccccccccccccc:m:00000           yes         2                 7,524, 5,726
+    cccccccccccccccc:m:00000           yes         2                   3,761, 322
+    cccccccccccccccc:m:00000           yes         2                 8,663, 8,212
+    cccccccccccccccc:m:00000           yes         2                 7,136, 2,663
+    cccccccccccccccc:m:00000           yes         2               18,202, 14,329
+    cccccccccccccccc:m:00000           yes         2                 5,430, 8,232
+    cccccccccccccccc:m:00000           yes         2                12,394, 6,774
+    cccccccccccccccc:m:00000           yes         2                 2,156, 2,252
+    cccccccccccccccc:m:00000           yes         2                 2,302, 4,084
+    cccccccccccccccc:m:00000           yes         2                4,533, 12,054
+    cccccccccccccccc:m:00000           yes         2                   413, 5,287
+    cccccccccccccccc:m:00000           yes         2                5,459, 16,547
+    cccccccccccccccc:m:00000           yes         2                6,614, 13,623
+    cccccccccccccccc:m:00000           yes         2                 6,928, 7,815
+    cccccccccccccccc:m:00000           yes         2                 1,021, 8,316
+    cccccccccccccccc:m:00000           yes         1                       16,266
+    cccccccccccccccc:m:00000           yes         1                        2,740
+    cccccccccccccccc:m:00000           yes         1                        2,996
+    cccccccccccccccc:m:00000           yes         1                        8,853
+    cccccccccccccccc:m:00000           yes         1                        7,013
+    cccccccccccccccc:m:00000           yes         1                        6,537
+    cccccccccccccccc:m:00000           yes         1                        3,503
+    cccccccccccccccc:m:00000           yes         1                       11,729
+    cccccccccccccccc:m:00000           yes         1                        4,759
+    cccccccccccccccc:m:00000           yes         1                        1,527
+    cccccccccccccccc:m:00000           yes         1                          418
+    cccccccccccccccc:m:00000           yes         1                        2,388
+    cccccccccccccccc:m:00000           yes         1                        4,620
+    cccccccccccccccc:m:00000           yes         1                        9,474
+    cccccccccccccccc:m:00000           yes         1                        8,263
+    cccccccccccccccc:m:00000           yes         1                        2,259
+    cccccccccccccccc:m:00000           yes         1                        2,784
+    cccccccccccccccc:m:00000           yes         1                        2,521
+    cccccccccccccccc:m:00000           yes         1                        6,895
+    cccccccccccccccc:m:00000           yes         1                        4,538
+    cccccccccccccccc:m:00000           yes         1                          921
+    cccccccccccccccc:m:00000           yes         1                        7,101
+    cccccccccccccccc:m:00000           yes         1                        2,011
+    cccccccccccccccc:m:00000           yes         1                        1,448
+    cccccccccccccccc:m:00000           yes         1                          383
+    cccccccccccccccc:m:00000           yes         1                        4,633
+    cccccccccccccccc:m:00000           yes         1                        8,803
+    cccccccccccccccc:m:00000           yes         1                        8,899
+    cccccccccccccccc:m:00000           yes         1                        6,281
+    cccccccccccccccc:m:00000           yes         1                        8,660
+    cccccccccccccccc:m:00000           yes         1                          436
+    cccccccccccccccc:m:00000           yes         1                        4,651
+    cccccccccccccccc:m:00000           yes         1                        5,982
+    cccccccccccccccc:m:00000           yes         1                        7,242
+    cccccccccccccccc:m:00000           yes         1                        6,538
+    cccccccccccccccc:m:00000           yes         1                       15,168
+    cccccccccccccccc:m:00000           yes         1                        6,513
+    cccccccccccccccc:m:00000           yes         1                        6,188
+    cccccccccccccccc:m:00000           yes         1                        6,557
+    cccccccccccccccc:m:00000           yes         1                        1,738
+    cccccccccccccccc:m:00000           yes         1                        1,753
+    cccccccccccccccc:m:00000           yes         1                        7,255
+    cccccccccccccccc:m:00000           yes         1                        1,737
+    cccccccccccccccc:m:00000           yes         1                        2,239
+    cccccccccccccccc:m:00000           yes         1                       10,849
+    cccccccccccccccc:m:00000           yes         1                        5,206
+    cccccccccccccccc:m:00000           yes         1                        6,686
+    cccccccccccccccc:m:00000           yes         1                        4,224
+    cccccccccccccccc:m:00000           yes         1                        6,833
+    cccccccccccccccc:m:00000           yes         1                        4,117
+    cccccccccccccccc:m:00000           yes         1                        7,393
+    cccccccccccccccc:m:00000           yes         1                        1,174
+    cccccccccccccccc:m:00000           yes         1                       15,579
+    cccccccccccccccc:m:00000           yes         1                       16,265
+    cccccccccccccccc:m:00000           yes         1                        3,536
+    cccccccccccccccc:m:00000           yes         1                          995
+    cccccccccccccccc:m:00000           yes         1                        7,365
+    cccccccccccccccc:m:00000           yes         1                        6,483
+    cccccccccccccccc:m:00000           yes         1                        3,347
+    cccccccccccccccc:m:00000           yes         1                        5,076
+    cccccccccccccccc:m:00000           yes         1                          384
+    cccccccccccccccc:m:00000           yes         1                        1,547
+    cccccccccccccccc:m:00000           yes         1                          297
+    cccccccccccccccc:m:00000           yes         1                        2,213
+    cccccccccccccccc:m:00000           yes         1                          825
+    cccccccccccccccc:m:00000           yes         1                        5,417
+    cccccccccccccccc:m:00000           yes         1                        5,274
+    cccccccccccccccc:m:00000           yes         1                        4,692
+    cccccccccccccccc:m:00000           yes         1                       13,180
+    cccccccccccccccc:m:00000           yes         1                        8,236
+    cccccccccccccccc:m:00000           yes         1                        3,872
+    cccccccccccccccc:m:00000           yes         1                        2,575
+    cccccccccccccccc:m:00000           yes         1                        7,522
+    cccccccccccccccc:m:00000           yes         1                        7,083
+    cccccccccccccccc:m:00000           yes         1                       19,843
+    cccccccccccccccc:m:00000           yes         1                       11,040
+    cccccccccccccccc:m:00000           yes         1                        2,635
+    cccccccccccccccc:m:00000           yes         1                        1,784
+    cccccccccccccccc:m:00000           yes         1                       11,105
+    cccccccccccccccc:m:00000           yes         1                       18,071
+    cccccccccccccccc:m:00000           yes         1                        7,836
+    cccccccccccccccc:m:00000           yes         1                        2,201
+    cccccccccccccccc:m:00000           yes         1                        8,330
+    cccccccccccccccc:m:00000           yes         1                        4,306
+    cccccccccccccccc:m:00000           yes         1                        1,194
+    cccccccccccccccc:m:00000           yes         1                        4,896
+    cccccccccccccccc:m:00000           yes         1                          628
+    cccccccccccccccc:m:00000           yes         1                        2,916
+    cccccccccccccccc:m:00000           yes         1                          182
+    cccccccccccccccc:m:00000           yes         1                        1,077
+    cccccccccccccccc:m:00000           yes         1                        4,663
+    cccccccccccccccc:m:00000           yes         1                        2,717
+    cccccccccccccccc:m:00000           yes         1                        4,221
+    cccccccccccccccc:m:00000           yes         1                        4,758
+    cccccccccccccccc:m:00000           yes         1                       15,490
+    cccccccccccccccc:m:00000           yes         1                        3,080
+    cccccccccccccccc:m:00000           yes         1                        3,836
+    cccccccccccccccc:m:00000           yes         1                        1,634
+    cccccccccccccccc:m:00000           yes         1                        3,522
+    cccccccccccccccc:m:00000           yes         1                        3,269
+    cccccccccccccccc:m:00000           yes         1                        8,153
+    cccccccccccccccc:m:00000           yes         1                        8,145
+    cccccccccccccccc:m:00000           yes         1                        1,305
+    cccccccccccccccc:m:00000           yes         1                        2,062
+    cccccccccccccccc:m:00000           yes         1                          272
+    cccccccccccccccc:m:00000           yes         1                        4,307
+    cccccccccccccccc:m:00000           yes         1                        4,909
+    cccccccccccccccc:m:00000           yes         1                        3,265
+    cccccccccccccccc:m:00000           yes         1                        2,837
+    cccccccccccccccc:m:00000           yes         1                        4,895
+    cccccccccccccccc:m:00000           yes         1                        3,184
+    cccccccccccccccc:m:00000           yes         1                        6,060
+    cccccccccccccccc:m:00000           yes         1                        2,758
+    cccccccccccccccc:m:00000           yes         1                          754
+    cccccccccccccccc:m:00000           yes         1                        7,986
+    cccccccccccccccc:m:00000           yes         1                        8,181
+    cccccccccccccccc:m:00000           yes         1                        3,832
+    cccccccccccccccc:m:00000           yes         1                        5,572
+    cccccccccccccccc:m:00000           yes         1                        3,604
+    cccccccccccccccc:m:00000           yes         1                        8,021
+    cccccccccccccccc:m:00000           yes         1                        8,241
+    cccccccccccccccc:m:00000           yes         1                       11,049
+    cccccccccccccccc:m:00000           yes         1                        8,457
+    cccccccccccccccc:m:00000           yes         1                        3,745
+    cccccccccccccccc:m:00000           yes         1                       15,457
+    cccccccccccccccc:m:00000           yes         1                       18,873
+    cccccccccccccccc:m:00000           yes         1                        7,207
+    cccccccccccccccc:m:00000           yes         1                        8,054
+    cccccccccccccccc:m:00000           yes         1                       13,916
+    cccccccccccccccc:m:00000           yes         1                        4,122
+    cccccccccccccccc:m:00000           yes         1                       14,229
+    cccccccccccccccc:m:00000           yes         1                        8,275
+    cccccccccccccccc:m:00000           yes         1                        4,037
+    cccccccccccccccc:m:00000           yes         1                       19,440
+    cccccccccccccccc:m:00000           yes         1                          738
+    cccccccccccccccc:m:00000           yes         1                          262
+    cccccccccccccccc:m:00000           yes         1                        7,050
+    cccccccccccccccc:m:00000           yes         1                        1,096
+    cccccccccccccccc:m:00000           yes         1                       13,729
+    cccccccccccccccc:m:00000           yes         1                        3,729
+    cccccccccccccccc:m:00000           yes         1                        5,130
+    cccccccccccccccc:m:00000           yes         1                        2,541
+    cccccccccccccccc:m:00000           yes         1                        1,199
+    cccccccccccccccc:m:00000           yes         1                        2,342
+    cccccccccccccccc:m:00000           yes         1                        2,879
+    cccccccccccccccc:m:00000           yes         1                       12,216
+    cccccccccccccccc:m:00000           yes         1                        5,840
+    cccccccccccccccc:m:00000           yes         1                       11,016
+    cccccccccccccccc:m:00000           yes         1                        2,932
+    cccccccccccccccc:m:00000           yes         1                        1,289
+    cccccccccccccccc:m:00000           yes         1                        7,508
+    cccccccccccccccc:m:00000           yes         1                        1,891
+    cccccccccccccccc:m:00000           yes         1                        6,807
+    cccccccccccccccc:m:00000           yes         1                        6,885
+    cccccccccccccccc:m:00000           yes         1                       10,508
+    cccccccccccccccc:m:00000           yes         1                        8,502
+    cccccccccccccccc:m:00000           yes         1                       17,392
+    cccccccccccccccc:m:00000           yes         1                       19,355
+    cccccccccccccccc:m:00000           yes         1                        2,722
+    cccccccccccccccc:m:00000           yes         1                       16,812
+    cccccccccccccccc:m:00000           yes         1                          961
+    cccccccccccccccc:m:00000           yes         1                        1,429
+    cccccccccccccccc:m:00000           yes         1                        7,570
+    cccccccccccccccc:m:00000           yes         1                        1,040
+    cccccccccccccccc:m:00000           yes         1                        6,788
+    cccccccccccccccc:m:00000           yes         1                       13,813
+    cccccccccccccccc:m:00000           yes         1                       16,892
+    cccccccccccccccc:m:00000           yes         1                        5,716
+    cccccccccccccccc:m:00000           yes         1                        6,718
+    cccccccccccccccc:m:00000           yes         1                        4,542
+    cccccccccccccccc:m:00000           yes         1                        1,796
+    cccccccccccccccc:m:00000           yes         1                          535
+    cccccccccccccccc:m:00000           yes         1                        7,305
+    cccccccccccccccc:m:00000           yes         1                       14,052
+    cccccccccccccccc:m:00000           yes         1                        5,494
+    cccccccccccccccc:m:00000           yes         1                        4,030
+    cccccccccccccccc:m:00000           yes         1                          991
+    cccccccccccccccc:m:00000           yes         1                        4,601
+    cccccccccccccccc:m:00000           yes         1                        4,914
+    cccccccccccccccc:m:00000           yes         1                          164
+    cccccccccccccccc:m:00000           yes         1                          139
+    cccccccccccccccc:m:00000           yes         1                        2,541
+    cccccccccccccccc:m:00000           yes         1                        2,594
+    cccccccccccccccc:m:00000           yes         1                          236
+    cccccccccccccccc:m:00000           yes         1                        6,799
+    cccccccccccccccc:m:00000           yes         1                        4,609
+    cccccccccccccccc:m:00000           yes         1                        8,421
+    cccccccccccccccc:m:00000           yes         1                       15,697
+    cccccccccccccccc:m:00000           yes         1                        1,440
+    cccccccccccccccc:m:00000           yes         1                        7,824
+    cccccccccccccccc:m:00000           yes         1                        2,908
+    cccccccccccccccc:m:00000           yes         1                       11,682
+    cccccccccccccccc:m:00000           yes         1                       19,158
+    cccccccccccccccc:m:00000           yes         1                        8,407
+    cccccccccccccccc:m:00000           yes         1                        7,066
+    cccccccccccccccc:m:00000           yes         1                        5,130
+    cccccccccccccccc:m:00000           yes         1                       19,212
+    cccccccccccccccc:m:00000           yes         1                        3,980
+    cccccccccccccccc:m:00000           yes         1                        6,914
+    cccccccccccccccc:m:00000           yes         1                        7,023
+    cccccccccccccccc:m:00000           yes         1                        1,925
+    cccccccccccccccc:m:00000           yes         1                        8,206
+    cccccccccccccccc:m:00000           yes         1                        2,373
+    cccccccccccccccc:m:00000           yes         1                        5,867
+    cccccccccccccccc:m:00000           yes         1                          578
+    cccccccccccccccc:m:00000           yes         1                        6,948
+    cccccccccccccccc:m:00000           yes         1                          371
+    cccccccccccccccc:m:00000           yes         1                        5,476
+    cccccccccccccccc:m:00000           yes         1                       17,270
+    cccccccccccccccc:m:00000           yes         1                        5,112
+    cccccccccccccccc:m:00000           yes         1                        6,225
+    cccccccccccccccc:m:00000           yes         1                        6,642
+    cccccccccccccccc:m:00000           yes         1                        2,601
+    cccccccccccccccc:m:00000           yes         1                        9,782
+    cccccccccccccccc:m:00000           yes         1                       19,396
+    cccccccccccccccc:m:00000           yes         1                       12,337
+    cccccccccccccccc:m:00000           yes         1                          875
+    cccccccccccccccc:m:00000           yes         1                        5,844
+    cccccccccccccccc:m:00000           yes         1                        2,216
+    cccccccccccccccc:m:00000           yes         1                           34
+    cccccccccccccccc:m:00000           yes         1                       18,134
+    cccccccccccccccc:m:00000           yes         1                        8,285
+    cccccccccccccccc:m:00000           yes         1                        2,368
+    cccccccccccccccc:m:00000           yes         1                        5,575
+    cccccccccccccccc:m:00000           yes         1                        8,929
+    cccccccccccccccc:m:00000           yes         1                        3,493
+    cccccccccccccccc:m:00000           yes         1                          187
+    cccccccccccccccc:m:00000           yes         1                        1,716
+    cccccccccccccccc:m:00000           yes         1                        3,254
+    cccccccccccccccc:m:00000           yes         1                        4,293
+    cccccccccccccccc:m:00000           yes         1                        5,750
+    cccccccccccccccc:m:00000           yes         1                        1,837
+    cccccccccccccccc:m:00000           yes         1                        2,655
+    cccccccccccccccc:m:00000           yes         1                        1,566
+    cccccccccccccccc:m:00000           yes         1                        8,563
+    cccccccccccccccc:m:00000           yes         1                          655
+    cccccccccccccccc:m:00000           yes         1                        7,388
+    cccccccccccccccc:m:00000           yes         1                        5,578
+    cccccccccccccccc:m:00000           yes         1                        1,402
+    cccccccccccccccc:m:00000           yes         1                        1,538
+    cccccccccccccccc:m:00000           yes         1                       11,150
+    cccccccccccccccc:m:00000           yes         1                       10,281
+    cccccccccccccccc:m:00000           yes         1                        2,269
+    cccccccccccccccc:m:00000           yes         1                        6,880
+    cccccccccccccccc:m:00000           yes         1                          592
+    cccccccccccccccc:m:00000           yes         1                       12,187
+    cccccccccccccccc:m:00000           yes         1                        4,673
+    cccccccccccccccc:m:00000           yes         1                        6,039
+    cccccccccccccccc:m:00000           yes         1                        3,122
+    cccccccccccccccc:m:00000           yes         1                        3,271
+    cccccccccccccccc:m:00000           yes         1                        1,359
+    cccccccccccccccc:m:00000           yes         1                        7,694
+    cccccccccccccccc:m:00000           yes         1                       14,683
+    cccccccccccccccc:m:00000           yes         1                        2,651
+    cccccccccccccccc:m:00000           yes         1                        6,920
+    cccccccccccccccc:m:00000           yes         1                        5,011
+    cccccccccccccccc:m:00000           yes         1                          258
+    cccccccccccccccc:m:00000           yes         1                        8,119
+    cccccccccccccccc:m:00000           yes         1                       17,921
+    cccccccccccccccc:m:00000           yes         1                          589
+    cccccccccccccccc:m:00000           yes         1                        5,046
+    cccccccccccccccc:m:00000           yes         1                        7,097
+    cccccccccccccccc:m:00000           yes         1                        7,142
+    cccccccccccccccc:m:00000           yes         1                        8,388
+    cccccccccccccccc:m:00000           yes         1                           46
+    cccccccccccccccc:m:00000           yes         1                       16,567
+    cccccccccccccccc:m:00000           yes         1                        1,616
+    cccccccccccccccc:m:00000           yes         1                        5,800
+    cccccccccccccccc:m:00000           yes         1                          983
+    cccccccccccccccc:m:00000           yes         1                          522
+    cccccccccccccccc:m:00000           yes         1                        2,654
+    cccccccccccccccc:m:00000           yes         1                       12,753
+    cccccccccccccccc:m:00000           yes         1                        6,257
+    cccccccccccccccc:m:00000           yes         1                        5,770
+    cccccccccccccccc:m:00000           yes         1                        3,970
+    cccccccccccccccc:m:00000           yes         1                        4,166
+    cccccccccccccccc:m:00000           yes         1                        5,599
+    cccccccccccccccc:m:00000           yes         1                        7,570
+    cccccccccccccccc:m:00000           yes         1                       17,437
+    cccccccccccccccc:m:00000           yes         1                        5,302
+    cccccccccccccccc:m:00000           yes         1                        7,542
+    cccccccccccccccc:m:00000           yes         1                       14,342
+    cccccccccccccccc:m:00000           yes         1                        6,159
+    cccccccccccccccc:m:00000           yes         1                        9,682
+    cccccccccccccccc:m:00000           yes         1                        3,765
+    cccccccccccccccc:m:00000           yes         1                        6,853
+    cccccccccccccccc:m:00000           yes         1                        2,793
+    cccccccccccccccc:m:00000           yes         1                        5,295
+    cccccccccccccccc:m:00000           yes         1                        4,941
+    cccccccccccccccc:m:00000           yes         1                        7,434
+    cccccccccccccccc:m:00000           yes         1                        2,985
+    cccccccccccccccc:m:00000           yes         1                          498
+    cccccccccccccccc:m:00000           yes         1                        5,837
+    cccccccccccccccc:m:00000           yes         1                        6,969
+    cccccccccccccccc:m:00000           yes         1                          727
+    cccccccccccccccc:m:00000           yes         1                          388
+    cccccccccccccccc:m:00000           yes         1                          580
+    cccccccccccccccc:m:00000           yes         1                        2,781
+    cccccccccccccccc:m:00000           yes         1                       10,312
+    cccccccccccccccc:m:00000           yes         1                          826
+    cccccccccccccccc:m:00000           yes         1                        5,869
+    cccccccccccccccc:m:00000           yes         1                        3,741
+    cccccccccccccccc:m:00000           yes         1                        5,361
+    cccccccccccccccc:m:00000           yes         1                        2,696
+    cccccccccccccccc:m:00000           yes         1                       13,212
+    cccccccccccccccc:m:00000           yes         1                        5,798
+    cccccccccccccccc:m:00000           yes         1                        8,840
+    cccccccccccccccc:m:00000           yes         1                       10,975
+    cccccccccccccccc:m:00000           yes         1                        8,355
+    cccccccccccccccc:m:00000           yes         1                        3,544
+    cccccccccccccccc:m:00000           yes         1                          709
+    cccccccccccccccc:m:00000           yes         1                        3,674
+    cccccccccccccccc:m:00000           yes         1                        8,401
+    cccccccccccccccc:m:00000           yes         1                        1,176
+    cccccccccccccccc:m:00000           yes         1                        2,121
+    cccccccccccccccc:m:00000           yes         1                        4,878
+    cccccccccccccccc:m:00000           yes         1                        2,370
+    cccccccccccccccc:m:00000           yes         1                        5,159
+    cccccccccccccccc:m:00000           yes         1                        5,493
+    cccccccccccccccc:m:00000           yes         1                        7,120
+    cccccccccccccccc:m:00000           yes         1                        7,880
+    cccccccccccccccc:m:00000           yes         1                        6,127
+    cccccccccccccccc:m:00000           yes         1                       14,587
+    cccccccccccccccc:m:00000           yes         1                          171
+    cccccccccccccccc:m:00000           yes         1                        5,789
+    cccccccccccccccc:m:00000           yes         1                          875
+    cccccccccccccccc:m:00000           yes         1                        2,471
+    cccccccccccccccc:m:00000           yes         1                        4,399
+    cccccccccccccccc:m:00000           yes         1                        2,795
+    cccccccccccccccc:m:00000           yes         1                        3,418
+    cccccccccccccccc:m:00000           yes         1                        4,443
+    cccccccccccccccc:m:00000           yes         1                        1,170
+    cccccccccccccccc:m:00000           yes         1                       12,761
+    cccccccccccccccc:m:00000           yes         1                        8,314
+    cccccccccccccccc:m:00000           yes         1                        1,097
+    cccccccccccccccc:m:00000           yes         1                        4,345
+    cccccccccccccccc:m:00000           yes         1                        5,566
+    cccccccccccccccc:m:00000           yes         1                        6,213
+    cccccccccccccccc:m:00000           yes         1                        3,396
+    cccccccccccccccc:m:00000           yes         1                        5,014
+    cccccccccccccccc:m:00000           yes         1                        7,611
+    cccccccccccccccc:m:00000           yes         1                        4,333
+    cccccccccccccccc:m:00000           yes         1                          289
+    cccccccccccccccc:m:00000           yes         1                       17,218
+    cccccccccccccccc:m:00000           yes         1                        2,607
+    cccccccccccccccc:m:00000           yes         1                        7,233
+    cccccccccccccccc:m:00000           yes         1                        8,171
+    cccccccccccccccc:m:00000           yes         1                        4,813
+    cccccccccccccccc:m:00000           yes         1                          264
+    cccccccccccccccc:m:00000           yes         1                          194
+    cccccccccccccccc:m:00000           yes         1                        8,257
+    cccccccccccccccc:m:00000           yes         1                        2,836
+    cccccccccccccccc:m:00000           yes         1                        8,662
+    cccccccccccccccc:m:00000           yes         1                        7,944
+    cccccccccccccccc:m:00000           yes         1                        2,965
+    cccccccccccccccc:m:00000           yes         1                        2,778
+    cccccccccccccccc:m:00000           yes         1                        4,385
+    cccccccccccccccc:m:00000           yes         1                        8,193
+    cccccccccccccccc:m:00000           yes         1                       16,846
+    cccccccccccccccc:m:00000           yes         1                        6,633
+    cccccccccccccccc:m:00000           yes         1                        4,645
+    cccccccccccccccc:m:00000           yes         1                        1,691
+    cccccccccccccccc:m:00000           yes         1                        7,872
+    cccccccccccccccc:m:00000           yes         1                        6,581
+    cccccccccccccccc:m:00000           yes         1                        1,799
+    cccccccccccccccc:m:00000           yes         1                       16,353
+    cccccccccccccccc:m:00000           yes         1                        9,989
+    cccccccccccccccc:m:00000           yes         1                        3,471
+    cccccccccccccccc:m:00000           yes         1                        6,403
+    cccccccccccccccc:m:00000           yes         1                       18,043
+    cccccccccccccccc:m:00000           yes         1                        8,721
+    cccccccccccccccc:m:00000           yes         1                        5,700
+    cccccccccccccccc:m:00000           yes         1                        2,596
+    cccccccccccccccc:m:00000           yes         1                        1,280
+    cccccccccccccccc:m:00000           yes         1                       16,211
+    cccccccccccccccc:m:00000           yes         1                       10,381
+    cccccccccccccccc:m:00000           yes         1                        5,782
+    cccccccccccccccc:m:00000           yes         1                          596
+    cccccccccccccccc:m:00000           yes         1                        1,312
+    cccccccccccccccc:m:00000           yes         1                        3,399
+    cccccccccccccccc:m:00000           yes         1                        8,064
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -
+    cccccccccccccccc:m:00000           yes         0                            -

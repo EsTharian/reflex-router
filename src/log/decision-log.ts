@@ -41,6 +41,9 @@ export interface DecisionRecord {
   readonly degraded_reason: string | null;
   readonly shape: { readonly status: string; readonly violations: readonly string[] };
   readonly claude_version: string | null;
+  /** The request carried the `extended-cache-ttl` beta, so its cache writes may be 1-hour ones. The beta permits a
+   * 1-hour write, it does not prove every breakpoint used one; it is the only TTL signal on the wire. */
+  readonly cache_ttl_beta: boolean;
   readonly backend: string | null;
   readonly requested: { readonly model: string | null; readonly tier: Tier | null; readonly effort: string | null };
   readonly decision: {

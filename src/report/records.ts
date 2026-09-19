@@ -60,6 +60,8 @@ export interface Dec {
   readonly decisionDeadlineMs: number | null;
   readonly upstreamFirstByteMs: number | null;
   readonly claudeVersion: string | null;
+  /** The request carried the `extended-cache-ttl` beta (1-hour cache writes allowed). null: older record, not logged. */
+  readonly cacheTtlBeta: boolean | null;
   /** `side_fingerprint` of an unclassified side call, as logged (src/wire/fingerprint.ts); null when absent. */
   readonly fingerprint: J | null;
   /** Delegation hint version the session ran with (`delegate_hint`); null: off, or recorded before it existed. */
@@ -157,6 +159,7 @@ function toDec(o: J): Dec | null {
     decisionDeadlineMs: num(at(o, "timing", "decision_deadline_ms")),
     upstreamFirstByteMs: num(at(o, "timing", "upstream_first_byte_ms")),
     claudeVersion: str(o["claude_version"]),
+    cacheTtlBeta: typeof o["cache_ttl_beta"] === "boolean" ? o["cache_ttl_beta"] : null,
     fingerprint: isObj(o["side_fingerprint"]) ? o["side_fingerprint"] : null,
     hint: str(o["delegate_hint"]),
   };

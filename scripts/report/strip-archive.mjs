@@ -26,7 +26,7 @@ for (const line of fs.readFileSync(input, "utf8").split("\n")) {
   out.push({
     v: o.v,
     record: "decision",
-    ...pick(o, ["id", "at", "session", "conv", "kind", "turn", "side_kind", "mode_requested", "mode_effective", "degraded_reason", "claude_version", "delegate_hint"]),
+    ...pick(o, ["id", "at", "session", "conv", "kind", "turn", "side_kind", "mode_requested", "mode_effective", "degraded_reason", "claude_version", "delegate_hint", "cache_ttl_beta"]),
     requested: pick(o.requested, ["model", "tier"]),
     // Only whether the backend answered, and its applied pick.
     decision: isObj(o.decision) ? { picks: { tier: { value: o.decision.picks?.tier?.value ?? null } } } : null,

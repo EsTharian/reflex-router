@@ -158,3 +158,22 @@ reflex report
 
 11. Unclassified side-call fingerprints
   (no unclassified side calls)
+
+12. Side-call routing estimate
+  ESTIMATE, not a measurement: what sending no_tools, notification, suggestion to a shared haiku tier would have cost, over the tokens actually recorded.
+  A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.
+  Both columns are priced at the same TTL per request (the one the record's extended-cache-ttl beta implies); no record in range logged it, so 5m was assumed throughout.
+    side kind   calls  warm  cold   tokens  cache read  gap p50  $ at requested  $ at haiku   $ saved
+    suggestion      2     0     2  142,844       91.7%        -         $0.1403     $0.1787  $-0.0384
+    no_tools        1     1     0    9,011        0.0%      1 s         $0.0565     $0.0010   $0.0556
+    total           3     1     2  151,855                              $0.1968     $0.1797   $0.0171
+  amortisation (break-even 3.1 warm calls per cold write; applies to kinds above 80.0% cache read, whose cost is the cached prefix):
+    suggestion: 0.0 warm per cold - BELOW break-even, COSTS $0.0384
+    no_tools: 0.0% cache read - little prefix to lose, the rule does not apply; saves $0.0556
+  simulated net over all routable kinds: saves $0.0171 - gross, before the exposure below.
+
+  exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).
+  conversations ever pinned below requested: 2 of 3
+    conversation              pinned below  up-moves  cache write on each up-move
+    bbbbbbbbbbbbbbbb:m:00000           yes         2                13,400, 5,900
+    bbbbbbbbbbbbbbbb:a:00000           yes         0                            -
