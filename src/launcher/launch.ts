@@ -3,6 +3,7 @@ import { outcomeHooks } from "../outcome/hooks-config.js";
 import os from "node:os";
 import { isReflexEnvName, loadConfig, type Config } from "../config.js";
 import { resolveEffectiveMode } from "../effective-mode.js";
+import { mergeEnvFile, type EnvFileIO } from "../env-file.js";
 import type { InitMessage } from "../ipc.js";
 import { forward } from "../net/forward.js";
 import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
@@ -19,6 +20,9 @@ export interface LaunchIO {
   readonly stderr: (text: string) => void;
   /** Tests shrink these. */
   readonly timings?: Partial<Timings>;
+  /** Tests: where ~/.reflex/env is read from (default: the real file system). */
+  readonly envFile?: EnvFileIO;
+  readonly homedir?: string;
 }
 
 export const realLaunchIO = (): LaunchIO => ({
@@ -83,7 +87,11 @@ const workerProbe = async (port: number): Promise<boolean> => {
 /** Starts claude behind the reflex proxy (or plain, per mode) and resolves with claude's exit code. */
 export async function launch(argv: readonly string[], io: LaunchIO = realLaunchIO()): Promise<number> {
   const warn = (msg: string): void => io.stderr(`reflex: ${msg}\n`);
-  const binOverride = io.env["REFLEX_CLAUDE_BIN"]?.trim() || undefined;
+  // Settings: the process environment, over ~/.reflex/env. A file that cannot be used only costs a warning.
+  const merged = mergeEnvFile(io.env, io.envFile, io.homedir);
+  for (const w of merged.warnings) warn(w);
+  const settings = merged.env;
+  const binOverride = settings["REFLEX_CLAUDE_BIN"]?.trim() || undefined;
   const bin = resolveClaude(binOverride, realResolveIO(io.env));
   if (!bin) {
     warn("cannot find `claude` on PATH (set REFLEX_CLAUDE_BIN to its location)");
@@ -91,7 +99,7 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
   }
   const plain = (): Promise<number> => runClaude(bin, argv, sanitizedEnv(io.env), io);
 
-  const loaded = loadConfig(io.env);
+  const loaded = loadConfig(settings, io.homedir);
   if (!loaded.ok) {
     for (const e of loaded.errors) warn(`invalid configuration: ${e}`);
     warn("running plain claude");

@@ -79,6 +79,21 @@ export const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
 /** Above the first measured cold-connection p95 (1136 ms, docs/observations.md) with some headroom. */
 export const DEFAULT_JEV_DEADLINE_MS = 1500;
 
+/** State directory: REFLEX_HOME, else ~/.reflex. Shared with the env-file loader, which needs it before loadConfig runs. */
+export const defaultHome = (env: NodeJS.ProcessEnv, homedir: string = os.homedir()): string => env["REFLEX_HOME"]?.trim() || path.join(homedir, ".reflex");
+
+/**
+ * Every environment variable loadConfig reads (test/unit/config.test.ts keeps this list and the code in step).
+ * `reflex doctor` reports the source of each one; only REFLEX_* and TYPESAFE_API_KEY may come from ~/.reflex/env.
+ */
+export const SETTING_NAMES: readonly string[] = [
+  "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_DEADLINE_MS",
+  "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
+  "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
+  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
+];
+
 /** Names the claude child must never inherit: our own settings and the decision-backend credentials. */
 export const isReflexEnvName = (name: string): boolean => name.startsWith("REFLEX_") || name.startsWith("TYPESAFE_");
 
@@ -172,7 +187,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     backend,
     upstreamUrl,
     claudeBin: env["REFLEX_CLAUDE_BIN"]?.trim() || undefined,
-    home: env["REFLEX_HOME"]?.trim() || path.join(homedir, ".reflex"),
+    home: defaultHome(env, homedir),
     ignoreVersionCheck: truthy(env["REFLEX_IGNORE_VERSION_CHECK"]),
     typesafeApiKey,
     jevBaseUrl,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEFAULT_UPSTREAM, isReflexEnvName, loadConfig, type Config } from "../../src/config.js";
+import fs from "node:fs";
+import { DEFAULT_UPSTREAM, defaultHome, isReflexEnvName, loadConfig, SETTING_NAMES, type Config } from "../../src/config.js";
 
 const load = (env: NodeJS.ProcessEnv): { config: Config; warnings: readonly string[] } => {
   const r = loadConfig(env, "/home/u");
@@ -83,5 +84,22 @@ describe("isReflexEnvName", () => {
   it("matches reflex settings and every TypeSafe credential, nothing else", () => {
     for (const n of ["REFLEX_MODE", "REFLEX_ANYTHING", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL"]) assert.equal(isReflexEnvName(n), true, n);
     for (const n of ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_X", "PATH", "reflex_mode"]) assert.equal(isReflexEnvName(n), false, n);
+  });
+});
+
+describe("SETTING_NAMES", () => {
+  const source = fs.readFileSync("src/config.ts", "utf8");
+  it("lists every variable loadConfig reads, and nothing it does not", () => {
+    const read = new Set<string>();
+    for (const m of source.matchAll(/env\["([A-Z_]+)"\]/g)) read.add(m[1]!);
+    for (const t of ["HAIKU", "SONNET", "OPUS", "FABLE"]) {
+      read.add(`REFLEX_MODEL_${t}`);
+      read.add(`ANTHROPIC_DEFAULT_${t}_MODEL`);
+    }
+    assert.deepEqual([...SETTING_NAMES].sort(), [...read].sort());
+  });
+  it("defaultHome is REFLEX_HOME, else ~/.reflex", () => {
+    assert.equal(defaultHome({}, "/h"), "/h/.reflex");
+    assert.equal(defaultHome({ REFLEX_HOME: " /x " }, "/h"), "/x");
   });
 });

@@ -70,6 +70,50 @@ describe("launcher end to end (fake claude)", () => {
 
   const isProxied = (o: Outcome): boolean => o.report.baseUrl !== null && o.report.baseUrl !== upstream.url && /^http:\/\/127\.0\.0\.1:\d+$/.test(o.report.baseUrl);
 
+  describe("~/.reflex/env", () => {
+    const withEnvFile = async (text: string, mode: number, env: NodeJS.ProcessEnv = {}): Promise<Outcome> => {
+      const s = setup({ TYPESAFE_API_KEY: undefined, ...env });
+      fs.mkdirSync(s.home, { recursive: true });
+      const file = path.join(s.home, "env");
+      fs.writeFileSync(file, text, { mode });
+      fs.chmodSync(file, mode);
+      const code = await launch(["-p", "x"], s.io);
+      return { code, report: s.readReport(), stderr: s.stderr.join(""), home: s.home };
+    };
+
+    it("supplies the key: with no key in the process environment the session is proxied, and claude sees no reflex value", async () => {
+      const o = await withEnvFile("TYPESAFE_API_KEY=apikey_from_file\nREFLEX_MODE=shadow\n", 0o600);
+      assert.ok(isProxied(o), o.stderr);
+      assert.equal(o.report.hasTypesafeKey, false);
+      assert.deepEqual(o.report.reflexVars, []);
+    });
+    it("is merged under the process environment: REFLEX_MODE=off in the file loses to REFLEX_MODE=shadow in the environment", async () => {
+      const o = await withEnvFile("TYPESAFE_API_KEY=apikey_from_file\nREFLEX_MODE=off\n", 0o600, { REFLEX_MODE: "shadow" });
+      assert.ok(isProxied(o), o.stderr);
+    });
+    it("applies file settings the environment does not set (REFLEX_MODE=off gives plain claude)", async () => {
+      const o = await withEnvFile("REFLEX_MODE=off\n", 0o600);
+      assert.equal(o.report.baseUrl, upstream.url);
+      assert.deepEqual(o.report.settings, []);
+    });
+    it("a key file readable by group/others is refused: plain claude, a warning that says how to fix it, key never leaked", async () => {
+      const o = await withEnvFile("TYPESAFE_API_KEY=apikey_from_file\n", 0o644);
+      assert.equal(o.code, 0);
+      assert.equal(o.report.baseUrl, upstream.url);
+      assert.match(o.stderr, /refusing .*readable by group\/others.*chmod 600/);
+      assert.match(o.stderr, /no decision backend available \(no_backend_key\)/);
+      assert.ok(!o.stderr.includes("apikey_from_file"));
+    });
+    it("a file that is not a file is skipped with a warning and the session still runs", async () => {
+      const s = setup({ TYPESAFE_API_KEY: "apikey_test_key" });
+      fs.mkdirSync(path.join(s.home, "env"), { recursive: true });
+      const code = await launch(["-p", "x"], s.io);
+      assert.equal(code, 0);
+      assert.match(s.stderr.join(""), /cannot read .*EISDIR/);
+      assert.ok(s.readReport().baseUrl?.startsWith("http://127.0.0.1"));
+    });
+  });
+
   it("forwards every argument to claude verbatim (flags, quotes, unicode, a -- terminator)", async () => {
     const args = ["-p", 'say "hi" & ünïcode ✓', "--model", "sonnet", "--allowedTools", "Bash(node *)", "Read", "--", "--not-a-flag", "x y"];
     const o = await run(args);
