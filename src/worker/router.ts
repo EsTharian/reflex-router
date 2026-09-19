@@ -316,7 +316,7 @@ export class Router {
               ...(fingerprint !== undefined ? { side_fingerprint: fingerprint } : {}),
               delegate_hint: this.d.config.delegate ? HINT_VERSION : null,
             };
-            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
+            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, interjection: v.interjection, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
             return this.d.log.append(record, v.turn === "new" ? v.task : null);
           })
           .catch((e: unknown) => this.d.logger("error", `router: record failed: ${e instanceof Error ? e.message : String(e)}`));

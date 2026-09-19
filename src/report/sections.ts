@@ -339,11 +339,14 @@ export function s6Latency({ rec }: Ctx): string[] {
 
 export interface OutcomeGroup {
   readonly scope: string;
-  readonly arm: "routed" | "unchanged" | "no decision";
+  /** `interjection`: a window sharing its decision with the turn that owns it; never counted inside a rate. */
+  readonly arm: "routed" | "unchanged" | "interjection" | "no decision";
   readonly windows: readonly OutcomeRec[];
   /** Windows with a revert found later (`outcome_update`) or in the window. */
   readonly reverted: ReadonlySet<OutcomeRec>;
 }
+
+const ARM_ORDER: readonly OutcomeGroup["arm"][] = ["routed", "unchanged", "interjection", "no decision"];
 
 /** Joins outcome windows to their decision: routed (the decision's request was rewritten) vs unchanged. */
 export function outcomeGroups(ctx: Ctx): OutcomeGroup[] {
@@ -351,7 +354,9 @@ export function outcomeGroups(ctx: Ctx): OutcomeGroup[] {
   const map = new Map<string, OutcomeRec[]>();
   for (const o of ctx.rec.outcomes) {
     const dec = o.decisionId === null ? undefined : ctx.byId.get(o.decisionId);
-    const arm = dec === undefined ? "no decision" : dec.routed ? "routed" : "unchanged";
+    // An interjection window shares its decision with the turn that owns it. Counting it in that decision's arm would
+    // inflate n and count the turn's edits twice, so it gets an arm of its own and never enters a rate.
+    const arm = o.attribution === "interjection" ? "interjection" : dec === undefined ? "no decision" : dec.routed ? "routed" : "unchanged";
     const k = `${o.scope}\u0000${arm}`;
     map.set(k, [...(map.get(k) ?? []), o]);
   }
@@ -360,7 +365,7 @@ export function outcomeGroups(ctx: Ctx): OutcomeGroup[] {
       const [scope, arm] = k.split("\u0000") as [string, OutcomeGroup["arm"]];
       return { scope, arm, windows, reverted: new Set(windows.filter((w) => w.revertedInWindow || (w.decisionId !== null && revertedIds.has(w.decisionId)))) };
     })
-    .sort((a, b) => a.scope.localeCompare(b.scope) || ["routed", "unchanged", "no decision"].indexOf(a.arm) - ["routed", "unchanged", "no decision"].indexOf(b.arm));
+    .sort((a, b) => a.scope.localeCompare(b.scope) || ARM_ORDER.indexOf(a.arm) - ARM_ORDER.indexOf(b.arm));
 }
 
 /** 7. Outcome rates for routed vs unchanged turns. */
@@ -373,6 +378,11 @@ export function s7Outcomes(ctx: Ctx): string[] {
     const scored = w.filter((x) => x.correctionScore !== null);
     const withEdits = w.filter((x) => x.edits > 0);
     const head = `  ${g.scope} / ${g.arm}: ${w.length} window${w.length === 1 ? "" : "s"}`;
+    if (g.arm === "interjection") {
+      const joined = w.filter((x) => x.decisionId !== null).length;
+      out.push(`${head}: messages typed mid-tool-loop, joined to the turn's own decision (${joined} joined). Kept out of the rates above: they share a decision with that turn, so counting them would inflate n and count its edits twice`);
+      continue;
+    }
     if (g.arm === "no decision") {
       const reasons = countBy(w, (x) => x.noDecisionReason ?? "not recorded");
       out.push(`${head} (${reasons.map(([k, n]) => `${k} ${n}`).join(", ")}); not attributable to a routing decision`);

@@ -78,6 +78,9 @@ export interface OutcomeRec {
   readonly testFailureAfterEdit: boolean;
   readonly revertedInWindow: boolean;
   readonly noDecisionReason: string | null;
+  /** How the window was joined. `interjection` shares its decision with the turn that owns it, so such a window is
+   * never counted inside a per-arm rate (it would inflate n and double-count the turn's edits). */
+  readonly attribution: string | null;
 }
 
 export interface OutcomeUpdate {
@@ -175,6 +178,7 @@ function toOutcome(o: J): OutcomeRec | null {
     testFailureAfterEdit: at(o, "signals", "test_failure_after_edit", "detected") === true,
     revertedInWindow: at(o, "signals", "reverted_edit", "detected") === true,
     noDecisionReason: str(at(o, "no_decision", "reason")),
+    attribution: str(o["attribution"]),
   };
 }
 

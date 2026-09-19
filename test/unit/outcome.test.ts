@@ -316,6 +316,49 @@ describe("OutcomeTracker", () => {
     assert.deepEqual(outcomes(out)[0]?.no_decision, { reason: "no_wire_turn", nearest_wire: "continuation" });
   });
 
+  it("an interjection joins the pinned conversation's own decision, so the next correction attaches to it", () => {
+    const { t, out, tick, now } = tracker();
+    t.ingest(prompt("P1", "make the parser accept empty input"));
+    t.onDecision(decision({ id: "D1", at: now() + 50, turn: "new", conv: "c" }));
+    tick(1000);
+    // The user types into the running tool loop: a continuation on the wire, but a real prompt through the hook.
+    t.ingest(prompt("P2", "no, that's wrong"));
+    t.onDecision(decision({ id: "Dx", at: now() + 50, turn: "continuation", interjection: true, conv: "c" }));
+    tick(1000);
+    t.ingest(prompt("P3", "still broken"));
+    const [w1, w2] = outcomes(out);
+    assert.equal(w1?.decision_id, "D1");
+    assert.equal(w2?.decision_id, "D1", "the interjection's window joins the turn's decision");
+    assert.equal(w2?.attribution, "interjection");
+    assert.equal(w2?.no_decision, null);
+    assert.deepEqual(w2?.models, { requested: "claude-opus-5", sent: "claude-sonnet-5" }, "the pin held, so the turn's models apply");
+    assert.ok((w2?.signals.correction?.score ?? 0) > 0, "the next prompt's correction lands on a joined window");
+  });
+
+  it("an interjection on a conversation with no earlier decision stays no_wire_turn", () => {
+    const { t, out, tick, now } = tracker();
+    t.ingest(prompt("P1", "continue"));
+    t.onDecision(decision({ id: "Dx", at: now() + 50, turn: "continuation", interjection: true, conv: "c" }));
+    tick(1000);
+    t.ingest(prompt("P2", "next"));
+    assert.deepEqual(outcomes(out)[0]?.no_decision, { reason: "no_wire_turn", nearest_wire: "continuation:interjection" });
+  });
+
+  it("a plain continuation is never joined, even on a conversation with a decision", () => {
+    const { t, out, tick, now } = tracker();
+    t.ingest(prompt("P1", "do the thing"));
+    t.onDecision(decision({ id: "D1", at: now() + 50, turn: "new", conv: "c" }));
+    tick(1000);
+    t.ingest(prompt("P2", "and this"));
+    t.onDecision(decision({ id: "Dy", at: now() + 50, turn: "continuation", conv: "c" }));
+    tick(1000);
+    t.ingest(prompt("P3", "done"));
+    const w2 = outcomes(out)[1];
+    assert.equal(w2?.decision_id, null);
+    assert.equal(w2?.attribution, "prompt_id");
+    assert.equal(w2?.no_decision?.reason, "no_wire_turn");
+  });
+
   it("no wire request at all in the window: nearest_wire is null", () => {
     const { t, out, tick } = tracker();
     t.ingest(prompt("P1", "a"));

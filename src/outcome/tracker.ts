@@ -32,6 +32,8 @@ export interface DecisionInfo {
   readonly kind: "main" | "subagent" | "unknown";
   readonly turn: "new" | "continuation" | "side";
   readonly sideKind?: string | null;
+  /** A `continuation` carrying a message the user typed mid-loop (src/wire/claude-code.ts). */
+  readonly interjection?: boolean;
   readonly conv: string | null;
   readonly requestedModel: string | null;
   readonly sentModel: string | null;
@@ -53,7 +55,10 @@ export interface OutcomeRecord {
   readonly scope: "main" | "subagent";
   readonly agent: string | null;
   readonly agent_type: string | null;
-  readonly attribution: "prompt_id" | "agent_id";
+  /** How the window was joined to its decision. `interjection`: a message typed mid-tool-loop, joined to the pinned
+   * conversation's own `new` decision — that decision then owns two windows, so these are counted separately in the
+   * report and never inside a per-arm rate. */
+  readonly attribution: "prompt_id" | "agent_id" | "interjection";
   readonly models: { readonly requested: string | null; readonly sent: string | null } | null;
   /**
    * Why `decision_id` is null. `no_wire_turn`: the window's UserPromptSubmit had no wire `new` turn; `nearest_wire` is
@@ -123,6 +128,8 @@ interface Window {
   readonly openedAt: number;
   agentType: string | null;
   decision: DecisionInfo | null;
+  /** Set only when the window was joined other than by its own `new` turn; widens `attribution`. */
+  joinedVia?: "interjection";
   lastStopAt: number | null;
   edits: number;
   bash: number;
@@ -159,6 +166,8 @@ interface Session {
   lastSlashAt: number | null;
   /** Recent main-chat wire classifications (`new`, `continuation`, `side:<kind>`), newest last. */
   recentWire: { readonly at: number; readonly label: string }[];
+  /** Per conversation key, the last main-chat `new` decision: the one the router's pin belongs to. */
+  readonly lastNewByConv: Map<string, DecisionInfo>;
 }
 
 const h = (s: string): string => crypto.createHash("sha256").update(s).digest("hex").slice(0, 16);
@@ -182,7 +191,7 @@ export class OutcomeTracker {
   #session(id: string): Session {
     let s = this.#sessions.get(id);
     if (!s) {
-      s = { id, seq: 0, turns: new Map(), current: null, agents: new Map(), pendingAgentDecisions: new Map(), edits: [], promptsSeen: false, lastSlashAt: null, recentWire: [] };
+      s = { id, seq: 0, turns: new Map(), current: null, agents: new Map(), pendingAgentDecisions: new Map(), edits: [], promptsSeen: false, lastSlashAt: null, recentWire: [], lastNewByConv: new Map() };
       this.#sessions.set(id, s);
     }
     return s;
@@ -379,7 +388,7 @@ export class OutcomeTracker {
       scope: w.scope,
       agent: w.scope === "subagent" ? hashId(w.key) : null,
       agent_type: w.agentType,
-      attribution: w.scope === "main" ? "prompt_id" : "agent_id",
+      attribution: w.joinedVia ?? (w.scope === "main" ? "prompt_id" : "agent_id"),
       models: w.decision ? { requested: w.decision.requestedModel, sent: w.decision.sentModel } : null,
       no_decision: w.decision ? null : { reason: "no_wire_turn", nearest_wire: w.scope === "main" ? this.#nearestWire(s, w, now) : null },
       window: { closed_by: closedBy, duration_ms: now - w.openedAt, ms_to_last_stop: w.lastStopAt !== null ? w.lastStopAt - w.openedAt : null },
@@ -391,6 +400,16 @@ export class OutcomeTracker {
       },
       params: { heuristics_version: HEURISTICS_VERSION, revert_window_turns: REVERT_WINDOW_TURNS, correction_window_chars: CORRECTION_WINDOW_CHARS },
     });
+  }
+
+  /**
+   * The newest main-chat window still waiting for a decision, opened close enough in time to be this request's.
+   * Time-based, like the `new` join it was extracted from: if the response outlives the gap to the next typed prompt
+   * the window has already closed and the join is missed. That race predates this and is not addressed here.
+   */
+  #pendingTurn(s: Session, at: number): Window | undefined {
+    const candidates = [...s.turns.values()].filter((w) => w.scope === "main" && !w.key.startsWith("anon-") && w.decision === null && w.openedAt <= at + PROMPT_MATCH_AFTER_MS && w.openedAt >= at - PROMPT_MATCH_BEFORE_MS);
+    return candidates.sort((a, b) => b.openedAt - a.openedAt)[0];
   }
 
   /** The main-chat wire classification closest to the start of `w`, among those inside the window. */
@@ -406,8 +425,21 @@ export class OutcomeTracker {
       if (d.sessionId === null || d.kind === "unknown") return;
       const s = this.#session(d.sessionId);
       if (d.kind === "main") {
-        s.recentWire.push({ at: d.at, label: d.turn === "side" ? `side:${d.sideKind ?? "unclassified"}` : d.turn });
+        const label = d.turn === "side" ? `side:${d.sideKind ?? "unclassified"}` : d.turn === "continuation" && d.interjection === true ? "continuation:interjection" : d.turn;
+        s.recentWire.push({ at: d.at, label });
         if (s.recentWire.length > RECENT_WIRE_MAX) s.recentWire.shift();
+      }
+      // A message typed into a running tool loop is the user's own turn but takes no decision of its own: the pin is
+      // held, so the work it produces runs on the turn's decision. Join its window to that decision, or the correction
+      // in the NEXT prompt lands on `decision_id: null` and is lost.
+      if (d.kind === "main" && d.turn === "continuation" && d.interjection === true) {
+        const prior = d.conv === null ? undefined : s.lastNewByConv.get(d.conv);
+        const w = prior ? this.#pendingTurn(s, d.at) : undefined;
+        if (w && prior) {
+          w.decision = prior;
+          w.joinedVia = "interjection";
+        }
+        return; // no prior decision on this conversation: the window stays no_wire_turn, which says why
       }
       if (d.turn !== "new") return;
       if (d.kind === "subagent") {
@@ -417,10 +449,10 @@ export class OutcomeTracker {
         else s.pendingAgentDecisions.set(d.agentId, d);
         return;
       }
-      const candidates = [...s.turns.values()].filter((w) => w.scope === "main" && !w.key.startsWith("anon-") && w.decision === null && w.openedAt <= d.at + PROMPT_MATCH_AFTER_MS && w.openedAt >= d.at - PROMPT_MATCH_BEFORE_MS);
-      const t = candidates.sort((a, b) => b.openedAt - a.openedAt)[0];
+      const t = this.#pendingTurn(s, d.at);
       if (t) {
         t.decision = d;
+        if (d.conv !== null) s.lastNewByConv.set(d.conv, d);
         return;
       }
       // Without any UserPromptSubmit in this session the hooks are not arriving (e.g. blocked by managed policy),
