@@ -102,7 +102,7 @@ describe("plan (decision table)", () => {
   }
 });
 
-// The twelve decisions of the first shadow dogfood session (docs/shadow-observations.md), probability vectors as
+// The twelve decisions of the first shadow dogfood session (docs/observations.md), probability vectors as
 // Jev returned them. Requested tier: opus for all.
 const SHADOW1: { probs: Record<string, number>; confidence: number; rd: number; argmax: Tier; mass: Tier; lowConfidence: boolean }[] = [
   { probs: { haiku: 1, sonnet: 0, opus: 0 }, confidence: 0.99, rd: 0.16, argmax: "haiku", mass: "haiku", lowConfidence: false },

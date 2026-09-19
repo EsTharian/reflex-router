@@ -76,7 +76,7 @@ export type ConfigResult =
 export const DEFAULT_UPSTREAM = "https://api.anthropic.com";
 export const TYPESAFE_KEY_PREFIX = "apikey_";
 export const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
-/** Above the first measured cold-connection p95 (1136 ms, docs/shadow-observations.md) with some headroom. */
+/** Above the first measured cold-connection p95 (1136 ms, docs/observations.md) with some headroom. */
 export const DEFAULT_JEV_DEADLINE_MS = 1500;
 
 /** Names the claude child must never inherit: our own settings and the decision-backend credentials. */
