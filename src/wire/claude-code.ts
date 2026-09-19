@@ -175,13 +175,22 @@ export function injectedPromptKind(prompt: string): SideKind | null {
 }
 
 /**
+ * For a hook `UserPromptSubmit.prompt`: true when the prompt is a subagent's report handed back into the main chat.
+ * Claude Code delivers it through `UserPromptSubmit` like a typed prompt, but it is model output, not the user
+ * reacting to the previous reply, so it must not close the user's turn or be scored as a correction.
+ */
+export function isHandbackPrompt(prompt: string): boolean {
+  return prompt.trimStart().replace(/^<system-reminder>\s*/, "").startsWith(HANDBACK_PROMPT_PREFIX.text);
+}
+
+/**
  * For a hook `UserPromptSubmit.prompt`: true only for a prompt the user typed as a turn of its own. False for messages
  * Claude Code injected (injectedPromptKind), a subagent's hand-back, slash commands (`/compact`, `/model`, skills: not
  * a turn of their own) and blank prompts.
  */
 export function isTypedPrompt(prompt: string): boolean {
   const head = prompt.trimStart().replace(/^<system-reminder>\s*/, "");
-  return head.trim() !== "" && !head.startsWith("/") && !head.startsWith(HANDBACK_PROMPT_PREFIX.text) && injectedPromptKind(prompt) === null;
+  return head.trim() !== "" && !head.startsWith("/") && !isHandbackPrompt(prompt) && injectedPromptKind(prompt) === null;
 }
 
 export function parseRequest(headers: IncomingHttpHeaders, body: Buffer): ParseResult {

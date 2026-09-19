@@ -11,7 +11,7 @@ import crypto from "node:crypto";
 import { hashId } from "../log/decision-log.js";
 import { CORRECTION_WINDOW_CHARS, REVERT_WINDOW_TURNS, correctionSignal, coversFile, exitCode, gitRestoredPaths, testRunnerKind, type CorrectionSignal } from "./heuristics.js";
 import { EDIT_TOOLS, type HookEvent, type ToolUse } from "./hooks.js";
-import { injectedPromptKind } from "../wire/claude-code.js";
+import { injectedPromptKind, isHandbackPrompt } from "../wire/claude-code.js";
 
 /** Version of the heuristics that produced a record; bump when rules or weights change. */
 export const HEURISTICS_VERSION = 1;
@@ -58,8 +58,9 @@ export interface OutcomeRecord {
   /**
    * Why `decision_id` is null. `no_wire_turn`: the window's UserPromptSubmit had no wire `new` turn; `nearest_wire` is
    * the main-chat wire classification closest to the window's start (e.g. `side:cross_session`, `continuation`), or
-   * null when none was seen. (`UserPromptSubmit` also fires for harness-injected messages: other-session messages,
-   * task notifications.) `slash_command` is reserved: prompts starting with "/" open no window.
+   * null when none was seen. (`UserPromptSubmit` also fires for messages the user did not type: other-session
+   * messages, task notifications, subagent hand-backs.) `slash_command` is reserved: prompts starting with "/" open
+   * no window.
    */
   readonly no_decision: { readonly reason: "no_wire_turn" | "slash_command"; readonly nearest_wire: string | null } | null;
   readonly window: { readonly closed_by: "next_prompt" | "subagent_stop" | "session_end"; readonly duration_ms: number; readonly ms_to_last_stop: number | null };
@@ -69,7 +70,11 @@ export interface OutcomeRecord {
     readonly bash_failures: number;
     readonly test_runs: number;
     readonly test_failures: number;
-    /** Harness-injected messages (other-session messages, task notifications, ...) that arrived while the window was open. */
+    /**
+     * Messages that arrived through `UserPromptSubmit` while the window was open but were not typed by the user:
+     * harness-injected ones (other-session messages, task notifications) and subagent hand-backs. None of them closes
+     * the window or feeds its correction signal.
+     */
     readonly injected_prompts: number;
   };
   readonly signals: {
@@ -223,9 +228,10 @@ export class OutcomeTracker {
           s.lastSlashAt = this.#now();
           return;
         }
-        if (injectedPromptKind(e.prompt) !== null) {
-          // Claude Code injected this message itself. It is not the user's reaction to the previous reply, so it neither
-          // closes that turn nor feeds its correction signal; events under its prompt_id join the open user turn.
+        if (injectedPromptKind(e.prompt) !== null || isHandbackPrompt(e.prompt)) {
+          // Claude Code injected this message itself, or it is a subagent's report handed back into the main chat
+          // (model output, not the user). Neither is the user's reaction to the previous reply, so it neither closes
+          // that turn nor feeds its correction signal; events under its prompt_id join the open user turn.
           const open = s.current && !s.current.closed ? s.current : null;
           if (open) {
             open.injectedPrompts++;

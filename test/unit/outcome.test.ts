@@ -267,6 +267,45 @@ describe("OutcomeTracker", () => {
     assert.equal(out.filter((r) => r.record === "harness_injected").length, 0);
   });
 
+  it("a subagent hand-back keeps the user's turn open, is never scored as its correction, and is counted as injected", () => {
+    // The prompt text is the real one Claude Code delivered, taken from the captured hook fixture.
+    const handback = events("interactive.hooks.jsonl").find((e) => e.type === "UserPromptSubmit" && e.prompt.startsWith("<agent-message "));
+    assert.ok(handback && handback.type === "UserPromptSubmit", "the fixture must contain a hand-back UserPromptSubmit");
+
+    const { t, out, tick, now } = tracker();
+    t.ingest(prompt("P1", "find out why the parser drops empty input"));
+    t.onDecision(decision({ id: "D1", at: now() }));
+    tick(5_000);
+    t.ingest(prompt("P2", handback.prompt)); // the fixture's own session id would open a second session
+    t.ingest(bash("P2", "npm test")); // work done after the hand-back belongs to the user's still-open turn
+    assert.equal(outcomes(out).length, 0, "the hand-back must not close P1 or open a window of its own");
+    tick(3_000);
+    t.ingest(prompt("P3", "thanks, that explains it"));
+
+    const os = outcomes(out);
+    assert.equal(os.length, 1, "only the user's own turn produced a record");
+    assert.equal(os[0]?.decision_id, "D1");
+    assert.equal(os[0]?.counts.injected_prompts, 1, "the hand-back is counted as an injected prompt");
+    assert.equal(os[0]?.counts.test_runs, 1, "tool events after the hand-back joined the open user turn");
+    assert.equal(os[0]?.signals.correction?.prompt_chars, "thanks, that explains it".length, "scored on the next TYPED prompt, not on the hand-back");
+    assert.equal(os[0]?.signals.correction?.score, 0);
+    assert.equal(out.filter((r) => r.record === "harness_injected").length, 0);
+    assert.doesNotMatch(JSON.stringify(out), /agent-message|Subagent hand-back/, "no hand-back text reaches the records");
+  });
+
+  it("a hand-back whose report quotes a correction does not score the user's turn as corrected", () => {
+    const { t, out, tick, now } = tracker();
+    t.ingest(prompt("P1", "investigate the failure"));
+    t.onDecision(decision({ id: "D1", at: now() }));
+    tick(1_000);
+    t.ingest(prompt("P2", '<agent-message from="AGENT-1">\n[Subagent hand-back] no, that\'s wrong — the fix broke it'));
+    tick(1_000);
+    t.ingest(prompt("P3", "ok"));
+    const [o] = outcomes(out);
+    assert.deepEqual(o?.signals.correction?.matched, [], "the subagent's words are not the user's correction");
+    assert.equal(o?.counts.injected_prompts, 1);
+  });
+
   it("a typed prompt without a wire new turn: no_wire_turn with the nearest main-chat wire classification", () => {
     const { t, out, tick, now } = tracker();
     t.ingest(prompt("P1", "continue"));
