@@ -1,0 +1,213 @@
+{
+ "files": [
+  {
+   "file": "ultracode.main-side-no-tools.request.json",
+   "description": "main chat, harness side call with no tools; output_config.effort=high although the session setting is medium",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.278.d43",
+    "entrypoint": "cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "ultracode#003",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "side",
+    "side_kind": "no_tools"
+   }
+  },
+  {
+   "file": "ultracode.main-new-turn-ultracode.request.json",
+   "description": "main chat, first request of an ultracode turn; the opt-in line sits at the end of the trailing role:system message, before the date line",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.278.cf8",
+    "entrypoint": "cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "ultracode#004",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "new"
+   }
+  },
+  {
+   "file": "ultracode.main-continuation.request.json",
+   "description": "main chat, tool-loop continuation (last non-system message is a tool_result)",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.278.cf8",
+    "entrypoint": "cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "ultracode#005",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "continuation"
+   }
+  },
+  {
+   "file": "ultracode.workflow-subagent-new-turn.request.json",
+   "description": "Dynamic Workflow worker, first request: x-claude-code-agent-id present AND cc_is_subagent=true; hook agent_type is workflow-subagent; requests the session's own model",
+   "facts": {
+    "side_markers": [],
+    "S1": true,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.278.b8e",
+    "entrypoint": "cli"
+   },
+   "agent_scoped": true,
+   "response_status": 200,
+   "source": "ultracode#008",
+   "expect": {
+    "kind": "subagent",
+    "signal": "header",
+    "turn": "new"
+   }
+  },
+  {
+   "file": "ultracode.workflow-subagent-continuation.request.json",
+   "description": "Dynamic Workflow worker, tool-loop continuation",
+   "facts": {
+    "side_markers": [],
+    "S1": true,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.278.b8e",
+    "entrypoint": "cli"
+   },
+   "agent_scoped": true,
+   "response_status": 200,
+   "source": "ultracode#013",
+   "expect": {
+    "kind": "subagent",
+    "signal": "header",
+    "turn": "continuation"
+   }
+  },
+  {
+   "file": "ultracode.head-probe.json",
+   "description": "startup probe Claude Code sends to the base URL",
+   "expect": {
+    "passthrough": true
+   }
+  },
+  {
+   "file": "ultracode.hooks.jsonl",
+   "description": "hook payloads delivered by http hooks injected with --settings (one JSON per line, in arrival order)",
+   "events": [
+    "UserPromptSubmit",
+    "PreToolUse:Bash",
+    "PostToolUse:Bash",
+    "PreToolUse:Bash",
+    "PostToolUse:Bash",
+    "PreToolUse:Bash",
+    "PostToolUse:Bash",
+    "PreToolUse:Workflow",
+    "PostToolUse:Workflow",
+    "SubagentStart(sub)",
+    "SubagentStart(sub)",
+    "SubagentStart(sub)",
+    "SubagentStart(sub)",
+    "PreToolUse:Read",
+    "PostToolUse:Read",
+    "PreToolUse:Read",
+    "PostToolUse:Read",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "PreToolUse:Bash",
+    "PostToolUse:Bash",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Read(sub)",
+    "PostToolUse:Bash(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Bash",
+    "PostToolUse:Bash",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)",
+    "PreToolUse:Read(sub)",
+    "PostToolUse:Read(sub)"
+   ]
+  }
+ ],
+ "claude_code_version": "2.1.278",
+ "captured_at": "2026-09-19",
+ "platform": "darwin",
+ "entrypoints": [
+  "cli"
+ ],
+ "method": "scripts/spike/capture.mjs (dump-only passthrough proxy) + scripts/spike/redact-fixtures.mjs",
+ "gaps": [
+  "see docs/wire-format.md"
+ ]
+}

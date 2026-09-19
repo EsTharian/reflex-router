@@ -28,9 +28,17 @@ const fpOf = (messages: Msg[], typed: readonly string[] | null = []): SideFinger
   return fp;
 };
 
-/** No 12-code-point window of `userText` (whitespace collapsed, case-insensitive) appears in the fingerprint. */
+/**
+ * No 12-code-point window of `userText` (whitespace collapsed, case-insensitive) appears in the fingerprint.
+ *
+ * `betas` is excluded from the haystack: it is a fixed vocabulary copied from the `anthropic-beta` request header, so
+ * a window of user text can collide with it by coincidence without anything having leaked (a prompt containing
+ * "conversation" matches the beta `mid-conversation-system-…`). That betas really are header-derived, and so can
+ * never carry text, is asserted separately by `assertBetasFromHeader`.
+ */
 function assertNoLeak(fp: SideFingerprint, userText: string, label: string): void {
-  const hay = JSON.stringify(fp).toLowerCase();
+  const { betas: _betas, ...rest } = fp;
+  const hay = JSON.stringify(rest).toLowerCase();
   const cps = Array.from(userText.replace(/\s+/g, " ").trim().toLowerCase());
   for (let i = 0; i + 12 <= cps.length; i++) {
     const w = cps.slice(i, i + 12).join("");
@@ -123,6 +131,14 @@ describe("fingerprint: user text never lands in one", () => {
     const colon = fpOf([{ role: "user", content: "Summary requested: Quarterly Revenue Draft For Board" }]);
     assert.equal(colon.head, "Summary requested:");
     assertNoLeak(colon, "Quarterly Revenue Draft For Board", "after colon");
+  });
+
+  it("every fixture's betas come from the anthropic-beta header, never from the body", () => {
+    for (const fx of loadFixtures()) {
+      const raw = fx.headers["anthropic-beta"];
+      const sent = new Set(String(Array.isArray(raw) ? raw.join(",") : (raw ?? "")).split(",").map((x) => x.trim()).filter(Boolean));
+      for (const b of sideFingerprint(fx.headers, fx.body, [])?.betas ?? []) assert.ok(sent.has(b), `${fx.file}: beta ${b} is not in the request header`);
+    }
   });
 
   it("every recorded request fixture: the user's own text never lands, whatever the classification", () => {

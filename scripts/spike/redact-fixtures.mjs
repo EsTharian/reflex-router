@@ -147,12 +147,16 @@ const headerRedactor = (keep) => (h) => Object.fromEntries(Object.entries(h ?? {
 const redactHeaders = headerRedactor(keepRequestHeader);
 const redactResponseHeaders = headerRedactor((n) => KEEP_RESPONSE_HEADERS.has(n));
 
+/** Top-level body keys with a redactor of their own; everything else goes through scrubDeep. */
+const HANDLED_BODY_KEYS = new Set(["system", "messages", "tools", "metadata"]);
 const redactRequest = (q) => {
   const b = q.body && typeof q.body === "object" ? q.body : q.body;
   return {
     method: q.method, url: q.url, headers: redactHeaders(q.headers),
     body: b && typeof b === "object" && Array.isArray(b.messages) ? {
-      ...b,
+      // Unknown keys are scrubbed, not copied: 2.1.278 added `safeguards.classifier_context`, which carries the
+      // home directory, absolute rule/trust roots and the session id, and a bare `...b` leaked all of it.
+      ...scrubDeep(Object.fromEntries(Object.entries(b).filter(([k]) => !HANDLED_BODY_KEYS.has(k)))),
       system: redactSystem(b.system),
       messages: b.messages.map(redactMessage),
       tools: (b.tools ?? []).map(redactTool),

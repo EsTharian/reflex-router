@@ -11,6 +11,13 @@ export const BETA_EXTENDED_CACHE_TTL = "extended-cache-ttl-"; // prefix; 1-hour 
 /** `user-agent: claude-cli/2.1.277 (external, cli)`. The HEAD /api/hello probe carries `Bun/…` instead. */
 export const USER_AGENT_VERSION = /^claude-cli\/(\d+\.\d+\.\d+)/;
 
+/**
+ * `agent_type` values seen on subagent hook events. Informational only: nothing branches on this, because a Dynamic
+ * Workflow worker is already a subagent by both the header and S1 (2.1.278 capture, `ultracode.hooks.jsonl`).
+ * Recorded so a future value is recognised as new rather than silently assumed to be `general-purpose`.
+ */
+export const KNOWN_AGENT_TYPES = ["general-purpose", "workflow-subagent"] as const;
+
 /** System-prompt markers. S1 is set by the harness for every subagent; S2 is the built-in general-purpose agent's
  * prompt and is OPTIONAL (absent on the interactive Explore subagent): never required, logged when seen. */
 export const MARKER_BILLING = "x-anthropic-billing-header:"; // S3: the client is Claude Code

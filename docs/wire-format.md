@@ -168,6 +168,40 @@ Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_blo
 - Hooks from **different sources merge**: project `.claude/settings.json` command hooks and `--settings` http hooks both fired for the same events (5 tool events each, including the subagent's Glob).
 - **Multiple `--settings` flags do not merge — the last wins wholesale.** With two flags, our hooks (first flag) never fired; the second flag's hook did. `ANTHROPIC_BASE_URL` still took effect via the process environment. Consequence: a user-supplied `--settings` must be merged into ours (or ours skipped), never added alongside.
 
+## 7.1 Dynamic Workflow workers (2.1.278, `ultracode` keyword)
+
+One interactive capture, Claude Code 2.1.278, `opus[1m]` + effort `medium`, permission mode `plan`, killed mid-workflow
+(fixtures `ultracode.*`, 27 `/v1/messages` requests, 4 workers). What it establishes:
+
+- **A workflow worker is an ordinary subagent on the wire.** Every worker request carries `x-claude-code-agent-id`
+  **and** `cc_is_subagent=true` (S1); `You are an agent for Claude Code` (S2) is absent, as it is for the interactive
+  Explore subagent. `parseRequest` classifies all 18 worker requests as `kind: "subagent"`, `signal: "header"` with no
+  code change — **workflow workers need no new detection**.
+- **Hook `agent_type` is `workflow-subagent`** (new value; §7 previously recorded only `general-purpose`). It is carried
+  through as an opaque string, so nothing branches on it — see `KNOWN_AGENT_TYPES` in `src/wire/markers.ts`.
+- **`SubagentStart` fires for each worker** (4 events, each with `agent_id`), and tool events carry the worker's
+  `agent_id`, so the exact-attribution join of §7 holds. **`SubagentStop` was not observed — but the session was killed
+  mid-workflow at the spend cap, so this is not evidence that it does not fire.**
+- **Workers request the session's own model.** All 27 requests, main and worker alike, asked for `claude-opus-5` with
+  `effort: "medium"` — the user's setting. The third-party claim that workers use a stock model regardless of the
+  user's choice did **not** reproduce; the requested-tier logic needs no worker-specific baseline. (One main-chat
+  `side`/`no_tools` call asked for `effort: "high"` against a `medium` session setting; harness side calls choose their
+  own effort.)
+- **Where the `ultracode` opt-in lands.** The harness appends `The user included the keyword "ultracode", opting this
+  turn into multi-agent orchestration — use the Workflow tool to fulfill the request.` to the **trailing `role:"system"`
+  message**, immediately **before** its closing `Today's date is …` line, and auto-loads the `workflow-authoring` skill
+  into the user message. A `UserPromptSubmit` hint (§7) is appended to the **same** message, after a blank line,
+  **after** the date line — so the two coexist in one system message, opt-in first, hint last. Worker requests do
+  **not** carry the opt-in line.
+- **The keyword is inert under `-p`.** With `-p` the `Workflow` tool is still in `tools` and `workflow-authoring` still
+  loads, but the opt-in line is **absent** (verified against a local stand-in upstream, $0). An `ultracode` capture must
+  drive a real pty.
+- **New top-level body key `safeguards`** (2.1.278): `[{type: "dangerous_tool_use", classifier_context: {...}}]`,
+  carrying `permission_mode`, `platform`, `live_cwd`, `home_dir`, `rule_roots` and `trusted_directories` — i.e.
+  absolute paths and the home directory. reflex never parses or logs request bodies, so this changes nothing at
+  runtime, but `redact-fixtures.mjs` copied it verbatim and leaked the home directory into candidate fixtures; it now
+  scrubs every top-level key it does not redact explicitly.
+
 ## 8. Things that did NOT reproduce
 
 - **MCP draft-04 normalisation** (jev-router): verified only **in scope**. The fixture `haiku-mcp-draft4.main-new-turn.request.json` contains the construct (`$schema` draft-04, `minimum:0 + exclusiveMinimum:true`, `maximum:10 + exclusiveMaximum:false`), Claude Code sent it **unchanged** through a custom base URL, and the API returned **200** (one request, `claude-haiku-4-5-20251001`, `sdk-cli`). Not tested: Sonnet/Opus/Fable as the target, other draft-04 constructs (`id`, `definitions`, type arrays), the interactive entrypoint. So the compat rewrite is *not currently required*, which is weaker than *not needed*; if routing ever retargets a request to a model that rejects the schema, the 4xx retry-with-original path is the safety net. Recorded in `manifest.json` under `findings`.
