@@ -2,6 +2,17 @@
 
 None of these versions has been published to a registry.
 
+## 0.2.2-alpha — 2026-09-19
+
+Phase 2b groundwork. Nothing routes differently yet except what is listed here; side-call routing itself is designed but not implemented (`REFLEX_ROUTE_SIDE` does not exist in this version).
+
+- **Side calls Claude Code makes are now named instead of falling to `unclassified`.** The AFK session recap ("The user stepped away and is coming back…") is a `notification`; tool results carrying harness text are the new side kind `tool_result_text`, recognised by shape rather than by a marker.
+- **A message typed into a running tool loop is no longer mistaken for a side call.** It is a `continuation` carrying `interjection: true`: the turn's pin is held and no new decision is taken. The classifier and the fingerprint now share one test for "is this text a prompt the user typed" (`src/wire/typed-prompt.ts`), so they cannot disagree about the same sentence; that also stops empty text matching any prompt, so `FINGERPRINT_VERSION` is **2**.
+- **Fix: a correction typed mid-tool-loop is no longer lost.** Such a prompt opened an outcome window that joined no decision, so the correction in the *next* prompt was written with `decision_id: null`. The window now joins the pinned conversation's own decision (`attribution: "interjection"`). Because that decision then owns two windows, `reflex report` counts interjections in an arm of their own and never inside a per-arm rate, so the outcome `n` the calibration gate waits on stays honest.
+- **`reflex doctor` fails loudly when `REFLEX_DELEGATE=1` cannot work.** `REFLEX_MODE=off` and any effective mode of `passthrough` run `claude` directly with no settings file, so reflex's `UserPromptSubmit` hook is never installed and the hint is silently lost. Doctor now prints a `hint injection:` line naming the reason and exits 1.
+- **`REFLEX_WARM_INTERVAL_MS`** (default 60000, 0 disables): the worker pings the decision backend on an interval to hold its keep-alive connection open between turns, in shadow and route mode only. The first decision after an idle gap otherwise pays a fresh handshake (p50 823 ms new vs 382 ms reused; different sessions, not a controlled comparison). Whether it helps is measurable from the existing `connection` field; **not yet measured.**
+- No fixture covers the recap, `tool_result_text` or an interjection: they were seen in a route-mode log, which stores fingerprints and not bodies. They are synthetic unit cases and are listed in the 2.1.278 manifest's `gaps` (`docs/wire-format.md` §4.2).
+
 ## 0.2.1-alpha — 2026-09-19
 
 - Fix: a subagent's hand-back is no longer treated as a prompt the user typed. Claude Code delivers a subagent's report to the main chat through `UserPromptSubmit`, so outcome capture closed the user's turn on it, opened a window of its own, and scored the report's text as the user's correction of the previous reply. A hand-back (`isHandbackPrompt`, the marker already in `src/wire`) now takes the same path as a harness-injected message: the user's turn stays open, tool events after it join that turn, the text is never scored, and it is counted in `counts.injected_prompts`.
