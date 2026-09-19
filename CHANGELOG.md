@@ -2,6 +2,12 @@
 
 None of these versions has been published to a registry.
 
+## 0.2.1-alpha — 2026-09-19
+
+- Fix: a subagent's hand-back is no longer treated as a prompt the user typed. Claude Code delivers a subagent's report to the main chat through `UserPromptSubmit`, so outcome capture closed the user's turn on it, opened a window of its own, and scored the report's text as the user's correction of the previous reply. A hand-back (`isHandbackPrompt`, the marker already in `src/wire`) now takes the same path as a harness-injected message: the user's turn stays open, tool events after it join that turn, the text is never scored, and it is counted in `counts.injected_prompts`.
+- Claude Code **2.1.278** added to the tested versions, with redacted fixtures for a Dynamic Workflow (`ultracode`) session. Workflow workers are ordinary subagents on the wire (`x-claude-code-agent-id` **and** `cc_is_subagent=true`) and are classified correctly with no change; they request the **session's own model**, so the requested-tier logic is unchanged. Hook `agent_type` has the new value `workflow-subagent`. Details and limits: `docs/wire-format.md` §7.1, `docs/observations.md`.
+- Measured, in `docs/observations.md`: one `ultracode` prompt put **65.8% of its tokens and 74.7% of its dollars into workflow workers** (4 workers, 1.5M tokens, $2.65 at list prices, killed early). This is the first measurement behind the README's warning that delegation can raise total spend.
+
 ## 0.2.0-alpha — 2026-09-19
 
 Phase 2a: measure where the tokens go before tuning anything (docs/observations.md, first real-work dogfood).
