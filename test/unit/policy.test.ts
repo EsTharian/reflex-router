@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { loadConfig, type Config, type Tier } from "../../src/config.js";
 import { buildQuestions, judge, massPick, offeredTiers, plan, type PlanInput } from "../../src/policy.js";
-import { tierOfModel } from "../../src/tiers.js";
+import { estimateTokens, fitsContext, tierOfModel } from "../../src/tiers.js";
 import type { Decision, Judgement } from "../../src/types.js";
 
 const cfg = (env: NodeJS.ProcessEnv = {}): Config => {
@@ -183,6 +183,32 @@ describe("decision rule: mass vs argmax on the shadow-1 vectors", () => {
     assert.equal(cfg({ REFLEX_MASS_EPS: "0.05" }).massEps, 0.05);
     assert.equal(loadConfig({ REFLEX_MASS_EPS: "0.9" }).ok, false);
     assert.equal(loadConfig({ REFLEX_DECISION_RULE: "vote" }).ok, false);
+  });
+});
+
+describe("per-tier context ceiling (Haiku: 150k estimated tokens)", () => {
+  const opus = (ctx: number | null): PlanInput => ({ kind: "subagent", requestedModel: "claude-opus-5", contextTokens: ctx });
+  it("over the ceiling, Haiku is not a candidate: the pick moves to the next tier up", () => {
+    const p = plan(opus(160_000), j("haiku", 0.95, 0.2), cfg());
+    assert.equal(p.target?.tier, "sonnet");
+    assert.deepEqual(p.reasons, ["downgrade", "context_ceiling"]);
+  });
+  it("exactly at the ceiling, or unknown context, Haiku is still a candidate", () => {
+    assert.equal(plan(opus(150_000), j("haiku", 0.95, 0.2), cfg()).target?.tier, "haiku");
+    assert.equal(plan(opus(null), j("haiku", 0.95, 0.2), cfg()).target?.tier, "haiku");
+  });
+  it("no enabled tier between the ceiling-excluded pick and the requested one: no change", () => {
+    const p = plan(opus(160_000), j("haiku", 0.95, 0.2), cfg({ REFLEX_TIERS: "haiku,opus" }));
+    assert.equal(p.target, null);
+    assert.deepEqual(p.reasons, ["context_ceiling", "no_enabled_tier"]);
+  });
+  it("tiers without a ceiling are unaffected by size", () => {
+    assert.equal(plan(opus(900_000), j("sonnet", 0.9, 2), cfg()).target?.tier, "sonnet");
+  });
+  it("the byte-based estimate over-estimates the measured 2.67-2.80 bytes/token slightly", () => {
+    assert.equal(estimateTokens(191_626), 76_651); // measured: 68,643 tokens
+    assert.equal(fitsContext("haiku", 150_001), false);
+    assert.equal(fitsContext("sonnet", 10_000_000), true);
   });
 });
 

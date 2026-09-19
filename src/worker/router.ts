@@ -13,9 +13,9 @@ import { guard, type GuardResult } from "../guard.js";
 import { assessVersion, type VersionLevel } from "../launcher/version.js";
 import { hashId, type DecisionLog, type DecisionRecord } from "../log/decision-log.js";
 import { parseOverride } from "../overrides.js";
-import { buildQuestions, judge, plan } from "../policy.js";
+import { buildQuestions, clampUp, judge, plan } from "../policy.js";
 import { buildState } from "../privacy/state.js";
-import { tierOfModel, tierRank } from "../tiers.js";
+import { estimateTokens, fitsContext, tierOfModel, tierRank } from "../tiers.js";
 import type { ReasonCode } from "../types.js";
 import type { Log } from "../util/log.js";
 import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
@@ -177,6 +177,15 @@ export class Router {
     let fields: readonly string[] = [];
     let sentModel = v.requestedModel;
     let extraReasons: ReasonCode[] = [];
+    // Estimated context of this request: the larger of the last measured prompt size and the body-size estimate.
+    const ctx = Math.max(conv?.lastCtx ?? 0, estimateTokens(body.length));
+    /** A target whose context ceiling the request exceeds moves to the next enabled tier up (null: the requested model). */
+    const fit = (t: { tier: Tier; model: string } | null): { tier: Tier; model: string } | null => {
+      if (t === null || requestedTier === null || fitsContext(t.tier, ctx)) return t;
+      extraReasons = [...extraReasons, "context_ceiling"];
+      const up = clampUp(t.tier, this.d.config, requestedTier, ctx);
+      return up !== null ? { tier: up, model: this.d.config.models[up] } : null;
+    };
     /** Retargets body and beta header to `to`; false when the body cannot be rewritten. */
     const applyRetarget = (from: Tier, to: Tier, model: string): boolean => {
       const r = retarget(body, { from, to, model });
@@ -191,7 +200,7 @@ export class Router {
     };
 
     if (v.turn === "new") {
-      outcomeP = this.#decide(v, s, conv, routing);
+      outcomeP = this.#decide(v, s, conv, routing, ctx);
       if (routing) {
         let outcome = await this.#bounded(outcomeP);
         // A decision that never arrived counts as a backend failure: a main-chat pin below the requested tier stays.
@@ -200,6 +209,7 @@ export class Router {
           const reasons: ReasonCode[] = ["stay_pinned_backend_error"];
           outcome = { ...outcome, target: pinned, reasons, part: { ...outcome.part, plan: { target: null, would_route_to: null, routed_to: v.requestedModel, reasons, would_upgrade: false } } };
         }
+        outcome = { ...outcome, target: fit(outcome.target) };
         if (conv) {
           conv.pin = { target: outcome.target, from: requestedTier };
           pinState = "set";
@@ -212,7 +222,12 @@ export class Router {
       }
     } else if (v.turn === "continuation" && conv) {
       pinState = conv.pin ? "hit" : "miss";
-      const t = conv.pin?.target;
+      let t = conv.pin?.target ?? null;
+      if (routing && t && !fitsContext(t.tier, ctx)) {
+        // The loop outgrew its tier: move the pin up for the rest of the loop.
+        t = fit(t);
+        conv.pin = { target: t, from: requestedTier };
+      }
       if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier) && !applyRetarget(requestedTier, t.tier, t.model)) extraReasons = ["rewrite_failed"];
     }
 
@@ -301,7 +316,7 @@ export class Router {
   }
 
   /** Always resolves. Only positively identified `new` turns of a known kind are decided. */
-  async #decide(v: RequestView, s: SessionState, conv: ConvState | null, routing: boolean): Promise<Outcome> {
+  async #decide(v: RequestView, s: SessionState, conv: ConvState | null, routing: boolean, ctx: number): Promise<Outcome> {
     const none = (part: Partial<DecisionPart> = {}, reasons: ReasonCode[] = []): Outcome => ({ part: { ...NONE, ...part }, target: null, reasons });
     if (v.kind === "unknown" || v.task === null) return none();
     const cfg = this.d.config;
@@ -377,7 +392,7 @@ export class Router {
       this.d.breaker.success();
       const j = judge(decision, cfg);
       if (!j.ok) return failed({ backend: backend.id, sent, error: `invalid_answer:${j.error}` });
-      const p = plan({ kind, requestedModel: v.requestedModel }, j.judgement, cfg);
+      const p = plan({ kind, requestedModel: v.requestedModel, contextTokens: ctx }, j.judgement, cfg);
       const part: Partial<DecisionPart> = {
         backend: backend.id,
         sent,

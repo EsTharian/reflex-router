@@ -2,7 +2,7 @@
 // Pure (no I/O). Organised as tables so a new dimension (effort) is new rows, not a restructure. Every threshold is a
 // provisional constant, logged with the raw answers so shadow data can retune it.
 import type { Config, Tier } from "./config.js";
-import { tierRank, tierOfModel } from "./tiers.js";
+import { fitsContext, tierRank, tierOfModel } from "./tiers.js";
 import type { Answer, Decision, Dimension, Judgement, Picked, QuestionSet, ReasonCode, RoutePlan, Target } from "./types.js";
 
 /**
@@ -136,15 +136,20 @@ export function judge(decision: Decision, cfg: Config): { ok: true; judgement: J
 export interface PlanInput {
   readonly kind: "main" | "subagent";
   readonly requestedModel: string | null;
+  /** Estimated context in tokens (src/tiers.ts); tiers whose ceiling it exceeds are not candidates. Null = unknown. */
+  readonly contextTokens?: number | null;
 }
 
 interface DimensionRules {
   apply(input: PlanInput, j: Judgement, cfg: Config): { target: Partial<Target> | null; reasons: ReasonCode[]; wouldUpgrade: boolean };
 }
 
-/** Lowest enabled tier at or above `from` (and below `below`, when given). Never steps down. */
-function clampUp(from: Tier, cfg: Config, below?: Tier): Tier | null {
-  return cfg.tiers.find((t) => tierRank(t) >= tierRank(from) && (below === undefined || tierRank(t) < tierRank(below))) ?? null;
+/**
+ * Lowest enabled tier at or above `from` (and below `below`, when given) whose context ceiling fits `ctx`. Never
+ * steps down. Null when none qualifies.
+ */
+export function clampUp(from: Tier, cfg: Pick<Config, "tiers">, below?: Tier, ctx: number | null = null): Tier | null {
+  return cfg.tiers.find((t) => tierRank(t) >= tierRank(from) && (below === undefined || tierRank(t) < tierRank(below)) && fitsContext(t, ctx)) ?? null;
 }
 
 /** 2. Per-dimension rules. Phase 1 populates only "tier". */
@@ -161,9 +166,11 @@ export const DIMENSIONS: Readonly<Partial<Record<Dimension, DimensionRules>>> = 
         const limit = MAX_REASONING_DEMAND_FOR[chosen];
         const demand = j.vetoes["reasoning_demand"];
         if (limit !== undefined && (demand === undefined || demand > limit)) return { target: null, reasons: ["veto_reasoning_demand"], wouldUpgrade: false };
-        const to = clampUp(chosen, cfg, requested);
-        if (to === null) return { target: null, reasons: ["no_enabled_tier"], wouldUpgrade: false };
-        return { target: { tier: to }, reasons: to === chosen ? ["downgrade"] : ["downgrade", "clamped_up"], wouldUpgrade: false };
+        const ctx = input.contextTokens ?? null;
+        const to = clampUp(chosen, cfg, requested, ctx);
+        const moved: ReasonCode[] = to === chosen ? [] : fitsContext(chosen, ctx) ? ["clamped_up"] : ["context_ceiling"];
+        if (to === null) return { target: null, reasons: [...moved.filter((r) => r === "context_ceiling"), "no_enabled_tier"], wouldUpgrade: false };
+        return { target: { tier: to }, reasons: ["downgrade", ...moved], wouldUpgrade: false };
       }
 
       // The backend wants a stronger tier than the client asked for.

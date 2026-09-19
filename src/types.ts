@@ -91,6 +91,7 @@ export type ReasonCode =
   | "upgrade_low_confidence"
   | "upgrade"
   | "clamped_up"
+  | "context_ceiling"
   | "no_enabled_tier"
   | "main_chat_disabled"
   | "override"

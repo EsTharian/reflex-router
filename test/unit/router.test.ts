@@ -174,6 +174,26 @@ describe("router: main-chat pin rules (session B)", () => {
     assert.deepEqual(a1.rec.plan, null);
   });
 
+  it("a Haiku-pinned tool loop that outgrows Haiku's 150k ceiling moves up to Sonnet for the rest of the loop", async () => {
+    const h = harness();
+    const b1 = await h.send(opusRequest("main-new-turn", "C"), { haiku: 1, sonnet: 0, opus: 0 }, 160_000); // response: 160k-token prompt
+    assert.equal(b1.sent["model"], "claude-haiku-4-5-20251001");
+    const c = await h.send(opusRequest("main-continuation", "C"), null);
+    assert.equal(c.sent["model"], "claude-sonnet-5");
+    assert.ok(c.rec.plan?.reasons.includes("context_ceiling"));
+    const c2 = await h.send(opusRequest("main-continuation", "C"), null);
+    assert.equal(c2.sent["model"], "claude-sonnet-5", "the pin itself moved");
+  });
+
+  it("an override to Haiku on an oversized conversation is raised too (the ceiling is a hard limit)", async () => {
+    const h = harness();
+    await h.send(opusRequest("main-new-turn", "D"), { opus: 1, sonnet: 0, haiku: 0 }, 160_000);
+    const t2 = await h.send(opusRequest("main-new-turn-plain", "D", "reflex:haiku "), null);
+    assert.equal(t2.rec.override, "haiku");
+    assert.equal(t2.sent["model"], "claude-sonnet-5");
+    assert.ok(t2.rec.plan?.reasons.includes("context_ceiling"));
+  });
+
   it("a conversation still on the requested tier is refused before the backend, as before (session A)", async () => {
     const h = harness();
     await h.send(opusRequest("main-new-turn", "A"), { opus: 0.8, sonnet: 0.2, haiku: 0 }, 70_000);

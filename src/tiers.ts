@@ -9,3 +9,22 @@ export function tierOfModel(model: string | null): Tier | null {
   const m = model.toLowerCase();
   return TIERS.find((t) => m.includes(t)) ?? null;
 }
+
+/**
+ * Largest estimated context a tier is routed with; null = no ceiling below the requested model's own window.
+ * Haiku 4.5's window is 200k tokens; 150k leaves room for the reply and for growth within a tool loop.
+ */
+export const CONTEXT_CEILING: Readonly<Record<Tier, number | null>> = { haiku: 150_000, sonnet: null, opus: null, fable: null };
+
+/**
+ * Request bytes per input token, measured on the interactive 2.1.277 capture: 2.67-2.80 (JSON body, tools included).
+ * 2.5 over-estimates the token count slightly on purpose, so a ceiling is hit early rather than late.
+ */
+export const BYTES_PER_TOKEN_ESTIMATE = 2.5;
+export const estimateTokens = (bodyBytes: number): number => Math.ceil(bodyBytes / BYTES_PER_TOKEN_ESTIMATE);
+
+/** True when a request of `ctx` estimated tokens may be sent to `t` (unknown context never excludes a tier). */
+export function fitsContext(t: Tier, ctx: number | null): boolean {
+  const ceiling = CONTEXT_CEILING[t];
+  return ctx === null || ceiling === null || ctx <= ceiling;
+}
