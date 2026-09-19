@@ -101,7 +101,14 @@ export type ReasonCode =
   | "return_up"
   | "tier_disabled"
   | "rewrite_unverified"
-  | "rewrite_failed";
+  | "rewrite_failed"
+  /**
+   * REFLEX_ESCALATE=1 only: the conversation's previous routed turn closed with this outcome signal, so this new turn
+   * was planned one tier above the policy's pick (never above the requested tier). src/worker/escalation.ts.
+   */
+  | "escalated:correction"
+  | "escalated:test_failure"
+  | "escalated:reverted_edit";
 
 export interface RoutePlan {
   /** Where the request would go; null = leave it on the requested model. */

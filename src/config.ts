@@ -1,12 +1,22 @@
 // The ONLY module that reads process.env for configuration. Everything else takes a Config.
 import os from "node:os";
 import path from "node:path";
+import { CORRECTION_SCORE_CAP } from "./outcome/heuristics.js";
 
 export const MODES = ["route", "shadow", "off"] as const;
 export type Mode = (typeof MODES)[number];
 
 export const BACKENDS = ["jev", "local"] as const;
 export type BackendId = (typeof BACKENDS)[number];
+
+/**
+ * Defaults for the REFLEX_ESCALATE_* settings: chosen starting values, not tuned ones. The threshold is the lowest
+ * correction score ever recorded organically (1.0, `en:thats_wrong`); the lookback matches REVERT_WINDOW_TURNS and is
+ * deliberately short, so one complaint cannot read as "reflex is off for this session". Nothing here is tuned: that
+ * needs outcome windows this log does not have yet (docs/observations.md).
+ */
+export const DEFAULT_ESCALATE_THRESHOLD = 1;
+export const DEFAULT_ESCALATE_WINDOW_TURNS = 3;
 
 export const TIERS = ["haiku", "sonnet", "opus", "fable"] as const;
 export type Tier = (typeof TIERS)[number];
@@ -71,6 +81,16 @@ export interface Config {
   readonly maxSwitchPenaltyUsd: number;
   /** REFLEX_DELEGATE=1: add the delegation hint (src/delegate/hint.ts) to user-typed prompts via the UserPromptSubmit hook. Off by default. */
   readonly delegate: boolean;
+  /**
+   * REFLEX_ESCALATE=1: let an outcome signal raise the tier of a conversation's next new turn (src/worker/escalation.ts).
+   * Off by default, and the only setting that lets a past event change a future request. It may only raise, never
+   * above the tier the client asked for, and never for pinned continuations or side calls.
+   */
+  readonly escalate: boolean;
+  /** Correction score (0..CORRECTION_SCORE_CAP) at or above which a closed window escalates the conversation. */
+  readonly escalateThreshold: number;
+  /** How many of the conversation's later new turns one escalation signal covers before it decays. */
+  readonly escalateWindowTurns: number;
 }
 
 export type ConfigResult =
@@ -106,7 +126,7 @@ export const SETTING_NAMES: readonly string[] = [
   "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_DEADLINE_MS", "REFLEX_WARM_INTERVAL_MS",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
-  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_DELEGATE", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
+  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_DELEGATE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
 ];
 
@@ -234,8 +254,12 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     massEps: parseBoundedNumber(setting(env, "REFLEX_MASS_EPS"), 0.1, 0, 0.5, "REFLEX_MASS_EPS", errors),
     maxSwitchPenaltyUsd: parseBoundedNumber(setting(env, "REFLEX_MAX_SWITCH_PENALTY_USD"), 0.01, 0, 100, "REFLEX_MAX_SWITCH_PENALTY_USD", errors),
     delegate: truthy(setting(env, "REFLEX_DELEGATE")),
+    escalate: truthy(setting(env, "REFLEX_ESCALATE")),
+    escalateThreshold: parseBoundedNumber(setting(env, "REFLEX_ESCALATE_THRESHOLD"), DEFAULT_ESCALATE_THRESHOLD, 0, CORRECTION_SCORE_CAP, "REFLEX_ESCALATE_THRESHOLD", errors),
+    escalateWindowTurns: parseBoundedInt(setting(env, "REFLEX_ESCALATE_WINDOW_TURNS"), DEFAULT_ESCALATE_WINDOW_TURNS, 1, 20, "REFLEX_ESCALATE_WINDOW_TURNS", errors),
   };
   if (errors.length > 0) return { ok: false, errors };
+  if (config.escalate && mode !== "route") warnings.push(`REFLEX_ESCALATE has no effect with REFLEX_MODE=${mode} (escalation only changes a request in route mode)`);
   if (config.delegate && mode === "off") warnings.push("REFLEX_DELEGATE has no effect with REFLEX_MODE=off (the hint travels through reflex's hooks)");
   return { ok: true, config, warnings };
 }

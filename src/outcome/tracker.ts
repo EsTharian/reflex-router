@@ -9,7 +9,8 @@
 // UserPromptSubmit accounts for. Nothing here can affect a request; prompt and file text stays in memory.
 import crypto from "node:crypto";
 import { hashId } from "../log/decision-log.js";
-import { CORRECTION_WINDOW_CHARS, REVERT_WINDOW_TURNS, correctionSignal, coversFile, exitCode, gitRestoredPaths, testRunnerKind, type CorrectionSignal } from "./heuristics.js";
+import { CORRECTION_WINDOW_CHARS, REVERT_WINDOW_TURNS, UNDO_RULE_IDS, correctionSignal, coversFile, exitCode, gitRestoredPaths, testRunnerKind, type CorrectionSignal } from "./heuristics.js";
+import type { EscalationEvent, EscalationSignal } from "../worker/escalation.js";
 import { EDIT_TOOLS, type HookEvent, type ToolUse } from "./hooks.js";
 import { injectedPromptKind, isHandbackPrompt } from "../wire/claude-code.js";
 
@@ -104,8 +105,15 @@ export interface OutcomeUpdate {
   readonly turn_seq: number;
   readonly scope: "main" | "subagent";
   readonly agent: string | null;
-  readonly signal: "reverted_edit";
-  readonly detail: { readonly kind: RevertKind; readonly file: string | null; readonly offset_turns: number; readonly detected_in_turn_seq: number };
+  /**
+   * `reverted_edit`: a revert found after its window closed. `correction_reattributed`: the undo-family part of a
+   * correction score was moved off the turn that merely preceded the prompt and onto the turn the revert actually
+   * undid (the attribution bug recorded in docs/observations.md, M4 acceptance).
+   */
+  readonly signal: "reverted_edit" | "correction_reattributed";
+  readonly detail:
+    | { readonly kind: RevertKind; readonly file: string | null; readonly offset_turns: number; readonly detected_in_turn_seq: number }
+    | { readonly matched: readonly string[]; readonly score: number; readonly offset_turns: number; readonly from_turn_seq: number; readonly detected_in_turn_seq: number };
 }
 
 export interface HarnessInjected {
@@ -130,6 +138,12 @@ interface Window {
   decision: DecisionInfo | null;
   /** Set only when the window was joined other than by its own `new` turn; widens `attribution`. */
   joinedVia?: "interjection";
+  /**
+   * The correction signal of the prompt that OPENED this window (the same prompt that closed the previous one). Kept
+   * so that, if this window turns out to revert an earlier turn's edit, the undo-family part of that score can be
+   * re-attributed to the turn actually undone instead of the one that merely came before the prompt.
+   */
+  openingCorrection: CorrectionSignal | null;
   lastStopAt: number | null;
   edits: number;
   bash: number;
@@ -174,6 +188,12 @@ const h = (s: string): string => crypto.createHash("sha256").update(s).digest("h
 
 export interface TrackerDeps {
   readonly emit: (r: TrackerRecord) => void;
+  /**
+   * Called when a window that was ROUTED closes carrying an outcome signal. The only channel through which outcome
+   * capture can reach anything else; the router ignores it unless REFLEX_ESCALATE=1. Record-writing is unaffected by
+   * whether this is wired, and nothing here may block or throw into the tracker.
+   */
+  readonly onSignal?: (e: EscalationEvent) => void;
   readonly now?: () => number;
   readonly newId?: () => string;
 }
@@ -198,7 +218,7 @@ export class OutcomeTracker {
   }
 
   #window(scope: Window["scope"], key: string, seq: number): Window {
-    return { scope, key, seq, openedAt: this.#now(), agentType: null, decision: null, lastStopAt: null, edits: 0, bash: 0, bashFailures: 0, testRuns: 0, testFailures: [], injectedPrompts: 0, reverts: [], closed: false };
+    return { scope, key, seq, openedAt: this.#now(), agentType: null, decision: null, openingCorrection: null, lastStopAt: null, edits: 0, bash: 0, bashFailures: 0, testRuns: 0, testFailures: [], injectedPrompts: 0, reverts: [], closed: false };
   }
 
   /** The main-chat turn an event belongs to: its prompt_id's turn, else the current one (created if none yet). */
@@ -248,9 +268,11 @@ export class OutcomeTracker {
           }
           return;
         }
-        if (s.current && !s.current.closed) this.#close(s, s.current, "next_prompt", correctionSignal(e.prompt));
+        const corr = correctionSignal(e.prompt);
+        if (s.current && !s.current.closed) this.#close(s, s.current, "next_prompt", corr);
         const key = e.base.promptId ?? `anon-${s.seq + 1}`;
         const w = this.#window("main", key, ++s.seq);
+        w.openingCorrection = corr;
         s.turns.set(key, w);
         s.current = w;
         this.#prune(s);
@@ -300,7 +322,7 @@ export class OutcomeTracker {
         const inverse = oldHash !== null ? prior.find((r) => r.oldHash === newHash && r.newHash === oldHash) : undefined;
         const restored = tool.name === "Write" ? prior.find((r) => r.originalHash !== null && r.originalHash === newHash) : undefined;
         const undone = inverse ?? restored;
-        if (undone) this.#revert(s, undone, inverse ? "inverse_edit" : "write_restore", seq);
+        if (undone) this.#revert(s, undone, inverse ? "inverse_edit" : "write_restore", seq, w);
         s.edits.push({ window: w, file: tool.filePath, oldHash, newHash, originalHash, seq });
       }
       w.edits++; // a subagent's edits count in its own window; the main turn sees them through #editsInTurn
@@ -327,7 +349,7 @@ export class OutcomeTracker {
           for (const r of this.#recent(s, seq)) {
             if (!coversFile(restored, r.file) || seen.has(`${r.window.key}|${r.file}`)) continue;
             seen.add(`${r.window.key}|${r.file}`);
-            this.#revert(s, r, "git_restore", seq);
+            this.#revert(s, r, "git_restore", seq, w);
           }
         }
       }
@@ -344,9 +366,11 @@ export class OutcomeTracker {
     return s.edits.filter((r) => seq - r.seq <= REVERT_WINDOW_TURNS);
   }
 
-  #revert(s: Session, undone: EditRec, kind: RevertKind, seq: number): void {
+  #revert(s: Session, undone: EditRec, kind: RevertKind, seq: number, detectedIn: Window): void {
     const w = undone.window;
-    const detail = { kind, file: hashId(undone.file), offset_turns: seq - undone.seq };
+    const offset = seq - undone.seq;
+    const detail = { kind, file: hashId(undone.file), offset_turns: offset };
+    this.#reattributeUndo(s, w, detectedIn, offset, seq);
     if (!w.closed) {
       w.reverts.push(detail);
       return;
@@ -365,6 +389,54 @@ export class OutcomeTracker {
       signal: "reverted_edit",
       detail: { ...detail, detected_in_turn_seq: seq },
     });
+  }
+
+  /**
+   * The undo-family fix. `correctionSignal` scores the prompt that CLOSED a turn, so a prompt like "undo that" puts its
+   * `en:undo` weight on the turn immediately before it. When that prompt goes on to revert an edit made `offset_turns`
+   * earlier, the turn it indicts is the reverted one, not its predecessor. With `offset_turns > 0` the undo-family part
+   * of the score is therefore re-attributed with an `outcome_update`; the original `outcome` record is append-only and
+   * is left exactly as written (the report subtracts, it does not rewrite). Nothing is re-attributed at offset 0: the
+   * revert undid an edit from the same turn the score already sits on.
+   */
+  #reattributeUndo(s: Session, reverted: Window, detectedIn: Window, offset: number, seq: number): void {
+    if (offset <= 0) return;
+    const corr = detectedIn.openingCorrection;
+    if (!corr) return;
+    const matched = corr.matched.filter((id) => UNDO_RULE_IDS.has(id));
+    if (matched.length === 0) return;
+    this.d.emit({
+      v: 1,
+      record: "outcome_update",
+      id: this.#newId(),
+      at: new Date(this.#now()).toISOString(),
+      session: hashId(s.id),
+      decision_id: reverted.decision?.id ?? null,
+      turn_id: reverted.scope === "main" ? hashId(reverted.key) : null,
+      turn_seq: reverted.seq,
+      scope: reverted.scope,
+      agent: reverted.scope === "subagent" ? hashId(reverted.key) : null,
+      signal: "correction_reattributed",
+      detail: { matched, score: corr.score, offset_turns: offset, from_turn_seq: detectedIn.seq - 1, detected_in_turn_seq: seq },
+    });
+    if (reverted.decision !== null) this.#signal(reverted, { signal: "reverted_edit", score: corr.score, turnSeq: reverted.seq });
+  }
+
+  /**
+   * Hands one escalation signal to whoever wired `onSignal` (the router, only when REFLEX_ESCALATE=1). Never throws
+   * into the tracker: outcome capture must keep writing records whatever the consumer does. Only a window whose
+   * decision was ROUTED is reported — a turn that ran on the model the client asked for has nothing to escalate to,
+   * and reporting it would let escalation fire on requests reflex never touched.
+   */
+  #signal(w: Window, e: { signal: EscalationSignal; score: number | null; turnSeq: number }): void {
+    const d = w.decision;
+    if (this.d.onSignal === undefined || d === null || d.conv === null) return;
+    if (d.sentModel === null || d.requestedModel === null || d.sentModel === d.requestedModel) return;
+    try {
+      this.d.onSignal({ conv: d.conv, signal: e.signal, score: e.score, decisionId: d.id, turnSeq: e.turnSeq });
+    } catch {
+      // a consumer's failure must never affect the record that is being written
+    }
   }
 
   #prune(s: Session): void {
@@ -400,6 +472,11 @@ export class OutcomeTracker {
       },
       params: { heuristics_version: HEURISTICS_VERSION, revert_window_turns: REVERT_WINDOW_TURNS, correction_window_chars: CORRECTION_WINDOW_CHARS },
     });
+    // The record is written first and unconditionally; the signal is a strictly additional side effect. One signal per
+    // window, in the order the plan lists them, so section 13's n counts windows and not matched rules.
+    if (correction !== null && correction.score > 0) this.#signal(w, { signal: "correction", score: correction.score, turnSeq: w.seq });
+    else if (w.testFailures.some((f) => f.edits_before > 0)) this.#signal(w, { signal: "test_failure", score: null, turnSeq: w.seq });
+    else if (w.reverts.length > 0) this.#signal(w, { signal: "reverted_edit", score: null, turnSeq: w.seq });
   }
 
   /**

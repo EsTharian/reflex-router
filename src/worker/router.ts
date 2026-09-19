@@ -30,6 +30,7 @@ import type { Breaker } from "./breaker.js";
 import { UsageTee } from "./usage-tee.js";
 import type { DecisionInfo } from "../outcome/tracker.js";
 import { HINT_VERSION } from "../delegate/hint.js";
+import { decay, escalatedTier, raise, type EscalationEvent, type EscalationState } from "./escalation.js";
 
 /** A tier whose rewritten request was rejected stays off for the session this long. */
 export const TIER_DISABLE_MS = 30 * 60 * 1000;
@@ -99,7 +100,7 @@ interface SessionState {
   readonly convs: Map<string, ConvState>;
 }
 
-type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override">;
+type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override" | "escalation">;
 interface Outcome {
   readonly part: DecisionPart;
   /** Where route mode sends this turn; null = the requested model. */
@@ -108,11 +109,17 @@ interface Outcome {
 }
 
 const SEVERITY: Readonly<Record<VersionLevel, number>> = { ok: 0, warn: 1, degrade: 2 };
-const NONE: DecisionPart = { decision: null, plan: null, error: null, sent: null, backend: null, guard: null, override: null };
+const NONE: DecisionPart = { decision: null, plan: null, error: null, sent: null, backend: null, guard: null, override: null, escalation: null };
 const guardRecord = (g: GuardResult | null): DecisionPart["guard"] => (g ? { allowed: g.allowed, reason: g.reason, ctx: g.ctx, penalty_usd: g.penaltyUsd } : null);
 
 export class Router {
   readonly #sessions = new Map<string, SessionState>();
+  /**
+   * Per conversation, the escalation an outcome signal raised. Conversation keys already embed the session id, so one
+   * flat map is enough. In memory only: a worker restart drops every escalation, which is the right fail-open
+   * behaviour.
+   */
+  readonly #escalations = new Map<string, EscalationState>();
   #uaDegrade: string | null = null;
   #uaChecked = false;
   readonly #now: () => number;
@@ -126,6 +133,40 @@ export class Router {
   /** True when this worker classifies traffic at all. */
   static active(mode: EffectiveMode): boolean {
     return mode === "shadow" || mode === "route";
+  }
+
+  /**
+   * The outcome tracker's escalation channel (src/outcome/tracker.ts). Never throws; ignored entirely unless
+   * REFLEX_ESCALATE=1, so with the setting off this is exactly as record-only as before. A correction has to reach
+   * the configured threshold; the other two signals are already binary.
+   */
+  onEscalationSignal(e: EscalationEvent): void {
+    try {
+      const cfg = this.d.config;
+      if (!cfg.escalate) return;
+      if (e.signal === "correction" && (e.score === null || e.score < cfg.escalateThreshold)) return;
+      this.#escalations.set(e.conv, raise(this.#escalations.get(e.conv) ?? null, e, cfg.escalateWindowTurns));
+    } catch {
+      // escalation is an optimisation; failing to record one must never affect a request
+    }
+  }
+
+  /**
+   * The escalation to apply to this main-chat `new` turn, or null. Consumes one turn of the conversation's escalation
+   * lifetime whether or not there was anywhere to move to, so a signal cannot outlive its window by sitting on a
+   * conversation whose pick is already at the requested tier.
+   */
+  #escalate(v: RequestView, kind: "main" | "subagent", pick: Tier, requested: Tier, ctx: number): { tier: Tier; state: EscalationState } | null {
+    // Subagents are separate conversations with separate pins; a subagent failing says nothing about the main chat,
+    // and side calls and pinned continuations never reach this method at all (only `turn === "new"` decides).
+    if (kind !== "main" || v.convKey === null) return null;
+    const state = this.#escalations.get(v.convKey);
+    if (state === undefined) return null;
+    const next = decay(state);
+    if (next === null) this.#escalations.delete(v.convKey);
+    else this.#escalations.set(v.convKey, next);
+    const tier = escalatedTier(pick, requested, this.d.config, ctx);
+    return tier === null ? null : { tier, state };
   }
 
   #session(v: RequestView): SessionState {
@@ -315,6 +356,9 @@ export class Router {
               turn: v.turn,
               side_kind: v.sideKind,
               side_marker: v.sideMarker,
+              // The backend names its own version in the answer (`decision.backendModel`); lifting it to the top level
+              // is what lets the report group by it without reaching into the decision sub-object.
+              backend_version: outcome.part.decision?.backendModel ?? null,
               ...(v.unclassifiedReason !== null ? { unclassified_reason: v.unclassifiedReason } : {}),
               ...(drift !== null ? { drift } : {}),
               ...(v.interjection ? { interjection: true as const } : {}),
@@ -464,13 +508,23 @@ export class Router {
         },
         plan: planRecord(p.target?.tier ?? null, [...p.reasons], p.wouldUpgrade),
       };
-      const policyTarget = p.target?.tier ?? null;
+      let policyTarget = p.target?.tier ?? null;
       let candidate = policyTarget;
       const reasons = [...p.reasons];
+      let escalation: DecisionPart["escalation"] = null;
       let g: GuardResult | null = null;
       if (kind === "main" && requested !== null && current !== null) {
         // Where the policy would put this turn; "no target" means "stay on the requested tier".
-        const desired = policyTarget ?? requested;
+        let desired = policyTarget ?? requested;
+        // Escalation, if any, is applied HERE: before the guard branch below, so it raises the floor the guard
+        // evaluates against and never overrules the guard's own answer. It only ever moves `desired` up.
+        const esc = this.#escalate(v, kind, desired, requested, ctx);
+        if (esc !== null) {
+          escalation = { signal: esc.state.signal, from: desired, to: esc.tier, decision_id: esc.state.decisionId, turn_seq: esc.state.turnSeq };
+          reasons.push(`escalated:${esc.state.signal}`);
+          desired = esc.tier;
+          policyTarget = esc.tier;
+        }
         if (tierRank(desired) > tierRank(current)) {
           // Moving up is never guarded: quality first, and the backend asked for more than the current tier.
           candidate = desired === requested ? null : desired;
@@ -488,7 +542,7 @@ export class Router {
           }
         }
       }
-      return finalize(policyTarget, candidate, reasons, part, g);
+      return finalize(policyTarget, candidate, reasons, { ...part, escalation }, g);
     } catch (e) {
       if (e instanceof BackendError) {
         if (e.kind !== "aborted") this.d.breaker.failure();

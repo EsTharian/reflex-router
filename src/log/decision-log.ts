@@ -52,6 +52,13 @@ export interface DecisionRecord {
    * 1-hour write, it does not prove every breakpoint used one; it is the only TTL signal on the wire. */
   readonly cache_ttl_beta: boolean;
   readonly backend: string | null;
+  /**
+   * Version of the decision backend that answered, as the backend itself reported it (Jev returns it as `model`, e.g.
+   * `jev-1.13.0`). Present on every decision record; null when no backend call happened (guard skip, override, side
+   * call) or when the backend named no version. Calibration must be splittable by it: a rate measured across two
+   * backend versions is two different measurements added together.
+   */
+  readonly backend_version: string | null;
   readonly requested: { readonly model: string | null; readonly tier: Tier | null; readonly effort: string | null };
   readonly decision: {
     /** `picks.tier.value` is the applied pick; confidence/probabilities are the backend's answer as given. */
@@ -116,6 +123,18 @@ export interface DecisionRecord {
   readonly side_fingerprint?: SideFingerprint | null;
   /** Version of the delegation hint this session runs with (REFLEX_DELEGATE=1, src/delegate/hint.ts); null when off. */
   readonly delegate_hint: string | null;
+  /**
+   * REFLEX_ESCALATE=1 only: this new turn was planned one tier above `from` because the conversation's previous routed
+   * turn closed with `signal`. `decision_id` is that turn's decision, so the report can join cause to effect and price
+   * what escalation cost. null on every other record (src/worker/escalation.ts).
+   */
+  readonly escalation: {
+    readonly signal: "correction" | "test_failure" | "reverted_edit";
+    readonly from: Tier;
+    readonly to: Tier;
+    readonly decision_id: string | null;
+    readonly turn_seq: number;
+  } | null;
   readonly prompt_preview?: string;
 }
 

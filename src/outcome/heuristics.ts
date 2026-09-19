@@ -10,6 +10,13 @@ export const CORRECTION_SCORE_CAP = 3;
 /** A later edit undoing an earlier one counts when it happens within this many user turns (0 = same turn). */
 export const REVERT_WINDOW_TURNS = 3;
 
+/**
+ * The rules that mean "put it back", as opposed to "this is wrong". A prompt matching one of these usually triggers a
+ * revert, and the revert may target a turn several turns back (`offset_turns`), so the tracker moves this part of the
+ * score onto the turn actually undone rather than the one that merely preceded the prompt.
+ */
+export const UNDO_RULE_IDS: ReadonlySet<string> = new Set(["en:undo", "tr:undo"]);
+
 /** A whole-word match that also works for non-ASCII letters (Turkish ı, ş, ğ, ...). */
 const word = (w: string): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])${w}(?![\\p{L}\\p{N}])`, "iu");
 const start = (w: string): RegExp => new RegExp(`^\\s*${w}(?![\\p{L}\\p{N}])`, "iu");

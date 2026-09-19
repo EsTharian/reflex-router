@@ -81,8 +81,11 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const startedAt = Date.now();
   const decisionLog = new DecisionLog(opts.config.home, opts.config.logPrompts, { onError: (e) => opts.log("warn", `decision log: ${e.message}`) });
   const backend = opts.backend !== undefined ? opts.backend : backendFor(opts.config);
+  // The tracker is built before the router but has to reach it (escalation), so the reverse channel goes through a
+  // holder. With REFLEX_ESCALATE off the router ignores every signal, so nothing about a request changes.
+  let routerRef: Router | null = null;
   const tracker = Router.active(opts.effectiveMode)
-    ? new OutcomeTracker({ emit: (r) => void decisionLog.appendRecord(r) })
+    ? new OutcomeTracker({ emit: (r) => void decisionLog.appendRecord(r), onSignal: (e) => routerRef?.onEscalationSignal(e) })
     : null;
   const prompts = new RecentPrompts();
   // Keep the backend's keep-alive connection open while nothing is being decided: the first decision after an idle gap
@@ -113,6 +116,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         claimTypedPrompt: (sessionId) => { prompts.claimNewest(sessionId); },
       })
     : null;
+  routerRef = router;
 
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const url = req.url ?? "/";

@@ -144,7 +144,8 @@ describe("OutcomeTracker", () => {
     assert.ok(o1.signals.correction?.matched.includes("en:thats_wrong"));
     assert.equal(o1.window.closed_by, "next_prompt");
     // The revert happened in turn 2, after turn 1 had closed: it arrives as an update keyed to D1.
-    const u = out.find((r): r is OutcomeUpdate => r.record === "outcome_update");
+    const updates = out.filter((r): r is OutcomeUpdate => r.record === "outcome_update");
+    const u = updates.find((r) => r.signal === "reverted_edit");
     assert.ok(u);
     assert.equal(u.decision_id, "D1");
     assert.deepEqual(u.detail, { kind: "inverse_edit", file: hashId("/repo/src/parser.ts"), offset_turns: 1, detected_in_turn_seq: 2 });

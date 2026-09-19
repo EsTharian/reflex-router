@@ -79,6 +79,14 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
   out(`upstream:        ${new URL(c.upstreamUrl).origin}${new URL(c.upstreamUrl).pathname === "/" ? "" : new URL(c.upstreamUrl).pathname}`);
   out(`state directory: ${c.home}`);
   out(`delegation hint: ${c.delegate ? `on (${HINT_VERSION}; REFLEX_DELEGATE)` : "off"}`);
+  // Escalation is the only setting that lets a past event change a future request, so doctor spells out what it does.
+  out(
+    `escalation:      ${
+      c.escalate
+        ? `on (REFLEX_ESCALATE) - a routed turn whose outcome window closes with a correction >= ${c.escalateThreshold}, a test failure after an edit, or a reverted edit raises that conversation's next ${c.escalateWindowTurns} new turn(s) one tier, never above the requested tier${c.mode === "route" ? "" : ` - BUT REFLEX_MODE=${c.mode} changes no request, so nothing will move`}`
+        : "off (REFLEX_ESCALATE=1 to turn on; outcome capture stays record-only without it)"
+    }`,
+  );
 
   const bin = resolveClaude(c.claudeBin, realResolveIO(io.env));
   if (!bin) {
