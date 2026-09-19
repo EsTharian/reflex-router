@@ -35,11 +35,14 @@ export type Rec = Record<string, unknown> & {
   guard: { allowed: boolean; reason: string; ctx: number | null; penalty_usd: number | null } | null;
   forwarded: { requested_model: string | null; model: string | null; rewritten: boolean; fields: string[]; fallback: boolean; fallback_status: number | null; fallback_error: string | null };
 };
-export const records = (stack: Stack): Rec[] => {
+/** Every line of decisions.jsonl (decisions and the outcome records keyed to them). */
+export const allRecords = (stack: Stack): Record<string, unknown>[] => {
   const f = path.join(stack.config.home, "decisions.jsonl");
   if (!fs.existsSync(f)) return [];
-  return fs.readFileSync(f, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as Rec);
+  return fs.readFileSync(f, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
 };
+/** Decision records only. */
+export const records = (stack: Stack): Rec[] => allRecords(stack).filter((r) => r["record"] === "decision") as Rec[];
 export const requestHeaders = (fx: Fixture): http.OutgoingHttpHeaders => {
   const { host: _h, "content-length": _c, ...rest } = fx.headers;
   return rest;

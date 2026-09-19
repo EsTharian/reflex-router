@@ -20,6 +20,8 @@ export interface PickRecord {
 
 export interface DecisionRecord {
   readonly v: 1;
+  /** Record type in the shared JSONL: decisions, and the outcome records keyed to them (src/outcome/tracker.ts). */
+  readonly record: "decision";
   readonly id: string;
   readonly at: string;
   /** sha256(session id), truncated. */
@@ -113,6 +115,11 @@ export class DecisionLog {
     const { prompt_preview: _ignored, ...rest } = record;
     const out: DecisionRecord = this.logPrompts && preview ? { ...rest, prompt_preview: promptPreview(preview) } : rest;
     return this.#writer.append(out);
+  }
+
+  /** Outcome-capture records (outcome, outcome_update, harness_injected); they carry no prompt text. */
+  appendRecord(record: { readonly v: 1; readonly record: string }): Promise<void> {
+    return this.#writer.append(record);
   }
 
   flush(): Promise<void> {

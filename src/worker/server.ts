@@ -13,6 +13,9 @@ import type { DecisionBackend } from "../backend/types.js";
 import { DecisionLog } from "../log/decision-log.js";
 import { Breaker } from "./breaker.js";
 import { Router, type Observation } from "./router.js";
+import { HOOK_PATH } from "../outcome/hooks-config.js";
+import { parseHookEvent } from "../outcome/hooks.js";
+import { OutcomeTracker, type DecisionInfo } from "../outcome/tracker.js";
 
 export interface WorkerOptions {
   readonly config: Config;
@@ -74,6 +77,9 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const startedAt = Date.now();
   const decisionLog = new DecisionLog(opts.config.home, opts.config.logPrompts, { onError: (e) => opts.log("warn", `decision log: ${e.message}`) });
   const backend = opts.backend !== undefined ? opts.backend : backendFor(opts.config);
+  const tracker = Router.active(opts.effectiveMode)
+    ? new OutcomeTracker({ emit: (r) => void decisionLog.appendRecord(r) })
+    : null;
   if (Router.active(opts.effectiveMode)) void backend?.warm?.();
   const router = Router.active(opts.effectiveMode)
     ? new Router({
@@ -85,6 +91,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         breaker: new Breaker(),
         log: decisionLog,
         logger: opts.log,
+        ...(tracker ? { onDecision: (d: DecisionInfo) => tracker.onDecision(d) } : {}),
       })
     : null;
 
@@ -108,8 +115,10 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
       return;
     }
 
-    if (url === "/__reflex/hook") {
-      res.writeHead(204).end(); // hook events are accepted and ignored for now
+    if (url === HOOK_PATH) {
+      res.writeHead(204).end(); // answer first: a hook must never wait on outcome capture
+      const event = tracker ? parseHookEvent(body) : null;
+      if (event) tracker?.ingest(event);
       return;
     }
 
@@ -161,6 +170,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     port: (server.address() as AddressInfo).port,
     close: () =>
       new Promise<void>((resolve) => {
+        tracker?.flush();
         server.close(() => void decisionLog.flush().then(() => {
           backend?.close?.();
           resolve();

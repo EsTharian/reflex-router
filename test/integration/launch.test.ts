@@ -85,6 +85,9 @@ describe("launcher end to end (fake claude)", () => {
     assert.ok(isProxied(o), `baseUrl ${String(o.report.baseUrl)}`);
     assert.equal(o.report.settings.length, 1);
     assert.deepEqual((o.report.settings[0] as { env: unknown }).env, { ANTHROPIC_BASE_URL: o.report.baseUrl });
+    const hooks = (o.report.settings[0] as { hooks: Record<string, { hooks: { url: string }[] }[]> }).hooks;
+    assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PostToolUseFailure", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
+    for (const groups of Object.values(hooks)) assert.equal(groups[0]?.hooks[0]?.url, `${o.report.baseUrl}/__reflex/hook`, "outcome hooks go to the front door");
   });
 
   it("strips every REFLEX_* and TYPESAFE_* variable from claude's environment and leaves the rest alone", async () => {

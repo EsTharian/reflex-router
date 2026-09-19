@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { outcomeHooks } from "../outcome/hooks-config.js";
 import os from "node:os";
 import { isReflexEnvName, loadConfig, type Config } from "../config.js";
 import { resolveEffectiveMode } from "../effective-mode.js";
@@ -128,7 +129,8 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
     status: () => ({ supervisor: supervisor.snapshot(), mode: effective.mode }),
   });
 
-  const injection = injectSettings(argv, { env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` } }, realInjectIO(io.cwd));
+  // http hooks for outcome capture go to the front door, which answers 204 even when the worker is down.
+  const injection = injectSettings(argv, { env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }, hooks: outcomeHooks(door.port) }, realInjectIO(io.cwd));
   if (injection.warning) warn(injection.warning);
   try {
     return await runClaude(bin, injection.args, sanitizedEnv(io.env, { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }), io);

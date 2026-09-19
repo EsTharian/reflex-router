@@ -25,6 +25,7 @@ import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
 import { BackendError, type DecisionBackend } from "../backend/types.js";
 import type { Breaker } from "./breaker.js";
 import { UsageTee } from "./usage-tee.js";
+import type { DecisionInfo } from "../outcome/tracker.js";
 
 /** A tier whose rewritten request was rejected stays off for the session this long. */
 export const TIER_DISABLE_MS = 30 * 60 * 1000;
@@ -42,6 +43,8 @@ export interface RouterDeps {
   readonly logger: Log;
   readonly now?: () => number;
   readonly newId?: () => string;
+  /** Outcome capture: told about every classified request (raw ids stay in memory). */
+  readonly onDecision?: (d: DecisionInfo) => void;
 }
 
 /** Handed to server.ts for one request as it is forwarded. */
@@ -270,6 +273,7 @@ export class Router {
             const p = outcome.part.plan;
             const record: DecisionRecord = {
               v: 1,
+              record: "decision",
               id,
               at,
               session: hashId(v.sessionId),
@@ -294,6 +298,7 @@ export class Router {
               usage: u.usage ? { input: u.usage.input, output: u.usage.output, cache_read: u.usage.cacheRead, cache_create: u.usage.cacheCreate } : null,
               usage_unknown_reason: u.unknownReason,
             };
+            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
             return this.d.log.append(record, v.turn === "new" ? v.task : null);
           })
           .catch((e: unknown) => this.d.logger("error", `router: record failed: ${e instanceof Error ? e.message : String(e)}`));
