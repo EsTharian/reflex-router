@@ -109,6 +109,8 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         ...(tracker ? { onDecision: (d: DecisionInfo) => tracker.onDecision(d) } : {}),
         typedPrompts: (sessionId) => prompts.get(sessionId),
         typedPromptCount: (sessionId) => prompts.typedCount(sessionId),
+        newestTypedPrompt: (sessionId) => prompts.newestUnclaimed(sessionId),
+        claimTypedPrompt: (sessionId) => { prompts.claimNewest(sessionId); },
       })
     : null;
 

@@ -24,9 +24,13 @@ const text = (t: string): unknown => ({ type: "text", text: t });
 const body = (messages: unknown[]): Buffer =>
   Buffer.from(JSON.stringify({ model: "claude-sonnet-5", system: SYSTEM, tools: TOOLS, messages, metadata: { user_id: JSON.stringify({ session_id: SID }) } }));
 
-/** `typed` null: no UserPromptSubmit has been delivered for the session. */
-const view = (messages: unknown[], typed: readonly string[] | null): RequestView => {
-  const r = parseRequest(H, body(messages), () => typed);
+/**
+ * `typed` null: no UserPromptSubmit has been delivered for the session. `newest` defaults to the last of `typed` --
+ * the newest prompt, unclaimed -- which is the state a request arrives in right after its own hook fired.
+ */
+const view = (messages: unknown[], typed: readonly string[] | null, newest?: string | null): RequestView => {
+  const n = newest === undefined ? (typed === null ? null : (typed.at(-1) ?? null)) : newest;
+  const r = parseRequest(H, body(messages), () => typed, () => n);
   assert.ok(r.ok);
   return r.view;
 };
@@ -79,7 +83,7 @@ describe("2.1.278 plain-string typed prompts", () => {
 
     // The prompt the capture's own hooks.jsonl delivered for this request.
     const hookPrompt = "ultracode: review src/wire/ and src/outcome/ for places where the Claude Code version is treated as more than a hint, rather than verified at runtime. Read and search only. Report concrete findings with file:line.";
-    const with_ = parseRequest(fx.headers, fx.body, () => [hookPrompt]);
+    const with_ = parseRequest(fx.headers, fx.body, () => [hookPrompt], () => hookPrompt);
     assert.ok(with_.ok);
     assert.equal(with_.view.turn, "new");
     assert.equal(with_.view.unclassifiedReason, null);
@@ -110,10 +114,30 @@ describe("2.1.278 session replay: the 13-turn session that routed nothing", () =
   });
 
   it("with the hook stream every one of the 11 typed prompts is a new turn", () => {
-    const views = PROMPTS.map((_, i) => view(requestFor(i), PROMPTS));
+    // Prompt i is the newest one when its own request arrives, and nothing has claimed it yet.
+    const views = PROMPTS.map((_, i) => view(requestFor(i), PROMPTS, PROMPTS[i]));
     assert.equal(views.filter((v) => v.turn === "new").length, 11, views.map((v) => `${v.turn}/${v.sideKind ?? "-"}`).join(","));
     assert.ok(views.every((v) => v.sideKind === null && v.unclassifiedReason === null));
     assert.ok(views.every((v) => v.task !== null && v.task.startsWith("Turn ")));
+  });
+
+  it("a plain string carrying an OLDER prompt is a history replay, not a new turn", () => {
+    // The shape a side call wears when it replays the conversation up to some earlier user message. Its text is a real
+    // prompt the user really typed, so the whole-list match would promote it; only the newest-unclaimed test refuses.
+    const replay = [
+      { role: "user", content: [text(PROMPTS[0]!)] },
+      { role: "assistant", content: [text("Done.")] },
+      { role: "user", content: PROMPTS[3]! }, // an older prompt, re-encoded as a string in history
+    ];
+    const v = view(replay, PROMPTS, PROMPTS[9]); // the newest unclaimed prompt is a different, later one
+    assert.equal(v.turn, "side");
+    assert.equal(v.unclassifiedReason, "plain_string_no_typed_match");
+  });
+
+  it("once a turn has claimed the newest prompt, a repeat of the same request is no longer new", () => {
+    const req = [{ role: "user", content: [text(PROMPTS[0]!)] }, { role: "assistant", content: [text("Done.")] }, { role: "user", content: PROMPTS[1]! }];
+    assert.equal(view(req, PROMPTS, PROMPTS[1]).turn, "new", "first time: the prompt is unclaimed");
+    assert.equal(view(req, PROMPTS, null).turn, "side", "claimed: nothing left to promote it");
   });
 
   it("a tool_result carrying a typed prompt is still an interjection, not a new turn", () => {
@@ -124,7 +148,7 @@ describe("2.1.278 session replay: the 13-turn session that routed nothing", () =
       { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Read", input: {} }] },
       { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }, text(PROMPTS[1]!)] },
     ];
-    const v = view(mid, PROMPTS);
+    const v = view(mid, PROMPTS, PROMPTS[1]);
     assert.equal(v.turn, "continuation");
     assert.equal(v.interjection, true);
   });

@@ -159,7 +159,7 @@ const continuation = (interjection: boolean): TurnResult => ({ turn: "continuati
  * Pure. Anything not positively identified as a user turn or a tool-loop step is `side`.
  * `typed`: prompts UserPromptSubmit delivered in this session (memory only), or null when none has arrived.
  */
-function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: RequestKind, typed: readonly string[] | null): TurnResult {
+function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: RequestKind, typed: readonly string[] | null, newestTyped: string | null): TurnResult {
   if (toolCount === 0) return side("no_tools");
   const last = nonSystem.at(-1);
   if (!last || last["role"] !== "user") return unclassified("not_user_message");
@@ -183,7 +183,12 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
   // routing when 2.1.278 landed, so the shape alone no longer decides. The hook stream is the only positive evidence
   // of the user's own words, and it is what rules a plain string in; without it (no hooks yet, tests, spikes) the
   // request stays `side`, which is the fail-safe direction: a missed turn forwards unchanged.
-  if (typeof last["content"] === "string" && !matchesTypedPrompt(ownText(blocks), typed)) return unclassified("plain_string_no_typed_match");
+  // Matched against the NEWEST unclaimed typed prompt alone, never the whole list. A plain string is also the shape a
+  // prompt takes once it sits in a later request's history (proven: identical text, 2026-09-19 capture), so a side call
+  // that replays the conversation up to some earlier user message wears exactly this shape. Such a call can only carry
+  // an OLDER prompt, so restricting the match to the newest unclaimed one keeps it `side` while still recognising the
+  // turn the user just typed. Once a main `new` turn is recognised the prompt is claimed, so a repeat cannot match it.
+  if (typeof last["content"] === "string" && !matchesTypedPrompt(ownText(blocks), newestTyped === null ? null : [newestTyped])) return unclassified("plain_string_no_typed_match");
   if (blocks.some((b) => b.type !== "text")) return unclassified("non_text_block"); // images etc.: not handled yet
   const task = ownText(blocks);
   if (task === "") return unclassified("no_own_text");
@@ -242,6 +247,8 @@ export function parseRequest(
   headers: IncomingHttpHeaders,
   body: Buffer,
   typedPrompts?: (sessionId: string | null) => readonly string[] | null,
+  /** The newest typed prompt no wire turn has claimed yet; the only one a plain-string message may be promoted by. */
+  newestTypedPrompt?: (sessionId: string | null) => string | null,
 ): ParseResult {
   let parsed: unknown;
   try {
@@ -267,7 +274,7 @@ export function parseRequest(
   const mdSessionId = metadataSessionId(b);
   const sessionId = headerSessionId ?? mdSessionId;
 
-  const t = classifyTurn(nonSystem, toolCount, kind, typedPrompts?.(sessionId) ?? null);
+  const t = classifyTurn(nonSystem, toolCount, kind, typedPrompts?.(sessionId) ?? null, newestTypedPrompt?.(sessionId) ?? null);
 
   let convKey: string | null = null;
   if (sessionId !== null && kind !== "unknown") {

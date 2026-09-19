@@ -92,43 +92,65 @@ and by the fingerprint's `typed_prompt` head omission so the two can never disag
 hook stream (no prompt seen yet, hooks not installed) an interjection is never claimed and the request stays
 `tool_result_text` — the fail-open direction, since neither outcome routes anything.
 
-### 4.3 Content shape stopped identifying the writer (2.1.277 -> 2.1.278)
+### 4.3 Content shape does not identify the writer (2.1.277 -> 2.1.278)
 
-**2.1.277:** a user-typed prompt was always an array of text blocks; harness reminders rode along as further blocks in
-the same message. Only harness side calls used a plain-string content, so the classifier read a plain string as
-sufficient evidence of a side call.
+**Proven, from a capture (`_dumps/plain-string`, 2.1.278.85b, 2026-09-19).** A typed prompt is sent as an **array** of
+text blocks while it is the newest message, and the **identical text** appears as a **plain string** once it sits in a
+later request's history. Request 007's last user message is an array whose text is 119 code points,
+`sha256[..10] = 907dbed69a`; request 008 carries the same 119 code points as a plain-string user message in its history,
+same hash. So a plain string is, at minimum, the *history* encoding of a prompt — and content shape alone cannot say
+who wrote a message or when.
 
-**2.1.278:** a user-typed prompt arrives as a **plain string** carrying only the user's own words, while the reminders
-that used to sit beside it in the same message have moved into trailing `role:"system"` messages (the
-`mid-conversation-system-2026-04-07` beta). The observed strings are short — 77 to 254 code points — against
-`system.messages` of 2 to 14 in the same request.
+**Proven, from the maintainer's route-mode log (session `399c485e`, 2.1.278, 2026-09-19).** Eleven typed
+`UserPromptSubmit` hooks produced **one** main `new` turn. For each of the ten outcome windows that took no decision,
+every wire request in the window was enumerated: each contains **exactly one** `main` / `side:unclassified` request and
+**zero** `main` / `new`. That request is the **first** in its window and arrives **0.0-0.1 s** after the window opens —
+i.e. at the moment the user pressed enter. Its fingerprint says `last.content: "string"`, `text_chars` 77-254, with
+`messages` growing 13 -> 22 -> 29 -> 38 -> 57 -> 62 -> 107 -> 140 -> 177 -> 215 across the session. Window `seq=11`
+contains that request and **nothing else**. The betas in force: `afk-mode-2026-01-31`, `advisor-tool-2026-03-01`,
+`dangerous-tool-use-2026-09-03`, `effort-2025-11-24`, `fallback-credit-2026-06-01`,
+`mid-conversation-tool-changes-2026-07-01`, `extended-cache-ttl-2025-04-11`, `context-1m-2025-08-07`.
 
-**What it cost.** The old rule silently reclassified typed prompts as side calls. In the maintainer's 13-turn session of
-2026-09-19 the classifier found **one** `new` turn and ten `side` / `unclassified` ones; every request forwarded
-correctly, so nothing failed, but no decision was taken after the opening prompt and the pin never moved for the rest of
-the session. The prior session on 2.1.277 had 5 `new` turns and no `unclassified` side calls. Nothing in the logs said
-the classifier had gone blind; it took reading `nearest_wire` by hand a day later.
+**Proven: the plain-string form is not universal in 2.1.278.** The capture above ran the same minor version with a
+*different* beta set (none of `afk-mode`, `advisor-tool`, `dangerous-tool-use`, `effort`, `fallback-credit`,
+`mid-conversation-tool-changes`) and sent all four of its typed prompts as arrays; the current classifier labels all
+four `new`. A 2.1.278 session is not by itself enough to produce the regression.
 
-**The rule now.** Content shape is not evidence of who wrote the message. A plain string is the user's turn only when
-`matchesTypedPrompt` (`src/wire/typed-prompt.ts`) matches it against a prompt `UserPromptSubmit` delivered for that
-session, held in the worker's memory only. Without a hook stream the request stays `side` / `unclassified` — the
-fail-safe direction, since an unrecognised request forwards unchanged. Side markers are still matched first, so a named
-harness side call keeps its own kind whatever shape it wears.
+**Inferred, not proven.** That those ten plain-string requests carried the *newest* prompt rather than an older one.
+The timing (first in window, +0.0 s) and the monotonically growing message counts make a history-replaying side call
+very hard to credit, but no body was captured — that log stores fingerprints, not bodies — so this is inference from
+structure, not a byte comparison. What makes the encoding switch between array and plain string for the newest message
+is **unknown**; the differing beta sets are the leading candidate and nothing here establishes it.
 
-Each `unclassified` now records **which** test produced it (`unclassified_reason`, on the decision record and in the
-fingerprint), so `plain_string_no_typed_match` — a typed prompt whose hook was missed — can be told from an unknown
-harness shape in report section 11.
+**What it cost.** The old rule read a plain string as proof of a side call. Every prompt after the session's first then
+classified `side` / `unclassified`: no decision was taken, the pin never moved, and every request still forwarded
+correctly, so nothing failed loudly. The prior session, on 2.1.277, had 5 `new` turns and no `unclassified` side calls.
+It took reading `nearest_wire` by hand a day later to notice.
+
+**The rule now.** A plain-string last message is a `new` turn only when it matches the **newest** typed prompt whose
+hook has arrived and which no wire turn has claimed yet (`src/worker/recent-prompts.ts`, memory only; the match is
+`src/wire/typed-prompt.ts`). Matching the whole prompt list would be unsafe given the proven history encoding: a side
+call replaying the conversation up to an earlier user message wears exactly this shape and its text is a real prompt
+the user really typed. Such a call can only carry an *older* prompt, so the newest-unclaimed test refuses it. A main
+`new` turn claims the prompt, so a repeat of the same request cannot be promoted twice. With no hook stream the request
+stays `side` — the fail-safe direction, since an unrecognised request forwards unchanged. Side markers are still
+matched first, so a named harness side call keeps its own kind whatever shape it wears.
+
+Each `unclassified` records **which** test produced it (`unclassified_reason`, on the decision record and in the
+fingerprint), so `plain_string_no_typed_match` can be told from an unknown harness shape in report section 11.
 
 **Drift alarm.** `src/wire/drift.ts` cross-checks the two views: when a session has seen at least 3 typed
 `UserPromptSubmit` prompts but the classifier has found at most 1 main `new` turn, the worker logs a warning and the
 decision record carries `drift`, counted in report section 1. It changes nothing — not routing, not classification, not
-the session's degraded state — it only makes the next format change visible on day one.
+the session's degraded state — it only makes the next format change visible on day one. Had it existed, session
+`399c485e` would have raised it on its third prompt.
 
 **Fixture.** `2.1.278/ultracode.main-new-turn-plain-string.request.json` is **derived**, not captured: the real
-`ultracode#004` request with its last user message re-encoded as a plain string. No body of a real 2.1.278 plain-string
-prompt was captured (the route-mode log stores fingerprints, not bodies, and the raw dumps hold real prompts). Its
-manifest `expect` is the no-hook classification; `test/unit/wire-plain-string.test.ts` asserts both directions and
-replays the 13-turn session.
+`ultracode#004` request with its last user message re-encoded as a plain string. The capture of 2026-09-19 did **not**
+reproduce the plain-string-as-newest-message shape, so no real body of one exists yet. Its manifest `expect` is the
+no-hook classification; `test/unit/wire-plain-string.test.ts` asserts both directions, the history-replay refusal and
+the claim, and replays the 13-turn session. **Reproducing this under the regression's beta set, and replacing the
+derived fixture with real bytes, is still open.**
 
 **Evidence, and its limits.** Both kinds and the interjection come from the maintainer's 2.1.278 route-mode log of
 2026-09-19, where all eight `unclassified` side calls fell into these shapes: 2 AFK recaps (plain-string content, 253

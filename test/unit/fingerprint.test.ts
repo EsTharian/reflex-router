@@ -170,7 +170,7 @@ describe("fingerprint: router and report", () => {
     assert.ok(loaded.ok);
     const log = new DecisionLog(home, false);
     const typed = new Map<string, string[]>([["s-1", ["Refactor the billing module to stream its output"]]]);
-    const router = new Router({ config: loaded.config, effectiveMode: "shadow", degradedReason: null, claudeVersion: "2.1.277", backend: null, breaker: new Breaker(), log, logger: () => undefined, typedPrompts: (sid) => (sid === null ? null : (typed.get(sid) ?? null)) });
+    const router = new Router({ config: loaded.config, effectiveMode: "shadow", degradedReason: null, claudeVersion: "2.1.277", backend: null, breaker: new Breaker(), log, logger: () => undefined, typedPrompts: (sid) => (sid === null ? null : (typed.get(sid) ?? null)), newestTypedPrompt: (sid) => (sid === null ? null : (typed.get(sid)?.at(-1) ?? null)) });
     const headers = { ...HEADERS, "x-claude-code-session-id": "s-1" };
     const send = async (messages: Msg[]): Promise<void> => {
       const p = await router.prepare("POST", "/v1/messages", headers, bodyOf(messages));

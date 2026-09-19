@@ -50,6 +50,10 @@ export interface RouterDeps {
   readonly onDecision?: (d: DecisionInfo) => void;
   /** How many prompts the user typed in a session, for the wire-drift cross-check only (src/wire/drift.ts). */
   readonly typedPromptCount?: (sessionId: string | null) => number;
+  /** The newest typed prompt no wire turn has claimed; the only one that may promote a plain-string message. */
+  readonly newestTypedPrompt?: (sessionId: string | null) => string | null;
+  /** Called when a main `new` turn is recognised: it consumed the newest typed prompt, whatever encoding it used. */
+  readonly claimTypedPrompt?: (sessionId: string | null) => void;
   /** Prompts UserPromptSubmit delivered in a session (memory only); null when none arrived. Keeps them out of fingerprints. */
   readonly typedPrompts?: (sessionId: string | null) => readonly string[] | null;
 }
@@ -162,7 +166,7 @@ export class Router {
     const untouched: Prepared = { body, rewritten: false, obs: null };
     try {
       if (!isMessagesRequest(method, url)) return untouched;
-      const parsed = parseRequest(headers, body, this.d.typedPrompts);
+      const parsed = parseRequest(headers, body, this.d.typedPrompts, this.d.newestTypedPrompt);
       if (!parsed.ok) return untouched;
       return await this.#prepare(parsed.view, body, headers);
     } catch (e) {
@@ -179,6 +183,8 @@ export class Router {
     const s = this.#session(v);
     const violations = s.shape.observe(v);
     s.drift.observe(v);
+    // A recognised main `new` turn consumes the newest typed prompt, so no later request can be promoted by it again.
+    if (v.kind === "main" && v.turn === "new") this.d.claimTypedPrompt?.(v.sessionId);
     // Alarm only: never an input to `routing` below. See src/wire/drift.ts.
     const drift = s.drift.check(this.d.typedPromptCount?.(v.sessionId) ?? 0);
     if (drift !== null) {
