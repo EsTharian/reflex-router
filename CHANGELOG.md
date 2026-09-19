@@ -6,6 +6,48 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.0-alpha — 2026-09-20
+
+The first release in which an outcome signal can change a later request — opt-in, off by default, and bounded so that
+its worst case is the model your client already asked for. The rest is the reporting needed to judge it.
+
+- **Rule change: "outcome capture is record-only" is split in two.** The privacy half is unchanged and now stated on
+  its own: outcome capture writes nothing but hashes, counts, rule ids and runner kinds, and prompt, path and code text
+  never leaves the worker's memory. The other half was a staging decision — record before acting — and this release
+  ends it with a narrow replacement: **an outcome signal may raise a tier and may do nothing else.** It may never lower
+  a tier, never go above the tier the client asked for, never change prompt text, never change a hook answer, never
+  reach the backend and never leave the machine. (`CLAUDE.md`)
+- **`REFLEX_ESCALATE=1` (off by default): auto-escalation.** When a turn reflex routed *below* the requested tier
+  closes its outcome window with a correction score at or above `REFLEX_ESCALATE_THRESHOLD` (default `1`), a failing
+  test after an edit, or a reverted edit, that conversation's next `REFLEX_ESCALATE_WINDOW_TURNS` (default `3`) new
+  turns are planned **one tier above** the backend's pick and never above the requested tier. It never touches pinned
+  tool loops, subagents or side calls; it does not overrule the cost guard, only raises the floor the guard evaluates
+  against; `reflex:<tier>` still wins; a second signal restarts the count rather than stacking; and the state is in
+  memory, so a worker restart drops it. An escalated decision carries an `escalation` block naming the signal, the tier
+  before and after, and the decision whose window produced it, plus a `plan.reasons` entry of `escalated:<signal>`.
+  The lever is weaker than it sounds and is worth stating plainly: the turn that went wrong is already over and billed,
+  so what escalation buys is that **the turn in which you say it went wrong is itself routed up**. (`src/worker/escalation.ts`)
+- **Fix: an undo-family correction is attributed to the turn the revert undid.** `correctionSignal` scores the prompt
+  that *closes* a turn, so "undo that" put its `en:undo` weight on whatever turn merely came before it — in the M4
+  acceptance session that was turn 3 while the revert targeted turn 1. When a revert is detected with
+  `offset_turns > 0`, the undo-family part of the score is now re-attributed with an `outcome_update` record carrying
+  `signal: "correction_reattributed"` (the matched rule ids, the score, the offset and the turn it came off). The
+  original `outcome` record is append-only and is left exactly as written. Nothing is re-attributed at offset 0.
+- **`backend_version` on every decision record.** The version the decision backend reported for itself (Jev returns it
+  as `model`, e.g. `jev-1.13.0`); null when no backend call happened. Report sections 2 and 7 group by it, so a
+  calibration can refuse to add two backend versions' rates together. Older logs are read through the version already
+  inside `decision.backendModel`, so history groups too.
+- **`reflex report` section 13, escalations**: every escalated turn with its signal, the tier before and after, what
+  was actually sent, and the outcome of that turn once its own window closes. It refuses to print a rate below
+  `MIN_OUTCOME_N` and says in words that nothing in it establishes whether escalation helps.
+- **`reflex doctor`** prints what escalation is set to do, in a sentence, and says when the mode makes it a no-op.
+- Three measurements recorded in [`docs/observations.md`](docs/observations.md): the first calibration read (both main
+  arms past n=20 for the first time, with Wilson intervals, and the finding that the data cannot distinguish the `mass`
+  and `argmax` rules and roughly what n would); the delegation hint measured over one day and one build instead of
+  across days, with the all-time table marked confounded; and the identification, from Claude Code's own transcripts,
+  of the two outcome windows that had no wire turn — one a tracker artefact, one a real prompt typed mid-tool-loop
+  that the wire cannot see because the harness wraps it in a `<system-reminder>`.
+
 ## 0.2.5-alpha — 2026-09-19
 
 Tightens the 0.2.4-alpha classifier rule and corrects what that release claimed. Nothing routes differently on any observed session.

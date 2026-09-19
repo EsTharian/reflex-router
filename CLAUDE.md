@@ -11,7 +11,7 @@ npm run test:live                          # tests needing a real TYPESAFE_API_K
 npm run build                              # tsc -> dist/
 npm run gen:versions                       # regenerate src/wire/tested-versions.generated.ts from test/fixtures/claude-code/*
 node bin/reflex.js doctor                  # run the built CLI (after `npm run build`); shows where each setting came from
-node bin/reflex.js report [--since 2h] [--usd] [--json]   # summarise ~/.reflex/decisions.jsonl (reads files only); section 0 = workflow profile; --json emits the same sections keyed by section number
+node bin/reflex.js report [--since 2h] [--usd] [--json]   # summarise ~/.reflex/decisions.jsonl (reads files only); section 0 = workflow profile, 13 = escalations; --json emits the same sections keyed by section number
 node bin/reflex.js report --fingerprints   # unclassified side-call fingerprints as JSON lines (what users send back)
 node scripts/report/strip-archive.mjs <in> <out>   # structural copy of an archived log (allow-listed fields) for test/fixtures/report/archives/
 node scripts/acceptance/check-archives.mjs # Phase 1 acceptance checks over ~/.reflex/archive/*.jsonl (docs/acceptance-phase1.md)
@@ -29,9 +29,10 @@ reflex (launcher process)                        src/launcher/
 worker (child process)                           src/worker/   all routing logic; every failure ends in "forward the original bytes"
 src/outcome/  outcome capture (record only): hook settings, hook payload parsing, heuristics, the tracker that joins hooks to decisions
 src/delegate/ REFLEX_DELEGATE: the hint text + version (hint.ts, the only place it lives) and which UserPromptSubmit gets it (reply.ts)
+src/worker/escalation.ts REFLEX_ESCALATE: the tier arithmetic and the decay of an escalation; the tracker hands signals to the router through TrackerDeps.onSignal
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
 src/config.ts the ONLY interpreter of settings (and of process.env); src/env-file.ts only reads/permission-checks ~/.reflex/env and merges it under the process env
-src/report/   `reflex report`: tolerant JSONL reader, pure sections 0-11 (0 = workflow profile, 11 = side-call fingerprints), no network
+src/report/   `reflex report`: tolerant JSONL reader, pure sections 0-13 (0 = workflow profile, 11 = side-call fingerprints, 12 = side-call routing estimate, 13 = escalations), no network
 src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, tested versions, unclassified side-call fingerprints, typed-vs-injected hook prompts
 ```
 
@@ -49,7 +50,8 @@ Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacte
 - **Attribution.** Any code adapted from another project is listed in `THIRD_PARTY.md` (tracked, shipped in the npm package) in the same commit.
 - **Hook answers carry nothing but the delegation hint.** Every hook is answered `204` except, with `REFLEX_DELEGATE=1`, a user-typed main-chat `UserPromptSubmit`, answered with `hookSpecificOutput.additionalContext` only (never `decision`, `continue` or anything that can block or change a prompt); any failure is a `204`. Changing the hint text means bumping `HINT_VERSION`.
 - **Fingerprints hold structure, not text.** `side_fingerprint` keeps at most the redacted preamble of harness text and drops it on any user-text heuristic; a new field or heuristic bumps `FINGERPRINT_VERSION` and must keep `test/unit/fingerprint.test.ts` (no user text lands) green.
-- **Outcome capture is record-only.** Hook payload text (prompts, commands, paths, code) stays in the worker's memory; `decisions.jsonl` gets hashes, counts, rule ids and runner kinds only. Nothing about a request or session changes because of an outcome signal (the delegation hint is a fixed text chosen by `REFLEX_DELEGATE`, never by an outcome). Every outcome record without a `decision_id` says why (`no_decision`).
+- **Outcome capture writes nothing but hashes, counts, rule ids and runner kinds.** Hook payload text (prompts, commands, paths, code) stays in the worker's memory; `decisions.jsonl` never carries it. Every outcome record without a `decision_id` says why (`no_decision`).
+- **An outcome signal may raise a tier and may do nothing else.** This replaces the earlier "nothing changes because of an outcome signal", which conflated a privacy guarantee (above, unchanged) with a staging decision that Phase 2b ends. A signal may raise the tier a later request in the same conversation is routed to; it may never lower a tier, never go above the tier the client asked for, never change prompt text, never change a hook answer, never reach the backend, and never leave the machine. It is off unless `REFLEX_ESCALATE=1`, it lives in `src/worker/escalation.ts`, its state is in memory only, and the worst case it can produce is a session running on the model the client asked for — which is every other fail-open path's worst case too. The delegation hint remains a fixed text chosen by `REFLEX_DELEGATE`, never by an outcome.
 - **Real-API experiments** run with the user's actual Claude Code settings: no `--model` (or other settings) override in the `claude` invocation, and the experiment's results file records the settings it ran under (model setting, entrypoint, betas seen). State the cost cap before running.
 - Small, well-described commits; run `npm test` first. Phase/plan documents are local working files (`docs/plan-*.md`, gitignored) and are never committed or referenced from tracked files.
 

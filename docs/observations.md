@@ -226,3 +226,108 @@ v0.2.3-alpha the matched marker is recorded (`side_marker`, `session_recap` vs `
 exact — on a log written by that build, which this one is not. The estimate also prices recorded token counts, where
 the router sizes requests from bytes, so a call near a ceiling could be classified differently in practice. And it is
 one day of one person's work: `no_tools` alone swings from saving to costing between this log and the archives.
+
+## 2026-09-20 — first calibration read: the arms are comparable in size and say nothing yet
+
+**Setup.** `~/.reflex/decisions.jsonl` as of 2026-09-19T21:55Z: 1,677 records, 1,525 decisions (1,505 with usage),
+16 sessions, one machine, mostly this repository, Claude Code 2.1.277 and 2.1.278, Opus 5 requested throughout,
+reflex 0.2.0-alpha .. 0.2.5-alpha in route mode, Jev `jev-1.13.0`, from Turkey. Rates below are over every main-chat
+outcome window that joined a decision; intervals are Wilson 95%.
+
+**Both main arms passed `MIN_OUTCOME_N` for the first time** — routed 26 windows, unchanged 27 — which is what makes
+section 7 print rates at all. It is also the whole of the good news.
+
+| main arm | correction > 0 (of scored) | test failure after an edit (of windows with edits) | reverted edit (of windows with edits) |
+| --- | --- | --- | --- |
+| routed | 1/23 = **4.3%** [0.8, 21.0] | 0/3 = 0.0% [0.0, 56.2] | 0/3 = 0.0% [0.0, 56.2] |
+| unchanged | 0/21 = **0.0%** [0.0, 15.5] | 0/10 = 0.0% [0.0, 27.8] | 1/10 = **10.0%** [1.8, 40.4] |
+
+Restricted to the turns where the two decision rules disagreed — the only turns on which the rule choice can matter:
+
+| main arm, mass != argmax | windows | correction > 0 | test failure | revert |
+| --- | --- | --- | --- | --- |
+| routed | 11 | 0/9 = 0.0% [0.0, 29.9] | 0/0 — | 0/0 — |
+| unchanged | 1 | 0/1 [0.0, 79.3] | 0/0 — | 0/0 — |
+
+**The data cannot distinguish the two rules, and it is not close.** Across the whole log there is **one** organic
+correction in 44 scored main windows (2.3%) and **one** revert; every disagreement window scored zero. The routed and
+unchanged intervals overlap over almost their entire range, and the disagreement arms have 9 and 1 scored windows
+against a floor of 20. Reading "routed corrects more often" off 1 versus 0 would be reading noise: a single window
+moves the routed rate by 4.3 points.
+
+**What n would.** Holding the observed base rate (~5%), a Wilson interval of ±5 points needs **about 73 scored
+windows per arm**; detecting a real difference between 5% and 10% at 80% power needs **about 430 per arm**. Those are
+*disagreement* windows, and disagreements are 29 of the 68 decisions that logged both readings (43%), so ~430 per arm
+means on the order of 2,000 decided main turns. At today's density — 29 typed main turns across five sessions — that
+is hundreds of sessions. **The honest conclusion is that per-rule calibration is not reachable from one person's
+dogfood log**, and that the tractable near-term target is the weaker one: 20 scored windows per disagreement arm, which
+buys a printed rate and not a comparison.
+
+**Limits.** One machine, one person, largely one codebase. The arms are not randomised — a turn is routed because the
+backend judged it easy, so "routed" and "unchanged" differ in the difficulty of their work before any outcome is
+measured, and no rate here is a causal estimate. Windows are counted across five reflex versions and two Claude Code
+versions; from 0.3.0-alpha every decision record carries `backend_version` and sections 2 and 7 split by it, so a
+later read can refuse to mix them. Correction rules are English and Turkish only.
+
+## 2026-09-20 — the delegation hint, measured on one day instead of across days
+
+**Setup.** The five sessions run on 2026-09-19 evening under reflex 0.2.5-alpha (`00516692`, `0f0db1c4`, `29d16aa2`,
+`33a26791`, `805b3287`): 186 decisions, 29 main-chat user turns, 38 outcome windows, Claude Code 2.1.278 throughout,
+Opus 5 requested, route mode, same machine and codebase, same day. `reflex report --usd` over those records only.
+
+**Why a same-day table at all.** The all-time hint table in section 0 compares 8 sessions with the hint against 8
+without, but those sessions are spread over different days, different reflex builds and different work; it reports
+`$2.64` per user turn without the hint and `$4.04` with it, which is a comparison of days as much as of the setting.
+**Treat the all-time hint table as confounded.** Over one day, same build, same kind of work:
+
+| hint | sessions | hints delivered | user turns | tokens | tokens per user turn | $ at sent | $ per user turn | subagent share | side-call share |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| off | 2 | — | 13 | 10,229,538 | 786,888 | $7.94 | $0.6104 | 11.7% | 5.5% |
+| `delegate-1` | 3 | 17 | 16 | 7,359,589 | 459,974 | $6.28 | $0.3926 | 22.0% | 18.2% |
+
+**Reading.** On this day the hint went with a higher subagent share (22.0% against 11.7%) and a lower cost per user
+turn — the direction the hint is meant to produce, and the opposite of what the confounded all-time table shows. It is
+**2 sessions against 3**, not a result: session-to-session variance in this log is larger than the gap, the sessions
+were not assigned at random (the hint was on or off because of what was being worked on), and "user turns" counts
+turns, not work done in them. It is recorded because it is the first comparison of the hint that holds the day, the
+build and the codebase fixed, and because it points the other way from the all-time table.
+
+## 2026-09-20 — the two windows without a wire turn, identified from Claude Code's transcripts
+
+Of 31 main-chat outcome windows in those five sessions, 29 joined a decision and 2 closed `no_wire_turn`. Neither is a
+slash command (those open no window). They are two different faults, both found by reading the sessions' own Claude
+Code transcripts against the log:
+
+**`29d16aa2`, turn seq 4 — not a prompt at all.** The window opened at 21:16:02.614Z with zero counts and
+`correction: null`, and hung open until `session_end` 359 s later. The transcript has no user message at that instant:
+the only event is the `Agent` tool's `tool_result`, carrying a `prompt_id` the tracker had never seen. `SubagentStart`
+then reached `#turnFor`, which manufactures a main window for an unseen prompt id (`src/outcome/tracker.ts`, "an event
+whose UserPromptSubmit we did not see"). The subagent's own window opened in the same millisecond **and was given the
+same `turn_seq` (4)**, because `SubagentStart` passes `#turnFor(...).seq` — the two records are the two halves of one
+call. So this is a **phantom window**: a tracker artefact, not a missed turn. It does not occur for every subagent
+(`0f0db1c4` ran three with no phantom), only when the `SubagentStart` prompt id differs from the open main turn's.
+
+**`805b3287`, turn seq 6 — a real prompt the wire could not see.** `nearest_wire` is `side:cross_session`, which is the
+subagent hand-back that arrived 236 ms earlier and was correctly absorbed as an injected prompt (it shows as
+`injected_prompts: 1` on the previous window). The prompt that actually opened the window is in the transcript as a
+`queued_command` attachment at 21:28:07.672Z with `origin: {kind: "human"}` and `humanTurn: true`: **"Run the test
+suite and the link check."** — typed by the user while the tool loop was still running, and correctly given the
+delegation hint. It never became a main `new` turn because Claude Code delivered it *inside* the running loop, wrapped
+as `<system-reminder> The user sent a new message while you were working: …`; `ownText()` strips reminders, so the
+wire's interjection test (`matchesTypedPrompt`) saw nothing of the user's words and classified the step as an ordinary
+`continuation`.
+
+**Why the second one matters beyond reporting.** A message typed mid-loop in that wrapper is invisible to the wire, so
+if it is a correction its score never reaches the turn it criticises — the signal escalation is built on is exactly the
+signal this shape drops. `continuation:interjection` handles the unwrapped form; this wrapped form is not yet
+recognised. Recorded, not fixed.
+
+**Not answerable from this log: whether the hint changes the wire encoding.** No decision record carries the encoding
+of a recognised `new` turn's prompt. `unclassified_reason: plain_string_no_typed_match` is written only for side calls
+that failed the match, `side_fingerprint.last.content` only for unclassified side calls, and today's five sessions
+produced zero unclassified side calls — so there is no residual to read either. A plain string that *is* promoted to a
+`new` turn and an array of blocks leave byte-identical records. All 186 decisions are Claude Code 2.1.278, which
+`docs/wire-format.md` §4.3 records as sending typed prompts as plain strings, so the expected answer is "all 29 were
+plain strings" — but that is inference from the version, not a measurement, and it is the thing the question wanted
+tested. The hint also cannot plausibly change it: it is appended to the trailing `role:"system"` message, not to the
+user message (2026-09-19 delegation entry). **Measuring this needs a field that does not exist yet.**
