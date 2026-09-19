@@ -23,13 +23,19 @@ Text is truncated first, then redacted (`src/privacy/redact.ts`): TypeSafe, Anth
 
 `~/.reflex/` (`REFLEX_HOME`): directory `0700`, files `0600`, rotated at 10 MB × 5.
 
-`decisions.jsonl` holds one record per classified `POST /v1/messages` request: classification, signals, mode, the backend's answers and the would-be plan, upstream status, token usage, and error categories. Session ids are stored hashed (SHA-256, truncated); conversation keys are hashes. For decided requests it also stores `prompt_preview`: the redacted task, whitespace-collapsed, capped at 300 characters by a constant in the logger. `REFLEX_LOG_PROMPTS=0` omits it.
+`decisions.jsonl` holds one record per classified `POST /v1/messages` request: classification, signals, mode, the backend's answers and the would-be plan, upstream status, token usage, and error categories. Session ids are stored hashed (SHA-256, truncated); conversation keys are hashes. For decided requests it also stores `prompt_preview`: the redacted task, whitespace-collapsed, capped at 300 characters by a constant in the logger. `REFLEX_LOG_PROMPTS=0` omits it. The preview is on by default (decided 2026-09-19) and that default will be revisited before a public release; redaction removes secrets and home-directory prefixes, not project-relative paths or the user's own words. Apart from the preview, the log holds no user text: the only other free-text field is `forwarded.fallback_error`, the upstream's own (redacted) error message for a rejected rewrite.
 
 Never stored: request or response bodies, credentials, backend error bodies.
 
 ## Hook events (outcome capture)
 
 In `shadow` and `route` mode reflex registers Claude Code `http` hooks (`UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` for Edit/Write/MultiEdit/NotebookEdit/Bash only, `SubagentStart`, `SubagentStop`, `Stop`) in its per-invocation `--settings` file. They go to the loopback front door, which answers `204` at once. Their payloads contain prompts, commands, file paths and edited text; these stay in the worker's memory for a few turns (to compare the next prompt and to detect reverted edits, using hashes of the edited text) and are never written or sent anywhere. What is written to `decisions.jsonl` (`record: "outcome"`, `"outcome_update"`, `"harness_injected"`): hashed session, prompt and agent ids, hashed file paths, counts, the matched correction rule ids and their score, test-runner kinds (e.g. `npm-test`) with exit codes, and revert kinds. No prompt text, commands, paths or code.
+
+## Configuration file and reports
+
+`~/.reflex/env` (in `REFLEX_HOME`) may hold `TYPESAFE_API_KEY` and `REFLEX_*` settings. It is read by the launcher only, its values are never logged, warnings about it name lines and variables but never values, `reflex doctor` shows the key as `(set, not shown)`, and the key is removed from the environment `claude` gets like any other `TYPESAFE_*` variable. A file that holds the key and is readable by group or others is refused whole (permissions are not checked on Windows). Only `REFLEX_*` and `TYPESAFE_API_KEY` are read from it: it is never a way to give reflex, or forward, Anthropic credentials.
+
+`reflex report` reads `decisions.jsonl` (and rotations, or the files you name), makes no network request and writes nothing. It prints counts, tiers, latencies, rule ids and, for rejected rewrites, the upstream's error text as logged (redacted, at most 100 characters shown); it does not print `prompt_preview`.
 
 ## Sent to Anthropic
 

@@ -8,10 +8,11 @@ An orchestration layer for [Claude Code](https://docs.claude.com/en/docs/claude-
 
 ```sh
 npm install -g reflex-router     # requires Node.js 20+
-export TYPESAFE_API_KEY=apikey_...   # decision backend key (not needed for `off`)
+export TYPESAFE_API_KEY=apikey_...   # decision backend key (not needed for `off`); or put it in ~/.reflex/env
 reflex                            # runs `claude`, everything after `reflex` is passed to it
 reflex -p "explain this repo" --model sonnet
-reflex doctor                     # what reflex would do with the current environment
+reflex doctor                     # what reflex would do with the current settings, and where each value came from
+reflex report --since 2h          # summarise ~/.reflex/decisions.jsonl (no network)
 reflex -- doctor                  # `--` forwards to claude even if the word is reserved
 ```
 
@@ -19,7 +20,9 @@ Everything you type after `reflex` goes to `claude` untouched, except the reserv
 
 ### Configuration
 
-All settings are environment variables.
+Settings are environment variables, optionally supplied by `~/.reflex/env`. Defaults below are provisional settings, not measured optima; where one is derived from a measurement its row says so and points at [`docs/observations.md`](docs/observations.md).
+
+**`~/.reflex/env`** (in `REFLEX_HOME` if that is set in the environment) holds `KEY=value` lines for `REFLEX_*` settings and `TYPESAFE_API_KEY`; `#` comments, `export ` and quotes around a value are accepted, other names are ignored with a warning. It is merged **under** the process environment: a variable already set in the environment (and not empty) wins. `REFLEX_HOME` cannot be set in the file, since it says where the file is. A file that contains `TYPESAFE_API_KEY` and is readable by group or others (`chmod 600` fixes it; not checked on Windows) is refused whole: reflex warns, ignores every value in it, and runs without the key, i.e. as plain `claude`. A file it cannot read is skipped with a warning. `reflex doctor` shows the file's state, why a file was refused, and for every setting that is set whether its value came from the process environment or the file; it never prints the key.
 
 | Variable | Values | Default | Meaning |
 | --- | --- | --- | --- |
@@ -37,19 +40,39 @@ All settings are environment variables.
 | `REFLEX_MASS_EPS` | 0–0.5 | `0.10` | Probability the `mass` rule may leave on more expensive tiers. |
 | `REFLEX_UPGRADES` | `off`, `confident`, `on` | `off` | Whether a stronger tier than requested may be chosen. |
 | `REFLEX_MODEL_<TIER>` | model id | `ANTHROPIC_DEFAULT_<TIER>_MODEL`, else built in | Model id used for a tier. |
-| `REFLEX_JEV_DEADLINE_MS` | integer, 50–60000 | `1500` | Hard deadline for one Jev decision, connection setup included. On expiry the request is forwarded unchanged (fail-open). Values below 50 ms are rejected as a configuration error. |
+| `REFLEX_JEV_DEADLINE_MS` | integer, 50–60000 | `1500` | Hard deadline for one Jev decision, connection setup included. On expiry the request is forwarded unchanged (fail-open). Values below 50 ms are rejected as a configuration error. The default was set above the p95 of the first dogfood session (1,136 ms, n = 12, a new connection per decision; see [Measured so far](#measured-so-far)). |
 | `REFLEX_MAX_USER_CHARS`, `REFLEX_MAX_ASSISTANT_CHARS` | integer | `4000`, `1000` | How much text the decision backend may see. |
+| `REFLEX_IGNORE_VERSION_CHECK` | `1` | unset | Do not degrade `route` to `shadow` on a Claude Code major-version mismatch (the warning stays). |
 
-What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](docs/privacy.md).
+What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](docs/privacy.md). In short: the decision log holds no secrets and no home-directory paths, and no user text beyond a redacted preview of at most 300 characters of each decided prompt (project-relative paths in it are not removed). The preview is **on by default** so that decisions can be reviewed and tuned; that default will be revisited before a public release. `REFLEX_LOG_PROMPTS=0` removes it.
 
 ### Route mode
 
 - Only a positively identified start of work is decided: a user-typed main-chat prompt, or a subagent's first request. Its tool loop stays on the same model (a pin per conversation; per agent id for subagents). Harness side calls, notifications and anything unclassified are never touched.
 - **Main chat** is only switched behind the cost guard: switching throws away the conversation's prompt cache, so a downgrade is allowed on a conversation's first turn (nothing cached yet) or when the measured one-time cache penalty is at most `REFLEX_MAX_SWITCH_PENALTY_USD`. Unknown context is refused. A refusal keeps the conversation on the model it is on now: a conversation already moved to a cheaper model stays there, is re-judged every turn, moves back up (never blocked) when the decision backend asks for more, and moves further down only through the guard. If the backend fails (error, timeout, open breaker), a conversation already on a cheaper model stays there (`stay_pinned_backend_error`; leave with `reflex:opus`); otherwise the turn goes out unchanged on the requested model.
-- **Overrides:** start a prompt with `reflex:haiku`, `reflex:sonnet` or `reflex:opus` to choose the tier for that turn and the subagents it spawns (recorded at each subagent's first request). It also works at the start of pasted text. `!`, `/`, `@` and `#` are not used because Claude Code consumes them (`!` is bash mode). The token stays in your prompt; reflex never edits prompt text.
+- **Overrides:** start a prompt with `reflex:haiku`, `reflex:sonnet` or `reflex:opus` to choose the tier for that turn and the subagents it spawns (recorded at each subagent's first request). It also works at the start of pasted text. `!`, `/`, `@` and `#` are not used because Claude Code consumes them (`!` is bash mode). An override skips the decision backend, the confidence rule and the main-chat cost guard: it is your explicit choice, so a main-chat override can pay the cache penalty the guard would have refused. The token stays in your prompt; reflex never edits prompt text.
+- **Caveats.** Route mode rewrites requests, and only pairs verified against the API are rewritten (see Status). Harness side calls (prompt suggestions and the like) are never rewritten and keep billing the requested model, so part of a routed session's usage stays on that model by construction. Moving a conversation down costs one cache write of its whole context on the target model, which is why main chat sits behind the guard (observations: [Measured so far](#measured-so-far)). Upgrades above the requested model and Fable retargets are not applied. Whether routing changes the quality of the work is not measured; the outcome records (below) exist to collect that evidence, not to prove it.
 - **Safety nets:** a decision that takes longer than `REFLEX_JEV_DEADLINE_MS` is dropped (request unchanged); a rewritten request the API rejects is re-sent with the original bytes and that tier is switched off for the session for 30 minutes; a failed runtime shape check turns the session back into shadow mode.
 - Every routed record lists the requested model, the model actually sent, and the fields that were rewritten.
-| `REFLEX_IGNORE_VERSION_CHECK` | `1` | unset | Do not degrade `route` to `shadow` on a Claude Code major-version mismatch (the warning stays). |
+
+## `reflex report`
+
+```sh
+reflex report [--since 2h] [--usd] [<decisions.jsonl> ...]
+```
+
+Reads `~/.reflex/decisions.jsonl` and its rotations (or the files you name), makes no network request, and prints ten sections: decisions by kind, turn and tier; `mass` vs `argmax` (agreement and what each rule would have routed); shadow vs actual (would-route tier by requested tier, with the share of tokens each cell carries; requested vs sent model); guard refusals; fallbacks and the breaker; latency (Jev by new vs reused connection, and time to response headers for routed vs unrouted turns, split into the wait for the decision and the upstream's first byte, with timed-out decisions checked against the deadline); outcome rates for routed vs unchanged turns, always with sample sizes and an explicit "insufficient data" line below 20 windows; cost at list prices; side-call usage on its own line; and cache writes by move type (down, up short of the requested tier, back to the requested tier).
+
+The cost section is an **estimate**: the same measured token counts priced at the model sent and at the model requested, at the list prices in `src/pricing.ts` (last checked against Anthropic's pricing page on 2026-09-19). It does not model tokenizer differences between models, what the requested model's cache would have held, cache TTL, discounts or subscription limits, and its "requested" side overstates what staying would have cost (the report says why). By default it shows relative usage; `--usd` adds dollar columns. Side calls are never attributed to a routed model. It is a way to look at your own log, not a savings claim.
+
+## Measured so far
+
+Everything measured is in [`docs/observations.md`](docs/observations.md) with its conditions; these are single sessions on one machine, not benchmarks.
+
+- **Decision latency.** p50 823 ms, p95 1,136 ms (n = 12), one interactive shadow session, Claude Code 2.1.277 with Opus 5 requested, run from Turkey, Jev `jev-latest`, a fresh TCP+TLS connection per decision. Later route sessions, which kept the connection alive, recorded p50 382 ms and p95 408 ms (n = 11 decisions in three sessions, all on a reused connection; different days and prompts, so not a controlled comparison; see the last entry of `docs/observations.md` for the conditions). `reflex report` splits Jev latency by new vs reused connection.
+- **Reasoning, not length.** One prompt in that session asked for a one-sentence answer to a hard question, and the backend judged it to need Opus (reasoning demand 3.24 of 0–4). The 30-prompt labelled comparison of length-framed and reasoning-framed instructions is in `test/live/`; its result has not been recorded yet.
+- **Prompt cache.** In route sessions A and B (Claude Code 2.1.277, Opus 5 requested, route mode), moving a conversation down wrote its whole context once on the target (63,689 tokens on Sonnet in one case); harness side calls kept the requested model's cache warm; and moving up one tier from a cheaper pin wrote more (13,385 tokens) than returning to the requested model (5,924). See the two "route-mode acceptance" entries.
+- **Cost and quality.** No savings or quality figure has been measured, and none is claimed here.
 
 ## How it stays out of the way
 
@@ -72,9 +95,12 @@ The wire format Claude Code speaks is not a public contract. reflex records whic
 ```sh
 npm ci
 npm test             # typecheck + lint + offline tests (a guard blocks all non-loopback network access)
-npm run test:live    # tests that need a real TYPESAFE_API_KEY (skipped without one)
+npm run test:live    # tests that need a real TYPESAFE_API_KEY (skipped without one; about 90 Jev calls)
 npm run build
+node bin/reflex.js doctor
 ```
+
+The live tests check the answer shape against the real backend, sample latency with connection reuse, and run the labelled reasoning-vs-length set; they write their results to `_dumps/live/` and do not fail on what the numbers turn out to be. `npm pack --dry-run` lists what is published: `bin/`, `dist/` (without source maps), `LICENSE`, `THIRD_PARTY.md`, `README.md`; `prepack` rebuilds `dist/` first.
 
 `docs/wire-format.md` records what was observed on the wire, with redacted fixtures in `test/fixtures/`. `docs/prior-art.md` summarises the projects this one learns from.
 
