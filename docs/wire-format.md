@@ -132,6 +132,14 @@ This contradicts the prior-art recipe ("delete `thinking`, delete `context_manag
 
 The minimal working rewrite is therefore three field edits plus the model swap; the extra steps in a native Haiku request are not required, and fewer edits mean less risk. The API reports one validation error at a time, so necessity was established by leave-one-out, not from the messages alone.
 
+**Unverified, and it only matters for side calls.** `retarget` removes `output_config.effort`, and when `effort` was the
+object's **only** key it deletes `output_config` entirely rather than sending `{}`. Neither branch of that choice has
+been tested against the API: no experiment sent an empty `output_config`, and no experiment retargeted a request whose
+`output_config` carries `format` (the JSON-schema shape a `no_tools` title-generation call uses, §4.1). So two things
+are open — whether the API accepts `output_config: {}`, and whether a target model accepts `output_config.format`
+without `effort`. This is reached only if side-call routing is implemented; ordinary turns carry `effort` alongside
+nothing else, so today the object is simply dropped. Not worth a paid run on its own.
+
 **Scope.** One request, first turn, no assistant history. **Not tested:** switching the model in the middle of a conversation (Sonnet-generated `thinking` blocks with signatures already in `messages`), requests with earlier `tool_use`/`tool_result` turns, Opus/Fable targets, the `context-1m` beta, and subagent (5-minute cache) requests. A mid-conversation switch is the likeliest place for a rejection, which is one more reason the main chat is only switched behind a cost guard and every rewrite keeps the retry-with-original safety net.
 
 ### 5.2 Routing a whole session Sonnet → Haiku (experiment, M3)

@@ -469,6 +469,43 @@ function delegationLine(arms: readonly HintArm[], showUsd: boolean): string[] {
 }
 
 /** 9. Side-call usage on its own line. */
+/**
+ * Optional Claude Code features that make their own model calls, matched to the side kind they arrive as. The switch
+ * is the name the user would change; nothing here recommends changing one. Sources: Claude Code docs, interactive-mode
+ * and settings-reference, read 2026-09-19.
+ *
+ * `caveat` records where a row is an upper bound because the side kind carries more than that one feature; without it
+ * the figure would overstate what the switch controls.
+ */
+export const HARNESS_FEATURES: readonly { readonly feature: string; readonly sideKind: string; readonly switch: string; readonly caveat?: string }[] = [
+  { feature: "Session recap", sideKind: "notification", switch: "/config -> Session recap (settings: awaySummaryEnabled)",
+    caveat: "the notification side kind also carries background task notifications, which this switch does not control" },
+  { feature: "Prompt suggestions", sideKind: "suggestion", switch: "/config -> Prompt suggestions (settings: promptSuggestionEnabled, env CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)" },
+];
+
+/** What the optional harness features cost on this log, at the model they were actually billed to. */
+export function harnessFeatureCost(decisions: readonly Dec[], showUsd: boolean): string[] {
+  const rows: string[][] = [];
+  const notes: string[] = [];
+  for (const f of HARNESS_FEATURES) {
+    const calls = decisions.filter((x) => x.turn === "side" && x.sideKind === f.sideKind);
+    if (calls.length === 0) continue;
+    const withUsage = calls.filter((x) => x.usage !== null);
+    rows.push([f.feature, f.sideKind, int(calls.length), int(sum(withUsage.map(tokens))), ...(showUsd ? [usd(costOf(withUsage).atRequestedUsd)] : [])]);
+    notes.push(`    ${f.feature}: ${f.switch}`);
+    if (f.caveat !== undefined) notes.push(`      upper bound - ${f.caveat}.`);
+  }
+  if (rows.length === 0) return [];
+  return [
+    "",
+    "  optional Claude Code features, and what they cost here (each makes its own model call, billed to the requested model):",
+    ...table([["feature", "side kind", "calls", "tokens", ...(showUsd ? ["$ at requested model"] : [])], ...rows], "    "),
+    "",
+    "    switches:",
+    ...notes,
+  ];
+}
+
 export function s9SideCalls({ rec, usd: showUsd }: Ctx): string[] {
   const side = rec.decisions.filter((x) => x.turn === "side");
   if (side.length === 0) return NONE;
@@ -482,6 +519,7 @@ export function s9SideCalls({ rec, usd: showUsd }: Ctx): string[] {
   out.push(...table([["side kind", "calls", "tokens", ...(showUsd ? ["$ at requested model"] : [])], ...rows, ["total", String(side.length), int(sum(withUsage.map(tokens))), ...(showUsd ? [usd(costOf(withUsage).atRequestedUsd)] : [])]], "    "));
   const routedSide = side.filter((x) => x.sentTier !== x.requestedTier).length;
   out.push(`  side calls sent to a model other than the requested one: ${routedSide}${routedSide > 0 ? " (unexpected)" : ""}`);
+  out.push(...harnessFeatureCost(rec.decisions, showUsd));
   return out;
 }
 
@@ -616,8 +654,8 @@ export const SIDE_ROUTABLE_KINDS: readonly string[] = ["no_tools", "notification
  * tier wins on price alone, cold or not: the rule does not apply and is not quoted.
  */
 export const PREFIX_DOMINATED_SHARE = 0.8;
-/** The one tier routable side calls would share, so they share one warm prefix (they share the conversation's). */
-export const SIDE_TIER: Tier = "haiku";
+/** Tiers a side call could be sent to, cheapest first. Both are priced: the cheaper one cannot hold the big calls. */
+export const SIDE_TIER_CANDIDATES: readonly Tier[] = ["haiku", "sonnet"];
 const TTL_SECONDS = { "5m": 300, "1h": 3600 } as const;
 /** Without the `extended-cache-ttl` beta on the record, assume the shorter window: it is the pessimistic reading. */
 const ASSUMED_TTL: CacheTtl = "5m";
@@ -627,7 +665,11 @@ const ttlOf = (d: Dec): CacheTtl => (d.cacheTtlBeta === true ? "1h" : ASSUMED_TT
  * A side call can only be routed to a tier that can hold it. The recorded token count is used directly here, where the
  * router estimates from request bytes (src/tiers.ts) -- close enough to size the opportunity, not to decide a request.
  */
-const fitsSideTier = (u: Usage): boolean => fitsContext(SIDE_TIER, ctxOf(u));
+const fitsSideTier = (tier: Tier, u: Usage): boolean => fitsContext(tier, ctxOf(u));
+const ceilingOf = (t: Tier): string => {
+  const c = CONTEXT_CEILING[t];
+  return c === null ? "none" : int(c);
+};
 /** The whole prompt of one request: what a cold target would have to write. */
 const ctxOf = (u: Usage): number => u.input + u.cacheRead + u.cacheCreate;
 
@@ -660,6 +702,7 @@ export interface ConvExposure {
 }
 
 export interface SideRoutingEstimate {
+  readonly tier: Tier;
   readonly perKind: SideKindEstimate[];
   readonly calls: number;
   readonly warm: number;
@@ -682,11 +725,21 @@ export interface SideRoutingEstimate {
  * cache TTL, which is exactly what the real thing would get, since nothing else would keep that tier warm.
  * An estimate over recorded token counts, not a measurement of a run.
  */
-export function sideRoutingEstimate(decisions: readonly Dec[]): SideRoutingEstimate {
-  const onGoList = decisions.filter((d) => d.turn === "side" && d.sideKind !== null && SIDE_ROUTABLE_KINDS.includes(d.sideKind) && d.usage !== null && d.requestedTier !== null && d.conv !== null);
+export interface SideRoutingOptions {
+  readonly tier: Tier;
+  /** Price every request at this TTL instead of the one its record implies (a what-if across both windows). */
+  readonly ttl?: CacheTtl;
+  /** Drop conversations ever pinned below the requested tier: the carve-out that removes the §4 interaction. */
+  readonly excludePinnedBelow?: boolean;
+}
+
+export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRoutingOptions): SideRoutingEstimate {
+  const tier = opts.tier;
+  const pinnedBelow = new Set(convExposure(decisions).filter((c) => c.pinnedBelow).map((c) => c.conv));
+  const onGoList = decisions.filter((d) => d.turn === "side" && d.sideKind !== null && SIDE_ROUTABLE_KINDS.includes(d.sideKind) && d.usage !== null && d.requestedTier !== null && d.conv !== null && !(opts.excludePinnedBelow === true && pinnedBelow.has(d.conv)));
   // A prompt larger than the side tier's context ceiling cannot go there at all, however good the cache arithmetic is.
-  const routable = onGoList.filter((d) => fitsSideTier(d.usage!));
-  const tooBig = onGoList.filter((d) => !fitsSideTier(d.usage!));
+  const routable = onGoList.filter((d) => fitsSideTier(tier, d.usage!));
+  const tooBig = onGoList.filter((d) => !fitsSideTier(tier, d.usage!));
   const byConv = new Map<string, Dec[]>();
   for (const d of routable) byConv.set(d.conv!, [...(byConv.get(d.conv!) ?? []), d]);
 
@@ -716,7 +769,7 @@ export function sideRoutingEstimate(decisions: readonly Dec[]): SideRoutingEstim
     let cached = 0; // tokens the side tier holds for this conversation
     for (const d of sorted) {
       const u = d.usage!;
-      const ttl = ttlOf(d);
+      const ttl = opts.ttl ?? ttlOf(d);
       ttlsSeen.push(ttl);
       const ctx = ctxOf(u);
       const a = acc(d.sideKind!);
@@ -726,7 +779,7 @@ export function sideRoutingEstimate(decisions: readonly Dec[]): SideRoutingEstim
       const write = ctx - read;
       // The TTL is a property of the request, so both sides of the comparison are priced at the same one.
       const atReq = usageCostUsd(d.requestedTier!, u, ttl);
-      const atSide = (u.output * PRICES[SIDE_TIER].output + read * PRICES[SIDE_TIER].input * PRICES[SIDE_TIER].cacheReadMult + write * PRICES[SIDE_TIER].input * CACHE_WRITE_MULT[ttl]) / 1_000_000;
+      const atSide = (u.output * PRICES[tier].output + read * PRICES[tier].input * PRICES[tier].cacheReadMult + write * PRICES[tier].input * CACHE_WRITE_MULT[ttl]) / 1_000_000;
       a.calls++;
       a.tokens += totalTokens(u);
       a.read += u.cacheRead;
@@ -746,8 +799,8 @@ export function sideRoutingEstimate(decisions: readonly Dec[]): SideRoutingEstim
     }
   }
 
-  const dominant: CacheTtl = ttlsSeen.filter((t) => t === "1h").length * 2 > ttlsSeen.length ? "1h" : ASSUMED_TTL;
-  const readRate = PRICES[SIDE_TIER].input * PRICES[SIDE_TIER].cacheReadMult;
+  const dominant: CacheTtl = opts.ttl !== undefined ? opts.ttl : ttlsSeen.filter((t) => t === "1h").length * 2 > ttlsSeen.length ? "1h" : ASSUMED_TTL;
+  const readRate = PRICES[tier].input * PRICES[tier].cacheReadMult;
   const perKind = [...perKindAcc.entries()]
     .map(([kind, v]) => ({
       kind,
@@ -774,9 +827,10 @@ export function sideRoutingEstimate(decisions: readonly Dec[]): SideRoutingEstim
     cold,
     usdAtRequested,
     usdAtSide,
-    breakEven: (PRICES[SIDE_TIER].input * CACHE_WRITE_MULT[dominant]) / Math.max(1e-9, PRICES.opus.input * PRICES.opus.cacheReadMult - readRate),
+    tier,
+    breakEven: (PRICES[tier].input * CACHE_WRITE_MULT[dominant]) / Math.max(1e-9, PRICES.opus.input * PRICES.opus.cacheReadMult - readRate),
     observedWarmPerCold: cold === 0 ? null : warm / cold,
-    ttlAssumed: decisions.every((d) => d.cacheTtlBeta === null),
+    ttlAssumed: opts.ttl === undefined && decisions.every((d) => d.cacheTtlBeta === null),
     convs: convExposure(decisions),
   };
 }
@@ -798,53 +852,71 @@ export function convExposure(decisions: readonly Dec[]): ConvExposure[] {
     .sort((a, b) => b.upMoves - a.upMoves || a.conv.localeCompare(b.conv));
 }
 
-/** 12. What routing the go-list side kinds to one shared cheaper tier would have cost on this log. */
+/** 12. What routing the go-list side kinds to a shared cheaper tier would have cost on this log. */
 export function s12SideRouting({ rec, usd: showUsd }: Ctx): string[] {
-  const e = sideRoutingEstimate(rec.decisions);
-  if (e.calls === 0 && e.overCeiling === 0) return ["  (no routable side calls with usage in range)"];
+  const d = rec.decisions;
+  const primary = sideRoutingEstimate(d, { tier: SIDE_TIER_CANDIDATES[0]! });
+  if (primary.calls === 0 && primary.overCeiling === 0) return ["  (no routable side calls with usage in range)"];
+
   const out = [
-    `  ESTIMATE, not a measurement: what sending ${SIDE_ROUTABLE_KINDS.join(", ")} to a shared ${SIDE_TIER} tier would have cost, over the tokens actually recorded.`,
+    `  ESTIMATE, not a measurement: what sending ${SIDE_ROUTABLE_KINDS.join(", ")} to one shared cheaper tier would have cost, over the tokens actually recorded.`,
     "  A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.",
-    `  A call whose prompt exceeds ${SIDE_TIER}'s ${int(CONTEXT_CEILING[SIDE_TIER])}-token ceiling cannot be routed there at all and is counted under "over ceiling", never in the saving.`,
-    `  Both columns are priced at the same TTL per request (the one the record's extended-cache-ttl beta implies)${e.ttlAssumed ? `; no record in range logged it, so ${ASSUMED_TTL} was assumed throughout` : ""}.`,
-    ...table([
-      ["side kind", "routable", "warm", "cold", "over ceiling", "tokens", "cache read", "gap p50", ...(showUsd ? ["$ at requested", `$ at ${SIDE_TIER}`, "$ saved"] : [])],
-      ...e.perKind.map((k) => [
-        k.kind, int(k.calls), int(k.warm), int(k.cold), k.overCeiling === 0 ? "-" : `${int(k.overCeiling)} (${int(k.overCeilingTokens)} tok)`, int(k.tokens), pct(k.cacheReadShare, 1), k.gapP50 === null ? "-" : `${int(Math.round(k.gapP50))} s`,
-        ...(showUsd ? [usd(k.usdAtRequested), usd(k.usdAtSide), usd(k.usdAtRequested - k.usdAtSide)] : []),
-      ]),
-      ["total", int(e.calls), int(e.warm), int(e.cold), e.overCeiling === 0 ? "-" : `${int(e.overCeiling)} (${int(e.overCeilingTokens)} tok)`, int(sum(e.perKind.map((k) => k.tokens))), "", "",
-        ...(showUsd ? [usd(e.usdAtRequested), usd(e.usdAtSide), usd(e.usdAtRequested - e.usdAtSide)] : [])],
-    ], "    "),
+    "  A call whose prompt exceeds the target tier's context ceiling cannot be routed there at all and is counted under \"over ceiling\", never in the saving.",
   ];
-  if (!showUsd) out.push("    (rerun with --usd for the dollar columns)");
-  // The amortisation rule only decides the kinds whose cost IS the cached prefix. Quoting it over every kind would
-  // let a cheap small-context kind (title generation) drag the ratio below break-even while plainly saving money.
-  const withRoutable = e.perKind.filter((k) => k.calls > 0);
-  for (const k of e.perKind.filter((x) => x.calls === 0)) {
-    out.push(`  ${k.kind}: NOT ROUTABLE at all - all ${int(k.overCeiling)} calls exceed ${SIDE_TIER}'s context ceiling (${int(k.overCeilingTokens)} tokens, none of it reachable).`);
+
+  // Both candidate tiers, both TTLs, gross and net of the carve-out: the cheaper tier cannot hold the biggest calls,
+  // so the comparison is not a simple price ordering and has to be shown rather than argued.
+  out.push("", "  candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction):");
+  const rows: string[][] = [["tier", "ceiling", "writes", "routable", "over ceiling", "$ at requested", "$ at tier", "$ saved gross", "$ saved net"]];
+  for (const tier of SIDE_TIER_CANDIDATES) {
+    for (const ttl of ["5m", "1h"] as const) {
+      const g = sideRoutingEstimate(d, { tier, ttl });
+      const n = sideRoutingEstimate(d, { tier, ttl, excludePinnedBelow: true });
+      rows.push([
+        tier, ceilingOf(tier), ttl, int(g.calls), g.overCeiling === 0 ? "-" : int(g.overCeiling),
+        usd(g.usdAtRequested), usd(g.usdAtSide), usd(g.usdAtRequested - g.usdAtSide), usd(n.usdAtRequested - n.usdAtSide),
+      ]);
+    }
   }
-  const prefixKinds = withRoutable.filter((k) => k.cacheReadShare >= PREFIX_DOMINATED_SHARE);
-  if (prefixKinds.length > 0 || withRoutable.length > 0) out.push(`  amortisation (break-even ${e.breakEven.toFixed(1)} warm calls per cold write; applies to kinds above ${pct(PREFIX_DOMINATED_SHARE, 1)} cache read, whose cost is the cached prefix):`);
-  for (const k of prefixKinds) {
-    const r = k.cold === 0 ? null : k.warm / k.cold;
-    out.push(`    ${k.kind}: ${r === null ? "no cold write" : `${r.toFixed(1)} warm per cold`}${r === null || r >= e.breakEven ? "" : " - BELOW break-even"}, ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
+  out.push(...table(rows, "    "));
+
+  // Per kind, for each tier at the TTL each record implies: what is reachable and what is not.
+  for (const tier of SIDE_TIER_CANDIDATES) {
+    const e = sideRoutingEstimate(d, { tier });
+    out.push("", `  ${tier} (ceiling ${ceilingOf(tier)}; TTL per request${e.ttlAssumed ? `, none recorded so ${ASSUMED_TTL} assumed` : ""}):`);
+    out.push(
+      ...table([
+        ["side kind", "routable", "warm", "cold", "over ceiling", "tokens", "cache read", "gap p50", ...(showUsd ? ["$ at requested", "$ at tier", "$ saved"] : [])],
+        ...e.perKind.map((k) => [
+          k.kind, int(k.calls), int(k.warm), int(k.cold), k.overCeiling === 0 ? "-" : `${int(k.overCeiling)} (${int(k.overCeilingTokens)} tok)`,
+          int(k.tokens), k.calls === 0 ? "-" : pct(k.cacheReadShare, 1), k.gapP50 === null ? "-" : `${int(Math.round(k.gapP50))} s`,
+          ...(showUsd ? [usd(k.usdAtRequested), usd(k.usdAtSide), usd(k.usdAtRequested - k.usdAtSide)] : []),
+        ]),
+      ], "    "),
+    );
+    const withRoutable = e.perKind.filter((k) => k.calls > 0);
+    for (const k of e.perKind.filter((x) => x.calls === 0)) out.push(`    ${k.kind}: NOT ROUTABLE - all ${int(k.overCeiling)} calls exceed the ceiling (${int(k.overCeilingTokens)} tokens).`);
+    // The amortisation rule only decides kinds whose cost IS the cached prefix; below that a cheaper tier wins on
+    // price alone and quoting the rule would let a small-context kind look like a loss while it saves money.
+    for (const k of withRoutable.filter((x) => x.cacheReadShare >= PREFIX_DOMINATED_SHARE)) {
+      const r = k.cold === 0 ? null : k.warm / k.cold;
+      out.push(`    ${k.kind}: ${r === null ? "no cold write" : `${r.toFixed(1)} warm per cold`} against break-even ${e.breakEven.toFixed(1)}${r !== null && r < e.breakEven ? " - BELOW it" : ""}, ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
+    }
+    for (const k of withRoutable.filter((x) => x.cacheReadShare < PREFIX_DOMINATED_SHARE)) {
+      out.push(`    ${k.kind}: ${pct(k.cacheReadShare, 1)} cache read - little prefix to lose, the amortisation rule does not apply; ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
+    }
   }
-  for (const k of withRoutable.filter((x) => x.cacheReadShare < PREFIX_DOMINATED_SHARE)) {
-    out.push(`    ${k.kind}: ${pct(k.cacheReadShare, 1)} cache read - little prefix to lose, the rule does not apply; ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
-  }
-  const net = e.usdAtRequested - e.usdAtSide;
-  out.push(`  simulated net over all routable kinds: ${net >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(net))} - gross, before the exposure below.`);
-  out.push("");
-  out.push("  exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).");
-  const exposed = e.convs.filter((c) => c.pinnedBelow);
-  out.push(`  conversations ever pinned below requested: ${exposed.length} of ${new Set(rec.decisions.map((d) => d.conv).filter((c) => c !== null)).size}`);
-  if (e.convs.length === 0) out.push("    (no conversation was routed below the requested tier or moved up)");
+  if (!showUsd) out.push("    (rerun with --usd for the per-kind dollar columns)");
+
+  out.push("", "  exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).");
+  const convs = primary.convs;
+  out.push(`  conversations ever pinned below requested: ${convs.filter((c) => c.pinnedBelow).length} of ${new Set(d.map((x) => x.conv).filter((c) => c !== null)).size}`);
+  if (convs.length === 0) out.push("    (no conversation was routed below the requested tier or moved up)");
   else
     out.push(
       ...table([
         ["conversation", "pinned below", "up-moves", "cache write on each up-move"],
-        ...e.convs.map((c) => [c.conv.slice(0, 24), c.pinnedBelow ? "yes" : "no", int(c.upMoves), c.upMoveCacheWrites.map((w) => int(w)).join(", ") || "-"]),
+        ...convs.map((c) => [c.conv.slice(0, 24), c.pinnedBelow ? "yes" : "no", int(c.upMoves), c.upMoveCacheWrites.map((w) => int(w)).join(", ") || "-"]),
       ], "    "),
     );
   return out;

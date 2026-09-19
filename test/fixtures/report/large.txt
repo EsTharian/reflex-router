@@ -127,6 +127,16 @@ reflex report
     total          2373  96,933,613                $70.71
   side calls sent to a model other than the requested one: 0
 
+  optional Claude Code features, and what they cost here (each makes its own model call, billed to the requested model):
+    feature                side kind  calls      tokens  $ at requested model
+    Session recap       notification    808  33,637,116                $24.35
+    Prompt suggestions    suggestion    790  32,484,998                $23.61
+
+    switches:
+    Session recap: /config -> Session recap (settings: awaySummaryEnabled)
+      upper bound - the notification side kind also carries background task notifications, which this switch does not control.
+    Prompt suggestions: /config -> Prompt suggestions (settings: promptSuggestionEnabled, env CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)
+
 10. Cache writes by move type
   first request after a tier change in a conversation (observations.md: moving up one tier can write more than returning to the requested model)
     move                                n  cache write p50  cache write mean  cache write max  cache read p50
@@ -139,20 +149,34 @@ reflex report
   (no unclassified side calls)
 
 12. Side-call routing estimate
-  ESTIMATE, not a measurement: what sending no_tools, notification, suggestion to a shared haiku tier would have cost, over the tokens actually recorded.
+  ESTIMATE, not a measurement: what sending no_tools, notification, suggestion to one shared cheaper tier would have cost, over the tokens actually recorded.
   A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.
-  A call whose prompt exceeds haiku's 150,000-token ceiling cannot be routed there at all and is counted under "over ceiling", never in the saving.
-  Both columns are priced at the same TTL per request (the one the record's extended-cache-ttl beta implies); no record in range logged it, so 5m was assumed throughout.
-    side kind     routable   warm  cold  over ceiling      tokens  cache read  gap p50  $ at requested  $ at haiku  $ saved
-    notification       808    549   259             -  33,637,116       96.3%     40 s          $24.35      $23.79  $0.5585
-    suggestion         790    530   260             -  32,484,998       96.3%     40 s          $23.61      $23.46  $0.1475
-    no_tools           775    552   223             -  30,811,499       96.1%     40 s          $22.75      $21.88  $0.8742
-    total            2,373  1,631   742             -  96,933,613                               $70.71      $69.13    $1.58
-  amortisation (break-even 3.1 warm calls per cold write; applies to kinds above 80.0% cache read, whose cost is the cached prefix):
-    notification: 2.1 warm per cold - BELOW break-even, saves $0.5585
-    suggestion: 2.0 warm per cold - BELOW break-even, saves $0.1475
-    no_tools: 2.5 warm per cold - BELOW break-even, saves $0.8742
-  simulated net over all routable kinds: saves $1.58 - gross, before the exposure below.
+  A call whose prompt exceeds the target tier's context ceiling cannot be routed there at all and is counted under "over ceiling", never in the saving.
+
+  candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction):
+    tier    ceiling  writes  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
+    haiku   150,000      5m     2,373             -          $70.71     $69.13          $1.58        $1.03
+    haiku   150,000      1h     2,373             -          $84.07    $107.67      $-23.6000     $-2.1050
+    sonnet     none      5m     2,373             -          $70.71    $138.26      $-67.5504     $-8.2538
+    sonnet     none      1h     2,373             -          $84.07    $215.33     $-131.2667    $-16.4922
+
+  haiku (ceiling 150,000; TTL per request, none recorded so 5m assumed):
+    side kind     routable  warm  cold  over ceiling      tokens  cache read  gap p50  $ at requested  $ at tier  $ saved
+    notification       808   549   259             -  33,637,116       96.3%     40 s          $24.35     $23.79  $0.5585
+    suggestion         790   530   260             -  32,484,998       96.3%     40 s          $23.61     $23.46  $0.1475
+    no_tools           775   552   223             -  30,811,499       96.1%     40 s          $22.75     $21.88  $0.8742
+    notification: 2.1 warm per cold against break-even 3.1 - BELOW it, saves $0.5585
+    suggestion: 2.0 warm per cold against break-even 3.1 - BELOW it, saves $0.1475
+    no_tools: 2.5 warm per cold against break-even 3.1 - BELOW it, saves $0.8742
+
+  sonnet (ceiling none; TTL per request, none recorded so 5m assumed):
+    side kind     routable  warm  cold  over ceiling      tokens  cache read  gap p50  $ at requested  $ at tier    $ saved
+    notification       808   549   259             -  33,637,116       96.3%     40 s          $24.35     $47.58  $-23.2314
+    suggestion         790   530   260             -  32,484,998       96.3%     40 s          $23.61     $46.93  $-23.3173
+    no_tools           775   552   223             -  30,811,499       96.1%     40 s          $22.75     $43.75  $-21.0017
+    notification: 2.1 warm per cold against break-even 8.3 - BELOW it, COSTS $23.23
+    suggestion: 2.0 warm per cold against break-even 8.3 - BELOW it, COSTS $23.32
+    no_tools: 2.5 warm per cold against break-even 8.3 - BELOW it, COSTS $21.00
 
   exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).
   conversations ever pinned below requested: 666 of 750

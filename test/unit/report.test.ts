@@ -62,13 +62,13 @@ describe("report: side-call routing estimate", () => {
   });
 
   it("only go-list kinds count; cross_session and the rest are never estimated", () => {
-    const e = sideRoutingEstimate(parse(sideCallLog()).decisions);
+    const e = sideRoutingEstimate(parse(sideCallLog()).decisions, { tier: "haiku" });
     assert.deepEqual(e.perKind.map((k) => k.kind).sort(), ["no_tools", "notification", "suggestion"]);
     assert.equal(e.calls, 6, "the cross_session call and both non-side turns are excluded");
   });
 
   it("warm follows the TTL: calls inside it reuse the prefix, one past it pays a full write again", () => {
-    const e = sideRoutingEstimate(parse(sideCallLog()).decisions);
+    const e = sideRoutingEstimate(parse(sideCallLog()).decisions, { tier: "haiku" });
     // a-s1 cold (first), a-s2/a-s3/a-n1 warm, a-n2 cold (40 min later), a-t1 warm (10 s after a-n2)
     assert.equal(e.cold, 2);
     assert.equal(e.warm, 4);
@@ -77,14 +77,14 @@ describe("report: side-call routing estimate", () => {
   it("a cold call is priced as a full write of the whole prompt, so it costs more than leaving it alone", () => {
     // One lone side call in its own conversation can never be warm: the estimate must not show it as a saving.
     const lone = toJsonl([dec({ id: "c-new", t: 0, conv: "c", turn: "new" }), dec({ id: "c-s", t: 10, conv: "c", turn: "side", side: "notification", usage: [2, 50, 100_000, 500] })]);
-    const e = sideRoutingEstimate(parse(lone).decisions);
+    const e = sideRoutingEstimate(parse(lone).decisions, { tier: "haiku" });
     assert.equal(e.warm, 0);
     assert.equal(e.cold, 1);
     assert.ok(e.usdAtSide > e.usdAtRequested, `a cold swap must cost more: at side ${e.usdAtSide}, at requested ${e.usdAtRequested}`);
   });
 
   it("exposure lists only conversations routed below requested or moving up, with each up-move's cache write", () => {
-    const e = sideRoutingEstimate(parse(sideCallLog()).decisions);
+    const e = sideRoutingEstimate(parse(sideCallLog()).decisions, { tier: "haiku" });
     const b = e.convs.find((c) => c.conv === "conv-exposed-b");
     assert.ok(b, "the routed conversation is listed");
     assert.equal(b.pinnedBelow, true);
@@ -99,17 +99,51 @@ describe("report: side-call routing estimate", () => {
       dec({ id: "d-new", t: 0, conv: "d", turn: "new" }),
       dec({ id: "d-s", t: 10, conv: "d", turn: "side", side: "notification", usage: [2, 50, 400_000, 500] }),
     ]);
-    const e = sideRoutingEstimate(parse(big).decisions);
+    const e = sideRoutingEstimate(parse(big).decisions, { tier: "haiku" });
     assert.equal(e.calls, 0, "nothing is routable");
     assert.equal(e.overCeiling, 1);
     assert.equal(e.usdAtRequested - e.usdAtSide, 0, "an unroutable call contributes no saving either way");
     assert.equal(e.perKind.find((k) => k.kind === "notification")?.overCeiling, 1);
   });
 
+  it("the target tier's ceiling decides what is routable: sonnet has none, haiku cannot hold a big call", () => {
+    const big = toJsonl([
+      dec({ id: "e-new", t: 0, conv: "e", turn: "new" }),
+      dec({ id: "e-s", t: 10, conv: "e", turn: "side", side: "notification", usage: [2, 50, 400_000, 500] }),
+    ]);
+    const decs = parse(big).decisions;
+    assert.equal(sideRoutingEstimate(decs, { tier: "haiku" }).calls, 0);
+    assert.equal(sideRoutingEstimate(decs, { tier: "sonnet" }).calls, 1, "sonnet has no context ceiling");
+  });
+
+  it("the carve-out drops conversations ever pinned below the requested tier", () => {
+    const decs = parse(sideCallLog()).decisions;
+    const all = sideRoutingEstimate(decs, { tier: "sonnet" });
+    const carved = sideRoutingEstimate(decs, { tier: "sonnet", excludePinnedBelow: true });
+    assert.ok(all.calls > 0);
+    assert.equal(carved.calls, all.calls, "conv-exposed-b has no side calls, so the carve-out removes none here");
+    // A side call inside the routed conversation IS removed by the carve-out.
+    const withSide = toJsonl([
+      dec({ id: "f-new", t: 0, conv: "f", turn: "new", sent: "haiku", rewritten: true, usage: [10, 200, 0, 40_000] }),
+      dec({ id: "f-s", t: 60, conv: "f", turn: "side", side: "notification", usage: [2, 50, 40_000, 400] }),
+    ]);
+    const d2 = parse(withSide).decisions;
+    assert.equal(sideRoutingEstimate(d2, { tier: "sonnet" }).calls, 1);
+    assert.equal(sideRoutingEstimate(d2, { tier: "sonnet", excludePinnedBelow: true }).calls, 0, "the routed conversation's side call is carved out");
+  });
+
+  it("forcing a TTL prices both sides at it and stops claiming it was assumed", () => {
+    const decs = parse(sideCallLog()).decisions;
+    const short = sideRoutingEstimate(decs, { tier: "sonnet", ttl: "5m" });
+    const long = sideRoutingEstimate(decs, { tier: "sonnet", ttl: "1h" });
+    assert.equal(short.ttlAssumed, false);
+    assert.ok(long.warm >= short.warm, "a longer TTL can only keep more calls warm");
+  });
+
   it("the TTL is flagged as assumed when no record logged the beta", () => {
-    assert.equal(sideRoutingEstimate(parse(sideCallLog()).decisions).ttlAssumed, true);
+    assert.equal(sideRoutingEstimate(parse(sideCallLog()).decisions, { tier: "haiku" }).ttlAssumed, true);
     const withBeta = toJsonl([{ ...dec({ id: "z", t: 0, conv: "z", turn: "side", side: "notification" }), cache_ttl_beta: true }]);
-    assert.equal(sideRoutingEstimate(parse(withBeta).decisions).ttlAssumed, false);
+    assert.equal(sideRoutingEstimate(parse(withBeta).decisions, { tier: "haiku" }).ttlAssumed, false);
   });
 });
 
