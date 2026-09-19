@@ -236,6 +236,13 @@ describe("OutcomeTracker", () => {
     assert.deepEqual(flagged.map((r) => r.record === "harness_injected" && r.decision_id), ["D-injected"]);
   });
 
+  it("no harness_injected flag in a session where no UserPromptSubmit ever arrived (hooks not delivered)", () => {
+    const { t, out, now } = tracker();
+    t.onDecision(decision({ id: "D1", at: now() }));
+    t.onDecision(decision({ id: "D2", at: now() + 60_000 }));
+    assert.equal(out.length, 0);
+  });
+
   it("replays the captured sdk-cli hook stream: subagent window, then the main turn", () => {
     const { t, out } = tracker();
     for (const e of events("sonnet-agent-run.hooks.jsonl")) t.ingest(e);

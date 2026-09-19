@@ -126,6 +126,8 @@ interface Session {
   /** Subagent decisions that arrived before their SubagentStart. */
   readonly pendingAgentDecisions: Map<string, DecisionInfo>;
   edits: EditRec[];
+  /** A UserPromptSubmit has arrived: hooks are being delivered for this session. */
+  promptsSeen: boolean;
 }
 
 const h = (s: string): string => crypto.createHash("sha256").update(s).digest("hex").slice(0, 16);
@@ -149,7 +151,7 @@ export class OutcomeTracker {
   #session(id: string): Session {
     let s = this.#sessions.get(id);
     if (!s) {
-      s = { id, seq: 0, turns: new Map(), current: null, agents: new Map(), pendingAgentDecisions: new Map(), edits: [] };
+      s = { id, seq: 0, turns: new Map(), current: null, agents: new Map(), pendingAgentDecisions: new Map(), edits: [], promptsSeen: false };
       this.#sessions.set(id, s);
     }
     return s;
@@ -189,6 +191,7 @@ export class OutcomeTracker {
     const s = this.#session(e.base.sessionId);
     switch (e.type) {
       case "UserPromptSubmit": {
+        s.promptsSeen = true;
         if (s.current && !s.current.closed) this.#close(s, s.current, "next_prompt", correctionSignal(e.prompt));
         const key = e.base.promptId ?? `anon-${s.seq + 1}`;
         const w = this.#window("main", key, ++s.seq);
@@ -360,6 +363,9 @@ export class OutcomeTracker {
         t.decision = d;
         return;
       }
+      // Without any UserPromptSubmit in this session the hooks are not arriving (e.g. blocked by managed policy),
+      // so the absence of one proves nothing: no flag.
+      if (!s.promptsSeen) return;
       this.d.emit({ v: 1, record: "harness_injected", id: this.#newId(), at: new Date(d.at).toISOString(), session: hashId(d.sessionId), decision_id: d.id, conv: d.conv, reason: "no_user_prompt_submit" });
     } catch {
       // best effort
