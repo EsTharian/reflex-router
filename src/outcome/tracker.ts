@@ -60,6 +60,13 @@ export interface OutcomeRecord {
    * conversation's own `new` decision — that decision then owns two windows, so these are counted separately in the
    * report and never inside a per-arm rate. */
   readonly attribution: "prompt_id" | "agent_id" | "interjection";
+  /**
+   * Subagent windows only: how this subagent was attached to the main turn that spawned it. `prompt_id`: its
+   * SubagentStart carried a prompt id the main chat had already opened a window for. `current_turn`: it did not, so
+   * the open main turn was used. `none`: no main turn was open, and `turn_seq` is 0. Never creates a main window -
+   * doing that produced windows no wire turn could join (see #parentTurn).
+   */
+  readonly parent_turn: "prompt_id" | "current_turn" | "none" | null;
   readonly models: { readonly requested: string | null; readonly sent: string | null } | null;
   /**
    * Why `decision_id` is null. `no_wire_turn`: the window's UserPromptSubmit had no wire `new` turn; `nearest_wire` is
@@ -138,6 +145,8 @@ interface Window {
   decision: DecisionInfo | null;
   /** Set only when the window was joined other than by its own `new` turn; widens `attribution`. */
   joinedVia?: "interjection";
+  /** Subagent windows only: how the spawning main turn was found (see #parentTurn). */
+  parentVia?: "prompt_id" | "current_turn" | "none";
   /**
    * The correction signal of the prompt that OPENED this window (the same prompt that closed the previous one). Kept
    * so that, if this window turns out to revert an earlier turn's edit, the undo-family part of that score can be
@@ -221,6 +230,22 @@ export class OutcomeTracker {
     return { scope, key, seq, openedAt: this.#now(), agentType: null, decision: null, openingCorrection: null, lastStopAt: null, edits: 0, bash: 0, bashFailures: 0, testRuns: 0, testFailures: [], injectedPrompts: 0, reverts: [], closed: false };
   }
 
+  /**
+   * The main-chat turn sequence an event belongs to, WITHOUT creating a window. `SubagentStart` carries the subagent's
+   * own prompt id, which the main chat never saw, so routing it through `#turnFor` manufactured a phantom main window
+   * that no wire turn could ever join: it sat open until session_end with zero counts and closed `no_wire_turn`
+   * (observed as 29d16aa2 seq 4, docs/observations.md, where the phantom and the subagent window share a turn_seq and
+   * an openedAt to the millisecond). A subagent belongs to the turn that spawned it or to no turn at all.
+   */
+  #parentTurn(s: Session, promptId: string | null): { seq: number; via: "prompt_id" | "current_turn" | "none" } {
+    if (promptId !== null) {
+      const t = s.turns.get(promptId);
+      if (t) return { seq: t.seq, via: "prompt_id" };
+    }
+    if (s.current && !s.current.closed) return { seq: s.current.seq, via: "current_turn" };
+    return { seq: 0, via: "none" };
+  }
+
   /** The main-chat turn an event belongs to: its prompt_id's turn, else the current one (created if none yet). */
   #turnFor(s: Session, promptId: string | null): Window {
     if (promptId !== null) {
@@ -280,7 +305,9 @@ export class OutcomeTracker {
       }
       case "SubagentStart": {
         if (e.base.agentId === null) return;
-        const w = this.#window("subagent", e.base.agentId, this.#turnFor(s, e.base.promptId).seq);
+        const parent = this.#parentTurn(s, e.base.promptId);
+        const w = this.#window("subagent", e.base.agentId, parent.seq);
+        w.parentVia = parent.via;
         w.agentType = e.agentType;
         const pending = s.pendingAgentDecisions.get(e.base.agentId);
         if (pending) {
@@ -461,6 +488,7 @@ export class OutcomeTracker {
       agent: w.scope === "subagent" ? hashId(w.key) : null,
       agent_type: w.agentType,
       attribution: w.joinedVia ?? (w.scope === "main" ? "prompt_id" : "agent_id"),
+      parent_turn: w.scope === "subagent" ? w.parentVia ?? "none" : null,
       models: w.decision ? { requested: w.decision.requestedModel, sent: w.decision.sentModel } : null,
       no_decision: w.decision ? null : { reason: "no_wire_turn", nearest_wire: w.scope === "main" ? this.#nearestWire(s, w, now) : null },
       window: { closed_by: closedBy, duration_ms: now - w.openedAt, ms_to_last_stop: w.lastStopAt !== null ? w.lastStopAt - w.openedAt : null },

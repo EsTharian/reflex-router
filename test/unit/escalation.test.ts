@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { DEFAULT_ESCALATE_THRESHOLD, DEFAULT_ESCALATE_WINDOW_TURNS, loadConfig, type Tier } from "../../src/config.js";
 import { decay, escalatedTier, raise, type EscalationEvent } from "../../src/worker/escalation.js";
-import { OutcomeTracker, type DecisionInfo, type OutcomeUpdate, type TrackerRecord } from "../../src/outcome/tracker.js";
+import { OutcomeTracker, type DecisionInfo, type OutcomeRecord, type OutcomeUpdate, type TrackerRecord } from "../../src/outcome/tracker.js";
 import type { HookEvent } from "../../src/outcome/hooks.js";
 
 const ALL = { tiers: ["haiku", "sonnet", "opus"] as readonly Tier[], allowFable: false };
@@ -94,6 +94,10 @@ const edit = (id: string, file: string, oldText: string, newText: string): HookE
   ({ type: "PostToolUse", base: base(id), tool: { name: "Edit", filePath: file, edits: [{ oldText, newText }], command: null, error: null, originalFile: null } });
 const bash = (id: string, command: string, error: string | null = null): HookEvent =>
   ({ type: error === null ? "PostToolUse" : "PostToolUseFailure", base: base(id), tool: { name: "Bash", filePath: null, edits: [], command, error, originalFile: null } });
+const outcomes = (out: readonly TrackerRecord[]): OutcomeRecord[] => out.filter((r): r is OutcomeRecord => r.record === "outcome");
+const subagentStart = (promptId: string | null, agentId: string, agentType = "general-purpose"): HookEvent =>
+  ({ type: "SubagentStart", base: { sessionId: "S", promptId, agentId }, agentType });
+const subagentStop = (agentId: string): HookEvent => ({ type: "SubagentStop", base: { sessionId: "S", promptId: null, agentId } });
 const decision = (over: Partial<DecisionInfo>): DecisionInfo =>
   ({ id: "D", at: 1_000_050, sessionId: "S", agentId: null, kind: "main", turn: "new", conv: "C", requestedModel: "claude-opus-5", sentModel: "claude-sonnet-5", ...over });
 
@@ -197,5 +201,70 @@ describe("undo re-attribution (the acceptance bug)", () => {
     t.ingest(edit("P2", "/r/p.ts", "b", "a"));
     t.flush();
     assert.equal(out.filter((r) => r.record === "outcome_update" && r.signal === "correction_reattributed").length, 0);
+  });
+});
+
+describe("29d16aa2 seq 4 replayed: SubagentStart never manufactures a main window", () => {
+  it("a SubagentStart with an unseen prompt id attaches to the open main turn, not to a new one", () => {
+    const { t, out, tick } = tracker();
+    t.ingest(prompt("P1", "use a subagent to check the report sections"));
+    t.onDecision(decision({ id: "D1" }));
+    // The Agent tool's own prompt id: the main chat never saw a UserPromptSubmit for it.
+    t.ingest(subagentStart("AGENT-PROMPT", "A1"));
+    tick(500);
+    t.ingest(subagentStop("A1"));
+    tick(500);
+    t.ingest(prompt("P2", "thanks"));
+    t.onDecision(decision({ id: "D2", at: 1_001_050 }));
+    t.flush();
+
+    const recs = outcomes(out);
+    const main = recs.filter((r) => r.scope === "main");
+    const sub = recs.filter((r) => r.scope === "subagent");
+    assert.equal(sub.length, 1);
+    assert.equal(main.length, 2, "P1 and P2 only: no phantom third window");
+    assert.equal(main.filter((r) => r.no_decision?.reason === "no_wire_turn").length, 0, "nothing closes no_wire_turn");
+    assert.equal(sub[0]!.parent_turn, "current_turn", "attached to the turn that was open");
+    assert.equal(sub[0]!.turn_seq, 1, "the spawning turn's seq");
+    assert.equal(sub[0]!.window.closed_by, "subagent_stop");
+  });
+
+  it("a SubagentStart whose prompt id the main chat DID open uses that turn", () => {
+    const { t, out, tick } = tracker();
+    t.ingest(prompt("P1", "do it"));
+    t.ingest(subagentStart("P1", "A1"));
+    tick(100);
+    t.ingest(subagentStop("A1"));
+    t.flush();
+    const sub = outcomes(out).filter((r) => r.scope === "subagent");
+    assert.equal(sub[0]!.parent_turn, "prompt_id");
+    assert.equal(sub[0]!.turn_seq, 1);
+  });
+
+  it("a SubagentStart with no main turn open at all is recorded as such, not invented", () => {
+    const { t, out, tick } = tracker();
+    t.ingest(subagentStart("AGENT-PROMPT", "A1"));
+    tick(100);
+    t.ingest(subagentStop("A1"));
+    t.flush();
+    const recs = outcomes(out);
+    assert.equal(recs.filter((r) => r.scope === "main").length, 0, "no main window is created out of nothing");
+    const sub = recs.filter((r) => r.scope === "subagent");
+    assert.equal(sub[0]!.parent_turn, "none");
+    assert.equal(sub[0]!.turn_seq, 0);
+  });
+
+  it("a closed main turn is not reused: the subagent attaches to none rather than to a finished turn", () => {
+    const { t, out, tick } = tracker();
+    t.ingest(prompt("P1", "do it"));
+    tick(100);
+    t.ingest(prompt("P2", "and this")); // closes P1; P2 is now current
+    t.ingest(subagentStart("AGENT-PROMPT", "A1"));
+    tick(100);
+    t.ingest(subagentStop("A1"));
+    t.flush();
+    const sub = outcomes(out).filter((r) => r.scope === "subagent");
+    assert.equal(sub[0]!.parent_turn, "current_turn");
+    assert.equal(sub[0]!.turn_seq, 2, "the turn that was actually open, not the one that closed");
   });
 });
