@@ -27,6 +27,10 @@ Text is truncated first, then redacted (`src/privacy/redact.ts`): TypeSafe, Anth
 
 Never stored: request or response bodies, credentials, backend error bodies.
 
+## Hook events (outcome capture)
+
+In `shadow` and `route` mode reflex registers Claude Code `http` hooks (`UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` for Edit/Write/MultiEdit/NotebookEdit/Bash only, `SubagentStart`, `SubagentStop`, `Stop`) in its per-invocation `--settings` file. They go to the loopback front door, which answers `204` at once. Their payloads contain prompts, commands, file paths and edited text; these stay in the worker's memory for a few turns (to compare the next prompt and to detect reverted edits, using hashes of the edited text) and are never written or sent anywhere. What is written to `decisions.jsonl` (`record: "outcome"`, `"outcome_update"`, `"harness_injected"`): hashed session, prompt and agent ids, hashed file paths, counts, the matched correction rule ids and their score, test-runner kinds (e.g. `npm-test`) with exit codes, and revert kinds. No prompt text, commands, paths or code.
+
 ## Sent to Anthropic
 
 The client's request with its own headers. The one header reflex changes is `accept-encoding`, narrowed to the codings it can decode (`gzip`, `br`, `deflate`). In `shadow` mode the body is sent byte for byte. In `route` mode a routed request's body is rewritten for the target model (model id, reasoning settings, `role:"system"` messages folded into user messages; `src/wire/rewrite.ts`) and the changed fields are listed in its decision record. No text is added, removed or edited; system-message text is only moved into the adjacent user message. No `REFLEX_*` or `TYPESAFE_*` value ever reaches the upstream.

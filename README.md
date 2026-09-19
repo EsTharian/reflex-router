@@ -59,6 +59,10 @@ What is sent to the decision backend and what is stored locally is listed in [`d
 - **No edits to your Claude Code settings files.** reflex passes one temporary `--settings` file (merged with yours if you pass `--settings`) and deletes it on exit.
 - **Loopback only.** The proxy binds to `127.0.0.1`.
 
+### Outcome capture (record only)
+
+In `shadow` and `route` mode reflex also registers Claude Code hooks for the session (in the same temporary `--settings` file; your settings files are not edited) and records, per decided turn, signals for later tuning: how much the next prompt reads like a correction (a score and the matched rule ids, not a verdict), a failing test run after an edit in the turn, and edits undone within three turns (inverse edit, file restored, `git checkout`/`restore`/`reset --hard`). Records go to `decisions.jsonl` next to the decision they belong to (`record: "outcome"`). Nothing is escalated or changed because of them. A turn the proxy saw without a matching `UserPromptSubmit` is recorded as `harness_injected`. What these records contain is listed in [`docs/privacy.md`](docs/privacy.md).
+
 ### Claude Code version check
 
 The wire format Claude Code speaks is not a public contract. reflex records which versions it has captured fixtures for. On start it compares your version: an exact match is silent, a different minor/patch version warns, and a different major version runs `route` as `shadow`. This is only a hint; decisions are additionally guarded by runtime shape checks.

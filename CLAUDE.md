@@ -23,6 +23,7 @@ reflex (launcher process)                        src/launcher/
   supervisor  keeps one worker alive: liveness probe, restart with backoff, crash loop => passthrough
   claude      spawned with stdio inherited; ANTHROPIC_BASE_URL -> front door; one merged --settings file
 worker (child process)                           src/worker/   all routing logic; every failure ends in "forward the original bytes"
+src/outcome/  outcome capture (record only): hook settings, hook payload parsing, heuristics, the tracker that joins hooks to decisions
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
 src/config.ts the ONLY reader of process.env for configuration
 src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, tested versions
