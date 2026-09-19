@@ -53,11 +53,11 @@ Only **positively identified** work is ever decided on. `src/wire/claude-code.ts
 
 | Turn | Rule |
 | --- | --- |
-| `new` | `user` role, content is an **array** of text blocks whose text, after dropping reminder blocks and `<local-command-…>`/`<command-…>` wrappers, is non-empty, and no side marker (below). A subagent is `new` only on its first request |
+| `new` | `user` role whose text, after dropping reminder blocks and `<local-command-…>`/`<command-…>` wrappers, is non-empty, and no side marker (below). Content may be an **array** of text blocks or, since 2.1.278, a **plain string** — a plain string is `new` only when the hook stream vouches for it (§4.3). A subagent is `new` only on its first request |
 | `continuation` | `user` role with `tool_result` blocks and nothing else except reminder blocks, **or** a message the user typed mid-loop (an *interjection*, §4.2). Failed Bash arrives as `tool_result` with **`is_error: true`, content `"Exit code 1"`** |
 | `side` | everything else, tagged with a `side_kind` |
 
-Every user-typed prompt observed (both entrypoints) and every subagent start arrived as an array of blocks; every plain-string content was a harness side call.
+In 2.1.277 every user-typed prompt observed (both entrypoints) and every subagent start arrived as an array of blocks, and every plain-string content was a harness side call. **This stopped being true in 2.1.278** — see §4.3.
 
 ### 4.1 Harness side calls (interactive)
 
@@ -91,6 +91,44 @@ They are told apart by the prompts `UserPromptSubmit` delivered for the session,
 and by the fingerprint's `typed_prompt` head omission so the two can never disagree about the same sentence. With no
 hook stream (no prompt seen yet, hooks not installed) an interjection is never claimed and the request stays
 `tool_result_text` — the fail-open direction, since neither outcome routes anything.
+
+### 4.3 Content shape stopped identifying the writer (2.1.277 -> 2.1.278)
+
+**2.1.277:** a user-typed prompt was always an array of text blocks; harness reminders rode along as further blocks in
+the same message. Only harness side calls used a plain-string content, so the classifier read a plain string as
+sufficient evidence of a side call.
+
+**2.1.278:** a user-typed prompt arrives as a **plain string** carrying only the user's own words, while the reminders
+that used to sit beside it in the same message have moved into trailing `role:"system"` messages (the
+`mid-conversation-system-2026-04-07` beta). The observed strings are short — 77 to 254 code points — against
+`system.messages` of 2 to 14 in the same request.
+
+**What it cost.** The old rule silently reclassified typed prompts as side calls. In the maintainer's 13-turn session of
+2026-09-19 the classifier found **one** `new` turn and ten `side` / `unclassified` ones; every request forwarded
+correctly, so nothing failed, but no decision was taken after the opening prompt and the pin never moved for the rest of
+the session. The prior session on 2.1.277 had 5 `new` turns and no `unclassified` side calls. Nothing in the logs said
+the classifier had gone blind; it took reading `nearest_wire` by hand a day later.
+
+**The rule now.** Content shape is not evidence of who wrote the message. A plain string is the user's turn only when
+`matchesTypedPrompt` (`src/wire/typed-prompt.ts`) matches it against a prompt `UserPromptSubmit` delivered for that
+session, held in the worker's memory only. Without a hook stream the request stays `side` / `unclassified` — the
+fail-safe direction, since an unrecognised request forwards unchanged. Side markers are still matched first, so a named
+harness side call keeps its own kind whatever shape it wears.
+
+Each `unclassified` now records **which** test produced it (`unclassified_reason`, on the decision record and in the
+fingerprint), so `plain_string_no_typed_match` — a typed prompt whose hook was missed — can be told from an unknown
+harness shape in report section 11.
+
+**Drift alarm.** `src/wire/drift.ts` cross-checks the two views: when a session has seen at least 3 typed
+`UserPromptSubmit` prompts but the classifier has found at most 1 main `new` turn, the worker logs a warning and the
+decision record carries `drift`, counted in report section 1. It changes nothing — not routing, not classification, not
+the session's degraded state — it only makes the next format change visible on day one.
+
+**Fixture.** `2.1.278/ultracode.main-new-turn-plain-string.request.json` is **derived**, not captured: the real
+`ultracode#004` request with its last user message re-encoded as a plain string. No body of a real 2.1.278 plain-string
+prompt was captured (the route-mode log stores fingerprints, not bodies, and the raw dumps hold real prompts). Its
+manifest `expect` is the no-hook classification; `test/unit/wire-plain-string.test.ts` asserts both directions and
+replays the 13-turn session.
 
 **Evidence, and its limits.** Both kinds and the interjection come from the maintainer's 2.1.278 route-mode log of
 2026-09-19, where all eight `unclassified` side calls fell into these shapes: 2 AFK recaps (plain-string content, 253

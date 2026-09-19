@@ -2,12 +2,12 @@
   A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.
   A call whose prompt exceeds the target tier's context ceiling cannot be routed there at all and is counted under "over ceiling", never in the saving.
 
-  candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction):
-    tier    ceiling  writes  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
-    haiku   150,000      5m         6             -         $0.2061    $0.1881        $0.0180      $0.0180
-    haiku   150,000      1h         6             -         $0.2173    $0.1681        $0.0492      $0.0492
-    sonnet     none      5m         6             -         $0.2061    $0.3763       $-0.1702     $-0.1702
-    sonnet     none      1h         6             -         $0.2173    $0.3362       $-0.1189     $-0.1189
+  candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction), at both cache TTLs since the log does not record one for these calls, or records both:
+    tier    ceiling  TTL  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
+    haiku   150,000   5m         6             -         $0.2061    $0.1881        $0.0180      $0.0180
+    haiku   150,000   1h         6             -         $0.2173    $0.1681        $0.0492      $0.0492
+    sonnet     none   5m         6             -         $0.2061    $0.3763       $-0.1702     $-0.1702
+    sonnet     none   1h         6             -         $0.2173    $0.3362       $-0.1189     $-0.1189
 
   haiku (ceiling 150,000; TTL per request, none recorded so 5m assumed):
     side kind     routable  warm  cold  over ceiling   tokens  cache read  gap p50  $ at requested  $ at tier   $ saved

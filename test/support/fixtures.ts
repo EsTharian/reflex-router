@@ -12,6 +12,8 @@ export interface Expect {
   readonly signal?: string;
   readonly turn?: string;
   readonly side_kind?: string;
+  /** Only on `side_kind: "unclassified"`: which shape test produced the residual. */
+  readonly unclassified_reason?: string;
   readonly passthrough?: boolean;
 }
 interface ManifestFile {

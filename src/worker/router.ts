@@ -23,6 +23,7 @@ import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claud
 import { sideFingerprint, type SideFingerprint } from "../wire/fingerprint.js";
 import { isVerifiedRetarget, retarget, retargetBetas } from "../wire/rewrite.js";
 import { ShapeTracker } from "../wire/shape.js";
+import { DRIFT_MIN_TYPED_PROMPTS, DriftTracker } from "../wire/drift.js";
 import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
 import { BackendError, type DecisionBackend } from "../backend/types.js";
 import type { Breaker } from "./breaker.js";
@@ -47,6 +48,8 @@ export interface RouterDeps {
   readonly newId?: () => string;
   /** Outcome capture: told about every classified request (raw ids stay in memory). */
   readonly onDecision?: (d: DecisionInfo) => void;
+  /** How many prompts the user typed in a session, for the wire-drift cross-check only (src/wire/drift.ts). */
+  readonly typedPromptCount?: (sessionId: string | null) => number;
   /** Prompts UserPromptSubmit delivered in a session (memory only); null when none arrived. Keeps them out of fingerprints. */
   readonly typedPrompts?: (sessionId: string | null) => readonly string[] | null;
 }
@@ -84,6 +87,8 @@ interface ConvState {
 }
 interface SessionState {
   readonly shape: ShapeTracker;
+  /** Wire-format alarm only; deliberately not consulted by `routing` (src/wire/drift.ts). */
+  readonly drift: DriftTracker;
   /** `!tier` from the latest user-typed main-chat turn; subagents capture it at their first request. */
   turnOverride: Tier | null;
   readonly disabledUntil: Map<Tier, number>;
@@ -123,7 +128,7 @@ export class Router {
     const key = v.sessionId ?? "";
     let s = this.#sessions.get(key);
     if (!s) {
-      s = { shape: new ShapeTracker(this.d.config.shapeCheckN), turnOverride: null, disabledUntil: new Map(), convs: new Map() };
+      s = { shape: new ShapeTracker(this.d.config.shapeCheckN), drift: new DriftTracker(), turnOverride: null, disabledUntil: new Map(), convs: new Map() };
       this.#sessions.set(key, s);
     }
     return s;
@@ -173,6 +178,12 @@ export class Router {
     this.#checkClientVersion(v);
     const s = this.#session(v);
     const violations = s.shape.observe(v);
+    s.drift.observe(v);
+    // Alarm only: never an input to `routing` below. See src/wire/drift.ts.
+    const drift = s.drift.check(this.d.typedPromptCount?.(v.sessionId) ?? 0);
+    if (drift !== null) {
+      this.d.logger("warn", `router: wire drift: ${drift} (typed prompts >= ${String(DRIFT_MIN_TYPED_PROMPTS)}, main new turns ${String(s.drift.newTurns)}). Classification may be stale for this Claude Code version; routing is unaffected.`);
+    }
     const routing = this.d.effectiveMode === "route" && s.shape.status !== "degraded" && this.#uaDegrade === null;
     const conv = v.convKey !== null && v.turn !== "side" ? this.#conv(s, v.convKey) : null;
     const requestedTier = tierOfModel(v.requestedModel);
@@ -298,6 +309,8 @@ export class Router {
               turn: v.turn,
               side_kind: v.sideKind,
               side_marker: v.sideMarker,
+              ...(v.unclassifiedReason !== null ? { unclassified_reason: v.unclassifiedReason } : {}),
+              ...(drift !== null ? { drift } : {}),
               ...(v.interjection ? { interjection: true as const } : {}),
               entrypoint: v.entrypoint,
               mode_requested: this.d.config.mode,
@@ -331,7 +344,7 @@ export class Router {
   /** Built after the response, off the request's path; a failure leaves the record without one. */
   #fingerprint(v: RequestView, headers: IncomingHttpHeaders, body: Buffer): SideFingerprint | null {
     try {
-      return sideFingerprint(headers, body, this.d.typedPrompts?.(v.sessionId) ?? null);
+      return sideFingerprint(headers, body, this.d.typedPrompts?.(v.sessionId) ?? null, v.unclassifiedReason);
     } catch (e) {
       this.d.logger("warn", `router: fingerprint failed: ${e instanceof Error ? e.message : String(e)}`);
       return null;

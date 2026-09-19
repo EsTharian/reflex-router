@@ -8,6 +8,7 @@
 import type { IncomingHttpHeaders } from "node:http";
 import { head } from "../privacy/budget.js";
 import { redact } from "../privacy/redact.js";
+import type { UnclassifiedReason } from "./claude-code.js";
 import { LOCAL_COMMAND_BLOCK, PASTED_CONTENT_TAG, SYSTEM_REMINDER } from "./markers.js";
 import { matchesTypedPrompt } from "./typed-prompt.js";
 
@@ -17,8 +18,10 @@ export const FINGERPRINT_HEAD_MAX = 80;
  * Bump when a field or a heuristic changes, so fingerprints from different builds are not merged by mistake.
  * 2: the `typed_prompt` test moved to the shared matcher (src/wire/typed-prompt.ts), which the classifier uses too;
  *    empty or whitespace-only text no longer counts as a typed prompt (it used to match any prompt).
+ * 3: `unclassified_reason` added, so a plain-string prompt whose hook was missed is not merged with an unknown harness
+ *    shape; the classifier stopped treating a plain-string content as a side call on shape alone (2.1.278).
  */
-export const FINGERPRINT_VERSION = 2;
+export const FINGERPRINT_VERSION = 3;
 /** A long role sequence keeps its first ROLES_HEAD and last ROLES_TAIL letters. */
 const ROLES_HEAD = 8;
 const ROLES_TAIL = 30;
@@ -41,6 +44,8 @@ export type HeadOmitted =
 
 export interface SideFingerprint {
   readonly v: typeof FINGERPRINT_VERSION;
+  /** Which shape test sent this request to the residual (src/wire/claude-code.ts `UnclassifiedReason`). */
+  readonly unclassified_reason: UnclassifiedReason | null;
   /** All messages, role:"system" ones included. */
   readonly messages: number;
   /** One letter per message in order: u(ser), a(ssistant), s(ystem), ?; long sequences are cut in the middle (`..`). */
@@ -112,7 +117,7 @@ function userTextReason(text: string, typed: readonly string[] | null): HeadOmit
  * `typedPrompts`: the prompts UserPromptSubmit delivered in this session so far (in memory only), or null when none has
  * arrived. The fingerprint never contains any of them.
  */
-export function sideFingerprint(headers: IncomingHttpHeaders, body: Buffer, typedPrompts: readonly string[] | null): SideFingerprint | null {
+export function sideFingerprint(headers: IncomingHttpHeaders, body: Buffer, typedPrompts: readonly string[] | null, unclassifiedReason: UnclassifiedReason | null = null): SideFingerprint | null {
   let b: unknown;
   try {
     b = JSON.parse(body.toString("utf8"));
@@ -151,6 +156,7 @@ export function sideFingerprint(headers: IncomingHttpHeaders, body: Buffer, type
   const betaText = Array.isArray(beta) ? beta.join(",") : typeof beta === "string" ? beta : "";
   return {
     v: FINGERPRINT_VERSION,
+    unclassified_reason: unclassifiedReason,
     messages: messages.length,
     roles,
     tools: Array.isArray(b["tools"]) ? b["tools"].length : 0,

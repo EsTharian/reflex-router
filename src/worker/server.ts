@@ -108,6 +108,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         logger: opts.log,
         ...(tracker ? { onDecision: (d: DecisionInfo) => tracker.onDecision(d) } : {}),
         typedPrompts: (sessionId) => prompts.get(sessionId),
+        typedPromptCount: (sessionId) => prompts.typedCount(sessionId),
       })
     : null;
 

@@ -52,6 +52,8 @@ export interface RequestView {
   readonly sideKind: SideKind | null;
   /** Which harness marker named this side call, when one did; null when the kind came from shape alone. */
   readonly sideMarker: string | null;
+  /** `sideKind: "unclassified"` only: which shape test produced the residual, so the bucket can be read apart. */
+  readonly unclassifiedReason: UnclassifiedReason | null;
   /** `continuation` only: the tool results arrived with a message the user typed mid-loop. */
   readonly interjection: boolean;
   readonly entrypoint: string | null;
@@ -126,17 +128,32 @@ const metadataSessionId = (body: Json): string | null => {
 
 const sha = (s: string): string => crypto.createHash("sha256").update(s).digest("hex").slice(0, 16);
 
+/**
+ * Which shape test sent a request to the `unclassified` residual. `unclassified` is not one thing: it is everything not
+ * positively identified, and section 11 has to tell an unknown harness shape from a typed prompt whose hook was missed.
+ * - not_user_message          no last non-system message, or it is not role `user`
+ * - plain_string_no_typed_match  content is a plain string and no UserPromptSubmit prompt matches it (see classifyTurn)
+ * - non_text_block            a block that is not text (image, document): not handled yet
+ * - no_own_text               nothing left after reminders and harness wrappers are stripped
+ * - subagent_mid_run          a subagent text message that is not its first request, so not a new task
+ */
+export type UnclassifiedReason =
+  | "not_user_message" | "plain_string_no_typed_match" | "non_text_block" | "no_own_text" | "subagent_mid_run";
+
 interface TurnResult {
   readonly turn: Turn;
   readonly sideKind: SideKind | null;
   /** Which SIDE_MARKERS entry matched, when one did: two features can share a side kind (src/wire/markers.ts). */
   readonly sideMarker: string | null;
+  /** Only ever set alongside `sideKind: "unclassified"`: which shape test produced the residual. */
+  readonly unclassifiedReason: UnclassifiedReason | null;
   readonly task: string | null;
   /** A continuation whose tool results arrived with a message the user typed mid-loop. Never true off a continuation. */
   readonly interjection: boolean;
 }
-const side = (k: SideKind, marker: string | null = null): TurnResult => ({ turn: "side", sideKind: k, sideMarker: marker, task: null, interjection: false });
-const continuation = (interjection: boolean): TurnResult => ({ turn: "continuation", sideKind: null, sideMarker: null, task: null, interjection });
+const side = (k: SideKind, marker: string | null = null): TurnResult => ({ turn: "side", sideKind: k, sideMarker: marker, unclassifiedReason: null, task: null, interjection: false });
+const unclassified = (reason: UnclassifiedReason): TurnResult => ({ turn: "side", sideKind: "unclassified", sideMarker: null, unclassifiedReason: reason, task: null, interjection: false });
+const continuation = (interjection: boolean): TurnResult => ({ turn: "continuation", sideKind: null, sideMarker: null, unclassifiedReason: null, task: null, interjection });
 
 /**
  * Pure. Anything not positively identified as a user turn or a tool-loop step is `side`.
@@ -145,7 +162,7 @@ const continuation = (interjection: boolean): TurnResult => ({ turn: "continuati
 function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: RequestKind, typed: readonly string[] | null): TurnResult {
   if (toolCount === 0) return side("no_tools");
   const last = nonSystem.at(-1);
-  if (!last || last["role"] !== "user") return side("unclassified");
+  if (!last || last["role"] !== "user") return unclassified("not_user_message");
   const blocks = blocksOf(last);
   const texts = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "");
   for (const m of SIDE_MARKERS) if (texts.some((t) => t.includes(m.text))) return side(m.kind, m.id);
@@ -160,15 +177,19 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
     //    instruction, main chat and subagent alike). That is a side call.
     return matchesTypedPrompt(ownText(blocks), typed) ? continuation(true) : side("tool_result_text");
   }
-  // Every observed user-typed prompt (both entrypoints) and every subagent start arrives as an array of blocks;
-  // plain-string contents were all harness side calls.
-  if (typeof last["content"] === "string") return side("unclassified");
-  if (blocks.some((b) => b.type !== "text")) return side("unclassified"); // images etc.: not handled yet
+  // Content shape is NOT evidence of who wrote the message, and the two known versions disagree (docs/wire-format.md
+  // §4.3): 2.1.277 sent every user-typed prompt as an array of blocks and only harness side calls as plain strings;
+  // 2.1.278 sends typed prompts as plain strings too. Treating a plain string as a side call cost a whole session of
+  // routing when 2.1.278 landed, so the shape alone no longer decides. The hook stream is the only positive evidence
+  // of the user's own words, and it is what rules a plain string in; without it (no hooks yet, tests, spikes) the
+  // request stays `side`, which is the fail-safe direction: a missed turn forwards unchanged.
+  if (typeof last["content"] === "string" && !matchesTypedPrompt(ownText(blocks), typed)) return unclassified("plain_string_no_typed_match");
+  if (blocks.some((b) => b.type !== "text")) return unclassified("non_text_block"); // images etc.: not handled yet
   const task = ownText(blocks);
-  if (task === "") return side("unclassified");
+  if (task === "") return unclassified("no_own_text");
   // A subagent's work starts with its first request; a later text message inside its run is not a new task.
-  if (kind === "subagent" && nonSystem.length !== 1) return side("unclassified");
-  return { turn: "new", sideKind: null, sideMarker: null, task, interjection: false };
+  if (kind === "subagent" && nonSystem.length !== 1) return unclassified("subagent_mid_run");
+  return { turn: "new", sideKind: null, sideMarker: null, unclassifiedReason: null, task, interjection: false };
 }
 
 /** The assistant text right before the last message (thinking and tool_use blocks excluded). */
@@ -271,6 +292,7 @@ export function parseRequest(
       turn: t.turn,
       sideKind: t.sideKind,
       sideMarker: t.sideMarker,
+      unclassifiedReason: t.unclassifiedReason,
       interjection: t.interjection,
       entrypoint: BILLING_ENTRYPOINT.exec(sys)?.[1] ?? null,
       clientVersion: USER_AGENT_VERSION.exec(ua)?.[1] ?? null,

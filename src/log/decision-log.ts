@@ -36,6 +36,10 @@ export interface DecisionRecord {
   /** Which harness marker named this side call (src/wire/markers.ts). Two features can share a side kind, so the
    * marker id is what tells them apart; null when the kind came from shape alone. */
   readonly side_marker: string | null;
+  /** Present only on `side_kind: "unclassified"`: which shape test produced the residual (src/wire/claude-code.ts). */
+  readonly unclassified_reason?: string;
+  /** Present only when the wire-format cross-check fired for this session (src/wire/drift.ts). An alarm; it changes nothing. */
+  readonly drift?: string;
   /** Present only when true: a `continuation` whose tool results arrived with a message the user typed mid-loop. */
   readonly interjection?: true;
   readonly entrypoint: string | null;

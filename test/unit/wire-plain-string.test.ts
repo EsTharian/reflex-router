@@ -1,0 +1,159 @@
+// The 2.1.278 regression, pinned in both directions.
+//
+// 2.1.277 sent every user-typed prompt as an array of blocks and only harness side calls as plain strings, so the
+// classifier read a plain-string content as proof of a side call. 2.1.278 sends typed prompts as plain strings too.
+// A whole 13-turn session then classified one `new` turn and ten `side` / `unclassified` ones: nothing was decided
+// after the first prompt, the pin never moved, and every request still forwarded correctly -- so nothing failed
+// loudly. These tests are the regression's shape, replayed.
+//
+// The rule now: a plain string is the user's turn only when the hook stream says those words were typed. No hooks,
+// no claim -- which is the fail-safe direction, because an unrecognised request forwards unchanged.
+import assert from "node:assert/strict";
+import type { IncomingHttpHeaders } from "node:http";
+import { describe, it } from "node:test";
+import { parseRequest, type RequestView } from "../../src/wire/claude-code.js";
+import { DRIFT_MIN_TYPED_PROMPTS, DriftTracker } from "../../src/wire/drift.js";
+import { loadFixtures } from "../support/fixtures.js";
+
+const SID = "5e551011-0000-4000-8000-0000000002ab";
+const H: IncomingHttpHeaders = { "x-claude-code-session-id": SID, "anthropic-beta": "mid-conversation-system-2026-04-07,extended-cache-ttl-2025-04-11", "user-agent": "claude-cli/2.1.278 (external, cli)" };
+const SYSTEM = [{ type: "text", text: "x-anthropic-billing-header: cc_version=2.1.278.abc; cc_entrypoint=cli;" }];
+const TOOLS = [{ name: "Bash" }, { name: "Read" }];
+const text = (t: string): unknown => ({ type: "text", text: t });
+
+const body = (messages: unknown[]): Buffer =>
+  Buffer.from(JSON.stringify({ model: "claude-sonnet-5", system: SYSTEM, tools: TOOLS, messages, metadata: { user_id: JSON.stringify({ session_id: SID }) } }));
+
+/** `typed` null: no UserPromptSubmit has been delivered for the session. */
+const view = (messages: unknown[], typed: readonly string[] | null): RequestView => {
+  const r = parseRequest(H, body(messages), () => typed);
+  assert.ok(r.ok);
+  return r.view;
+};
+
+describe("2.1.278 plain-string typed prompts", () => {
+  const PROMPT = "Read src/pricing.ts and list every exported constant with its line number.";
+  const plain = [{ role: "user", content: PROMPT }];
+
+  it("a plain string the hook stream vouches for is the user's new turn", () => {
+    const v = view(plain, [PROMPT]);
+    assert.equal(v.turn, "new");
+    assert.equal(v.sideKind, null);
+    assert.equal(v.unclassifiedReason, null);
+    assert.equal(v.task, PROMPT);
+  });
+
+  it("the same bytes with no hook stream stay side, and say which test sent them there", () => {
+    const v = view(plain, null);
+    assert.equal(v.turn, "side");
+    assert.equal(v.sideKind, "unclassified");
+    assert.equal(v.unclassifiedReason, "plain_string_no_typed_match");
+    assert.equal(v.task, null);
+  });
+
+  it("a plain string no typed prompt matches stays side: harness text is not promoted", () => {
+    const v = view([{ role: "user", content: "[Harness] Describe your most recent action in 5 words." }], [PROMPT]);
+    assert.equal(v.turn, "side");
+    // The marker table still runs first, so a *named* harness side call keeps its own kind rather than the residual.
+    assert.equal(v.sideKind, "agent_summary");
+    assert.equal(v.unclassifiedReason, null);
+  });
+
+  it("a marked plain-string side call is named by its marker, not by the hook stream", () => {
+    const v = view([{ role: "user", content: "[SUGGESTION MODE: propose three follow-ups]" }], [PROMPT]);
+    assert.deepEqual([v.turn, v.sideKind, v.sideMarker], ["side", "suggestion", "suggestion"]);
+  });
+
+  it("each residual says which shape test produced it, so section 11 can read them apart", () => {
+    assert.equal(view([{ role: "assistant", content: [text("done")] }], [PROMPT]).unclassifiedReason, "not_user_message");
+    assert.equal(view([{ role: "user", content: [{ type: "image", source: {} }] }], [PROMPT]).unclassifiedReason, "non_text_block");
+    assert.equal(view([{ role: "user", content: [text("   ")] }], [PROMPT]).unclassifiedReason, "no_own_text");
+  });
+
+  it("the derived 2.1.278 fixture classifies new once its own hook prompt is in the stream", () => {
+    const fx = loadFixtures().find((f) => f.file === "ultracode.main-new-turn-plain-string.request.json");
+    assert.ok(fx, "the plain-string fixture is loaded");
+    const without = parseRequest(fx.headers, fx.body);
+    assert.ok(without.ok);
+    assert.deepEqual([without.view.turn, without.view.unclassifiedReason], ["side", "plain_string_no_typed_match"]);
+
+    // The prompt the capture's own hooks.jsonl delivered for this request.
+    const hookPrompt = "ultracode: review src/wire/ and src/outcome/ for places where the Claude Code version is treated as more than a hint, rather than verified at runtime. Read and search only. Report concrete findings with file:line.";
+    const with_ = parseRequest(fx.headers, fx.body, () => [hookPrompt]);
+    assert.ok(with_.ok);
+    assert.equal(with_.view.turn, "new");
+    assert.equal(with_.view.unclassifiedReason, null);
+  });
+});
+
+describe("2.1.278 session replay: the 13-turn session that routed nothing", () => {
+  // The observed session: an opening prompt delivered as blocks, then typed prompts as plain strings, each followed by
+  // a tool loop. Eleven prompts in total; before the fix exactly one of them classified as `new`.
+  const PROMPTS = Array.from({ length: 11 }, (_, i) => `Turn ${String(i + 1)}: summarise what changed in src/report/ and why it matters.`);
+
+  /** The request Claude Code sends for prompt `i`: the whole history, then the new prompt as the last user message. */
+  const requestFor = (i: number): unknown[] => {
+    const history: unknown[] = [{ role: "user", content: [text(PROMPTS[0]!)] }];
+    for (let k = 1; k <= i; k++) {
+      history.push({ role: "assistant", content: [{ type: "tool_use", id: `t${String(k)}`, name: "Read", input: {} }] });
+      history.push({ role: "user", content: [{ type: "tool_result", tool_use_id: `t${String(k)}`, content: "ok" }] });
+      history.push({ role: "assistant", content: [text("Done.")] });
+      history.push({ role: "user", content: PROMPTS[k]! }); // 2.1.278: a plain string
+    }
+    return history;
+  };
+
+  it("without the hook stream the whole session collapses to one new turn (the regression)", () => {
+    const turns = PROMPTS.map((_, i) => view(requestFor(i), null).turn);
+    assert.equal(turns.filter((t) => t === "new").length, 1, "only the opening block-array prompt is recognised");
+    assert.equal(turns.filter((t) => t === "side").length, 10);
+  });
+
+  it("with the hook stream every one of the 11 typed prompts is a new turn", () => {
+    const views = PROMPTS.map((_, i) => view(requestFor(i), PROMPTS));
+    assert.equal(views.filter((v) => v.turn === "new").length, 11, views.map((v) => `${v.turn}/${v.sideKind ?? "-"}`).join(","));
+    assert.ok(views.every((v) => v.sideKind === null && v.unclassifiedReason === null));
+    assert.ok(views.every((v) => v.task !== null && v.task.startsWith("Turn ")));
+  });
+
+  it("a tool_result carrying a typed prompt is still an interjection, not a new turn", () => {
+    // The shape the original hypothesis described. It is a real shape and it must keep its own answer: the tool loop
+    // has not ended, so the turn is the user's existing one and must not be decided again.
+    const mid = [
+      { role: "user", content: [text(PROMPTS[0]!)] },
+      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Read", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }, text(PROMPTS[1]!)] },
+    ];
+    const v = view(mid, PROMPTS);
+    assert.equal(v.turn, "continuation");
+    assert.equal(v.interjection, true);
+  });
+});
+
+describe("wire drift cross-check", () => {
+  const mainNew = { kind: "main", turn: "new" } as unknown as RequestView;
+  const mainSide = { kind: "main", turn: "side" } as unknown as RequestView;
+
+  it("fires once when typed prompts pile up behind a session that found no new turns", () => {
+    const d = new DriftTracker();
+    d.observe(mainNew); // the opening turn, the only one recognised
+    for (let i = 0; i < 9; i++) d.observe(mainSide);
+    assert.equal(d.check(DRIFT_MIN_TYPED_PROMPTS - 1), null, "below the threshold a quiet session is not drift");
+    assert.equal(d.check(10), "typed_prompts_without_new_turns");
+    assert.equal(d.check(10), null, "reported once per session");
+  });
+
+  it("stays silent on a healthy session, however many prompts it has", () => {
+    const d = new DriftTracker();
+    for (let i = 0; i < 12; i++) d.observe(mainNew);
+    assert.equal(d.check(12), null);
+  });
+
+  it("a subagent's first request is not the user typing", () => {
+    const d = new DriftTracker();
+    d.observe(mainNew);
+    for (let i = 0; i < 5; i++) d.observe({ kind: "subagent", turn: "new" } as unknown as RequestView);
+    assert.equal(d.newTurns, 1);
+    assert.equal(d.check(5), "typed_prompts_without_new_turns");
+  });
+});

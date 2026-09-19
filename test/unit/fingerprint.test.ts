@@ -178,17 +178,22 @@ describe("fingerprint: router and report", () => {
       p.obs.headers(200, { "content-type": "application/json" });
       p.obs.finish(true);
     };
-    await send([{ role: "user", content: "Refactor the billing module to stream its output" }]); // plain string: unclassified
+    // Claude Code 2.1.278 sends a typed prompt as a plain string. The hook stream is what tells it from a harness side
+    // call wearing the same shape, so the first of these is the user's turn and the second is not.
+    await send([{ role: "user", content: "Refactor the billing module to stream its output" }]);
     await send([{ role: "user", content: "[Harness] Summarise the last action" }]);
     await send([{ role: "user", content: [text("Refactor the billing module")] }]); // a new turn: no fingerprint
     const recs = await waitFor(() => {
       const lines = fs.existsSync(log.file) ? fs.readFileSync(log.file, "utf8").trim().split("\n").filter(Boolean) : [];
       return lines.length === 3 ? lines.map((l) => JSON.parse(l) as DecisionRecord) : null;
     });
+    assert.deepEqual(recs.map((r) => r.turn), ["new", "side", "new"]);
     const un = recs.filter((r) => r.side_kind === "unclassified");
-    assert.equal(un.length, 2);
-    const byHead = un.map((r) => [r.side_fingerprint?.head ?? null, r.side_fingerprint?.head_omitted ?? null]);
-    assert.deepEqual(byHead.sort(), [["[Harness] Summarise the last action", null], [null, "typed_prompt"]].sort());
+    assert.equal(un.length, 1);
+    assert.equal(un[0]!.side_fingerprint?.head, "[Harness] Summarise the last action");
+    assert.equal(un[0]!.side_fingerprint?.head_omitted, null);
+    assert.equal(un[0]!.unclassified_reason, "plain_string_no_typed_match");
+    assert.equal(un[0]!.side_fingerprint?.unclassified_reason, "plain_string_no_typed_match");
     assert.ok(recs.filter((r) => r.side_kind !== "unclassified").every((r) => !("side_fingerprint" in r)));
     assert.doesNotMatch(fs.readFileSync(log.file, "utf8"), /billing module to stream/);
   });

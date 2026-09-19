@@ -31,6 +31,10 @@ export interface Dec {
   readonly sideKind: string | null;
   /** Marker id that named this side call; null on older records and on kinds recognised by shape. */
   readonly sideMarker: string | null;
+  /** Which shape test produced an `unclassified` residual; null on records written before the field existed. */
+  readonly unclassifiedReason: string | null;
+  /** The wire-format cross-check fired on this request (src/wire/drift.ts); null otherwise. */
+  readonly drift: string | null;
   readonly modeRequested: string | null;
   readonly modeEffective: string | null;
   readonly degradedReason: string | null;
@@ -135,6 +139,8 @@ function toDec(o: J): Dec | null {
     turn: str(o["turn"]) ?? "unknown",
     sideKind: str(o["side_kind"]),
     sideMarker: str(o["side_marker"]),
+    unclassifiedReason: str(o["unclassified_reason"]),
+    drift: str(o["drift"]),
     modeRequested: str(o["mode_requested"]),
     modeEffective: str(o["mode_effective"]),
     degradedReason: str(o["degraded_reason"]),

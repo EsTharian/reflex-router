@@ -193,6 +193,9 @@ export function s1Decisions({ rec }: Ctx): string[] {
   out.push("", `  mode requested -> effective: ${countBy(d, (x) => `${x.modeRequested ?? "?"} -> ${x.modeEffective ?? "?"}`).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   const deg = countBy(d.filter((x) => x.degradedReason !== null), (x) => x.degradedReason!);
   out.push(`  degraded: ${deg.length === 0 ? "none" : deg.map(([k, n]) => `${k} ${n}`).join(", ")}`);
+  // Drift is an alarm about the classifier, not a routing state: it never degrades a session (src/wire/drift.ts).
+  const drift = countBy(d.filter((x) => x.drift !== null), (x) => x.drift!);
+  out.push(`  drift: ${drift.length === 0 ? "none" : `${drift.map(([k, n]) => `${k} ${n}`).join(", ")} - the classifier found far fewer new turns than the user typed prompts; routing was not changed, but this build may not recognise this Claude Code version`}`);
   return out;
 }
 
@@ -489,16 +492,16 @@ export function harnessFeatureCost(decisions: readonly Dec[], showUsd: boolean):
   // Records written before `side_marker` existed cannot be attributed to a feature; say how many rather than guess.
   const unmarked = decisions.filter((x) => x.turn === "side" && x.sideMarker === null && (x.sideKind === "notification" || x.sideKind === "suggestion")).length;
 
+  // Every feature gets a row, including a zero one. A feature that cost nothing in range and a feature this build
+  // failed to attribute look identical if the row is dropped, and the missing block reads as "nothing to see" -- which
+  // is exactly how a marker regression hid itself. Zero is a measurement; absence is not.
   for (const f of HARNESS_FEATURES) {
     const calls = decisions.filter((x) => x.turn === "side" && x.sideMarker === f.marker);
-    if (calls.length === 0) continue;
     const withUsage = calls.filter((x) => x.usage !== null);
     rows.push([f.feature, int(calls.length), int(sum(withUsage.map(tokens))), ...(showUsd ? [usd(costOf(withUsage).atRequestedUsd)] : [])]);
     notes.push(`    ${f.feature}: ${f.switch}`);
   }
-  const unmarkedNote = unmarked > 0 ? [`    ${int(unmarked)} side call(s) of these kinds carry no marker id (recorded before it was logged), so no feature above counts them.`] : [];
-  // Still say something when nothing could be attributed: silence would read as "these features cost nothing".
-  if (rows.length === 0) return unmarked === 0 ? [] : ["", "  optional Claude Code features: none attributable in range.", ...unmarkedNote];
+  const unmarkedNote = unmarked > 0 ? [`    ${int(unmarked)} side call(s) of these kinds carry no marker id (recorded before it was logged, or named by shape alone), so no feature above counts them.`] : [];
   return [
     "",
     "  optional Claude Code features, and what they cost here (each makes its own model call, billed to the requested model):",
@@ -624,6 +627,9 @@ export function s11Fingerprints({ rec }: Ctx): string[] {
     `  ${un.length} unclassified side call${un.length === 1 ? "" : "s"}, ${int(sum(un.map(tokens)))} tokens; ${groups.length} distinct fingerprint${groups.length === 1 ? "" : "s"}${without > 0 ? `; ${without} without one (recorded before fingerprints existed, or not buildable)` : ""}`,
     "  Structure only (docs/privacy.md). `reflex report --fingerprints` prints them as JSON lines to send back.",
   ];
+  // Not one bucket: a plain string whose prompt hook was missed is the user's own turn, not an unknown harness shape.
+  const byReason = countBy(un, (x) => x.unclassifiedReason ?? "unrecorded");
+  if (byReason.length > 0) out.push(`  by reason: ${byReason.map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const g of groups) out.push(`    n=${g.n}, ${int(g.tokens)} tokens, kind ${g.kinds.join("/")}, claude ${g.claude_versions.join("/")}, messages ${g.message_count.min === g.message_count.max ? g.message_count.min : `${g.message_count.min}-${g.message_count.max}`}: ${JSON.stringify(g.fingerprint)}`);
   return out;
 }
@@ -667,6 +673,21 @@ const TTL_SECONDS = { "5m": 300, "1h": 3600 } as const;
 const ASSUMED_TTL: CacheTtl = "5m";
 
 const ttlOf = (d: Dec): CacheTtl => (d.cacheTtlBeta === true ? "1h" : ASSUMED_TTL);
+/**
+ * The TTL the priced traffic actually ran at, or null when the log cannot say.
+ *
+ * Scoped to the side calls section 12 prices, not to every record: a continuation's TTL says nothing about what
+ * routing these calls would cost. Known only when every one of those that carries `cache_ttl_beta` agrees. Both other
+ * cases stay null and keep both candidate rows: records written before the field existed carry nothing, and a mix is
+ * real rather than an artefact -- some side calls legitimately drop the beta (compaction is the documented one), so a
+ * log can genuinely contain both windows and neither row would be the measured one.
+ */
+function measuredTtl(decisions: readonly Dec[]): CacheTtl | null {
+  const priced = decisions.filter((d) => d.turn === "side" && d.sideKind !== null && SIDE_ROUTABLE_KINDS.includes(d.sideKind) && d.usage !== null && d.cacheTtlBeta !== null);
+  if (priced.length === 0) return null;
+  const on = priced.filter((x) => x.cacheTtlBeta === true).length;
+  return on === priced.length ? "1h" : on === 0 ? "5m" : null;
+}
 /**
  * A side call can only be routed to a tier that can hold it. The recorded token count is used directly here, where the
  * router estimates from request bytes (src/tiers.ts) -- close enough to size the opportunity, not to decide a request.
@@ -874,10 +895,14 @@ export function s12SideRouting({ rec, usd: showUsd }: Ctx): string[] {
 
   // Both candidate tiers, both TTLs, gross and net of the carve-out: the cheaper tier cannot hold the biggest calls,
   // so the comparison is not a simple price ordering and has to be shown rather than argued.
-  out.push("", "  candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction):");
-  const rows: string[][] = [["tier", "ceiling", "writes", "routable", "over ceiling", "$ at requested", "$ at tier", "$ saved gross", "$ saved net"]];
+  // Price the TTL the log actually recorded when it says so; both only while it is still a question. A row for a TTL
+  // the traffic never used is a what-if presented as a candidate, and reads as a choice that is not on the table.
+  const measured = measuredTtl(d);
+  const ttls = measured === null ? (["5m", "1h"] as const) : ([measured] as const);
+  out.push("", `  candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction)${measured === null ? ", at both cache TTLs since the log does not record one for these calls, or records both" : `, at the ${measured} cache TTL every priced side call in range reports`}:`);
+  const rows: string[][] = [["tier", "ceiling", "TTL", "routable", "over ceiling", "$ at requested", "$ at tier", "$ saved gross", "$ saved net"]];
   for (const tier of SIDE_TIER_CANDIDATES) {
-    for (const ttl of ["5m", "1h"] as const) {
+    for (const ttl of ttls) {
       const g = sideRoutingEstimate(d, { tier, ttl });
       const n = sideRoutingEstimate(d, { tier, ttl, excludePinnedBelow: true });
       rows.push([

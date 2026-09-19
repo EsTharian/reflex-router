@@ -41,6 +41,7 @@ reflex report
 
   mode requested -> effective: route -> route 6000
   degraded: none
+  drift: none
 
 2. mass vs argmax
   956 new turns reached the backend; 956 log both readings (older records log only the applied pick)
@@ -129,12 +130,14 @@ reflex report
 
   optional Claude Code features, and what they cost here (each makes its own model call, billed to the requested model):
     feature             calls      tokens  $ at requested model
+    Session recap           0           0               $0.0000
     Prompt suggestions    790  32,484,998                $23.61
 
     switches:
+    Session recap: /config -> Session recap (settings: awaySummaryEnabled)
     Prompt suggestions: /config -> Prompt suggestions (settings: promptSuggestionEnabled, env CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)
 
-    808 side call(s) of these kinds carry no marker id (recorded before it was logged), so no feature above counts them.
+    808 side call(s) of these kinds carry no marker id (recorded before it was logged, or named by shape alone), so no feature above counts them.
 
 10. Cache writes by move type
   first request after a tier change in a conversation (observations.md: moving up one tier can write more than returning to the requested model)
@@ -152,12 +155,12 @@ reflex report
   A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.
   A call whose prompt exceeds the target tier's context ceiling cannot be routed there at all and is counted under "over ceiling", never in the saving.
 
-  candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction):
-    tier    ceiling  writes  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
-    haiku   150,000      5m     2,373             -          $70.71     $69.13          $1.58        $1.03
-    haiku   150,000      1h     2,373             -          $84.07    $107.67      $-23.6000     $-2.1050
-    sonnet     none      5m     2,373             -          $70.71    $138.26      $-67.5504     $-8.2538
-    sonnet     none      1h     2,373             -          $84.07    $215.33     $-131.2667    $-16.4922
+  candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction), at both cache TTLs since the log does not record one for these calls, or records both:
+    tier    ceiling  TTL  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
+    haiku   150,000   5m     2,373             -          $70.71     $69.13          $1.58        $1.03
+    haiku   150,000   1h     2,373             -          $84.07    $107.67      $-23.6000     $-2.1050
+    sonnet     none   5m     2,373             -          $70.71    $138.26      $-67.5504     $-8.2538
+    sonnet     none   1h     2,373             -          $84.07    $215.33     $-131.2667    $-16.4922
 
   haiku (ceiling 150,000; TTL per request, none recorded so 5m assumed):
     side kind     routable  warm  cold  over ceiling      tokens  cache read  gap p50  $ at requested  $ at tier  $ saved

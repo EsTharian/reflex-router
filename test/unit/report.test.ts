@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, buildReportJson, reportCommand, type ReportJson } from "../../src/report/index.js";
 import { parseDuration, parseRecords, sinceView } from "../../src/report/records.js";
-import { classifyMoves, costOf, hintArms, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, s12SideRouting, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { classifyMoves, costOf, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, s12SideRouting, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
@@ -66,6 +66,16 @@ describe("report: optional harness features", () => {
     const without = harnessFeatureCost(parse(sideCallLog()).decisions, false).join("\n");
     assert.doesNotMatch(without, /\$ at requested model/);
     assert.match(without, /rerun with --usd/, "the block promises a cost, so it must say how to see it");
+  });
+
+  it("always prints the block, with a zero row per feature, even when nothing is attributable", () => {
+    // A missing block reads as "these features cost nothing"; a zero row says it was measured. The block vanished in
+    // 0.2.3 on a log whose side calls carried no feature marker, which is exactly when it is most worth seeing.
+    const none = toJsonl([dec({ id: "n1", t: 0, conv: "n", turn: "new" }), dec({ id: "n2", t: 10, conv: "n", turn: "side", side: "no_tools" })]);
+    const lines = harnessFeatureCost(parse(none).decisions, true).join("\n");
+    assert.match(lines, /optional Claude Code features/, lines);
+    for (const f of HARNESS_FEATURES) assert.match(lines, new RegExp(`${f.feature}\\s+0\\s`), `${f.feature} has a zero row`);
+    assert.match(lines, /awaySummaryEnabled/, "the switches are still named");
   });
 
   it("counts side calls that predate the marker separately instead of attributing them", () => {
@@ -166,6 +176,22 @@ describe("report: side-call routing estimate", () => {
     const long = sideRoutingEstimate(decs, { tier: "sonnet", ttl: "1h" });
     assert.equal(short.ttlAssumed, false);
     assert.ok(long.warm >= short.warm, "a longer TTL can only keep more calls warm");
+  });
+
+  it("the candidates table prices only the measured TTL when every record agrees, both while it is unknown", () => {
+    const decs = (ttl: boolean | null): string => toJsonl(sideCallLog().trim().split("\n").map((l) => {
+      const o = JSON.parse(l) as Record<string, unknown>;
+      return ttl === null ? o : { ...o, cache_ttl_beta: ttl };
+    }));
+    const rows = (log: string): string[] => s12SideRouting({ rec: parse(log), byId: new Map(), usd: true }).filter((l) => /^\s+(haiku|sonnet)\s+(150,000|none)\s+(5m|1h)\s/.test(l));
+    const unknown = rows(decs(null));
+    assert.equal(unknown.filter((r) => / 5m /.test(r)).length, 2, unknown.join("\n"));
+    assert.equal(unknown.filter((r) => / 1h /.test(r)).length, 2, "both TTLs are candidates while the log cannot say");
+
+    const measured = rows(decs(true));
+    assert.equal(measured.filter((r) => / 1h /.test(r)).length, 2, measured.join("\n"));
+    assert.equal(measured.filter((r) => / 5m /.test(r)).length, 0, "a TTL the traffic never used is not a candidate");
+    assert.match(s12SideRouting({ rec: parse(decs(true)), byId: new Map(), usd: true }).join("\n"), /at the 1h cache TTL every priced side call in range reports/);
   });
 
   it("the TTL is flagged as assumed when no record logged the beta", () => {

@@ -62,6 +62,30 @@
    }
   },
   {
+   "file": "ultracode.main-new-turn-plain-string.request.json",
+   "description": "main chat, a user-typed prompt delivered as a PLAIN STRING content instead of an array of blocks. 2.1.277 sent every typed prompt as blocks and only harness side calls as plain strings; 2.1.278 sends typed prompts this way too, so content shape no longer identifies the writer. `expect` is the classification WITHOUT a hook stream, which is what test/support/fixtures.ts loads: with no UserPromptSubmit to match, the request stays side/unclassified and says why. Replayed together with ultracode.hooks.jsonl (whose UserPromptSubmit prompt is exactly this text) the same bytes classify as turn=new; test/unit/wire-plain-string.test.ts asserts both directions.",
+   "derived_from": "ultracode.main-new-turn-ultracode.request.json",
+   "derived_change": "the last user message's content array was replaced by its own (non-reminder, non-skill-wrapper) text as a plain string; headers, betas, tools, system blocks and the trailing role:system message are the capture's own bytes",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.278.cf8",
+    "entrypoint": "cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "derived from ultracode#004; shape confirmed against the maintainer's 2.1.278 route-mode log of 2026-09-19 (10 side_fingerprints with last.content \"string\", last.blocks [], text_chars 77-254)",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "side",
+    "side_kind": "unclassified",
+    "unclassified_reason": "plain_string_no_typed_match"
+   }
+  },
+  {
    "file": "ultracode.workflow-subagent-new-turn.request.json",
    "description": "Dynamic Workflow worker, first request: x-claude-code-agent-id present AND cc_is_subagent=true; hook agent_type is workflow-subagent; requests the session's own model",
    "facts": {
@@ -211,6 +235,7 @@
   "see docs/wire-format.md",
   "UNCAPTURED side_kind notification (AFK session recap): observed only as a side_fingerprint head in the maintainer's 2.1.278 route-mode log of 2026-09-19 (2 calls; last content a 253-character plain string; messages 78 and 242). The marker in src/wire/markers.ts is that redacted 80-code-point head; no body was captured, so no fixture asserts it. Synthetic cases in test/unit/wire.test.ts.",
   "UNCAPTURED side_kind tool_result_text (tool results plus harness text in the last user message): same log, 2 calls, one main chat and one subagent, both with 9,417 characters of text beside the results. Recognised by shape, not by a marker, so no text was needed to implement it; no body was captured, so no fixture asserts it. Synthetic cases in test/unit/wire.test.ts.",
-  "UNCAPTURED interjection (a message typed mid-tool-loop, classified as a continuation): same log, 2 calls whose fingerprint head was dropped as typed_prompt. Recognising one needs the session's UserPromptSubmit prompts, so a request fixture alone cannot carry the case; a future capture must pair the request with its hooks.jsonl."
+  "UNCAPTURED interjection (a message typed mid-tool-loop, classified as a continuation): same log, 2 calls whose fingerprint head was dropped as typed_prompt. Recognising one needs the session's UserPromptSubmit prompts, so a request fixture alone cannot carry the case; a future capture must pair the request with its hooks.jsonl.",
+  "DERIVED, not captured: ultracode.main-new-turn-plain-string.request.json. The plain-string typed prompt of 2.1.278 was observed only as side_fingerprint structure in the maintainer's route-mode log of 2026-09-19 (no body was captured, and the raw dumps hold real prompts). The fixture is the real ultracode#004 request with its last user message re-encoded as a plain string; a future capture should replace it with the real bytes."
  ]
 }

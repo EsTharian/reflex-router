@@ -38,6 +38,7 @@ reflex report
 
   mode requested -> effective: route -> route 1
   degraded: none
+  drift: none
 
 2. mass vs argmax
   1 new turns reached the backend; 1 log both readings (older records log only the applied pick)
