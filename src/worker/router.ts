@@ -298,7 +298,7 @@ export class Router {
               usage: u.usage ? { input: u.usage.input, output: u.usage.output, cache_read: u.usage.cacheRead, cache_create: u.usage.cacheCreate } : null,
               usage_unknown_reason: u.unknownReason,
             };
-            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
+            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
             return this.d.log.append(record, v.turn === "new" ? v.task : null);
           })
           .catch((e: unknown) => this.d.logger("error", `router: record failed: ${e instanceof Error ? e.message : String(e)}`));

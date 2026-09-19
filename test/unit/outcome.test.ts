@@ -243,6 +243,54 @@ describe("OutcomeTracker", () => {
     assert.equal(out.length, 0);
   });
 
+  it("a window without a wire new turn says why: no_wire_turn and the nearest main-chat wire classification (session 2, seq 5/6)", () => {
+    const { t, out, tick, now } = tracker();
+    t.ingest(prompt("P4", "real prompt"));
+    t.onDecision(decision({ id: "D4", at: now() }));
+    tick(10_000);
+    // UserPromptSubmit fires for a message from another session; the wire saw it as side/cross_session.
+    t.ingest(prompt("P5", "Another Claude session sent a message: ..."));
+    t.onDecision(decision({ id: "W1", at: now() + 100, turn: "side", sideKind: "cross_session" }));
+    t.onDecision(decision({ id: "W2", at: now() + 4000, turn: "continuation" }));
+    tick(12_000);
+    t.ingest(prompt("P6", "<task-notification>..."));
+    t.onDecision(decision({ id: "W3", at: now() - 300, turn: "side", sideKind: "notification" }));
+    tick(3_000);
+    t.ingest(prompt("P7", "next real prompt"));
+    const os = outcomes(out);
+    assert.equal(os[0]?.decision_id, "D4");
+    assert.equal(os[0]?.no_decision, null, "a decided window needs no reason");
+    assert.deepEqual(os[1]?.no_decision, { reason: "no_wire_turn", nearest_wire: "side:cross_session" });
+    assert.deepEqual(os[2]?.no_decision, { reason: "no_wire_turn", nearest_wire: "side:notification" }, "a request just before the hook still counts");
+    assert.equal(out.filter((r) => r.record === "harness_injected").length, 0);
+  });
+
+  it("no wire request at all in the window: nearest_wire is null", () => {
+    const { t, out, tick } = tracker();
+    t.ingest(prompt("P1", "a"));
+    tick(1000);
+    t.ingest(prompt("P2", "b"));
+    assert.deepEqual(outcomes(out)[0]?.no_decision, { reason: "no_wire_turn", nearest_wire: null });
+  });
+
+  it("a slash-command prompt opens no window and leaves the current turn open; its expansion is not flagged injected", () => {
+    const { t, out, tick, now } = tracker();
+    t.ingest(prompt("P1", "fix the bug"));
+    t.onDecision(decision({ id: "D1", at: now() }));
+    tick(5000);
+    t.ingest(prompt("P2", "/model sonnet"));
+    t.ingest(prompt("P3", "  /review-pr 12"));
+    t.onDecision(decision({ id: "D-slash", at: now() + 500 })); // a custom command that expands into a model turn
+    assert.equal(outcomes(out).length, 0, "P1 is still open: the slash commands closed nothing");
+    assert.equal(out.filter((r) => r.record === "harness_injected").length, 0);
+    tick(5000);
+    t.ingest(prompt("P4", "no, that's wrong"));
+    const [o] = outcomes(out);
+    assert.equal(o?.decision_id, "D1");
+    assert.ok((o?.signals.correction?.score ?? 0) >= 1, "the correction comes from the next real prompt, not the slash command");
+    assert.equal(outcomes(out).length, 1, "no windows for the slash commands");
+  });
+
   it("replays the captured sdk-cli hook stream: subagent window, then the main turn", () => {
     const { t, out } = tracker();
     for (const e of events("sonnet-agent-run.hooks.jsonl")) t.ingest(e);

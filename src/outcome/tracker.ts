@@ -17,6 +17,10 @@ export const HEURISTICS_VERSION = 1;
 /** A wire `new` main turn binds to a UserPromptSubmit opened within this window before (or just after) it. */
 export const PROMPT_MATCH_BEFORE_MS = 120_000;
 export const PROMPT_MATCH_AFTER_MS = 2_000;
+/** How many recent main-chat wire classifications a session keeps, to explain windows without a decision. */
+const RECENT_WIRE_MAX = 64;
+/** A wire request counts as "in" a window from shortly before it opened (the hook and the request race) to its close. */
+const WIRE_LEAD_MS = 2_000;
 
 /** What the router reports for each classified request (raw ids stay in memory; records carry hashes). */
 export interface DecisionInfo {
@@ -26,6 +30,7 @@ export interface DecisionInfo {
   readonly agentId: string | null;
   readonly kind: "main" | "subagent" | "unknown";
   readonly turn: "new" | "continuation" | "side";
+  readonly sideKind?: string | null;
   readonly conv: string | null;
   readonly requestedModel: string | null;
   readonly sentModel: string | null;
@@ -49,6 +54,13 @@ export interface OutcomeRecord {
   readonly agent_type: string | null;
   readonly attribution: "prompt_id" | "agent_id";
   readonly models: { readonly requested: string | null; readonly sent: string | null } | null;
+  /**
+   * Why `decision_id` is null. `no_wire_turn`: the window's UserPromptSubmit had no wire `new` turn; `nearest_wire` is
+   * the main-chat wire classification closest to the window's start (e.g. `side:cross_session`, `continuation`), or
+   * null when none was seen. (`UserPromptSubmit` also fires for harness-injected messages: other-session messages,
+   * task notifications.) `slash_command` is reserved: prompts starting with "/" open no window.
+   */
+  readonly no_decision: { readonly reason: "no_wire_turn" | "slash_command"; readonly nearest_wire: string | null } | null;
   readonly window: { readonly closed_by: "next_prompt" | "subagent_stop" | "session_end"; readonly duration_ms: number; readonly ms_to_last_stop: number | null };
   readonly counts: { readonly edits: number; readonly bash: number; readonly bash_failures: number; readonly test_runs: number; readonly test_failures: number };
   readonly signals: {
@@ -128,6 +140,10 @@ interface Session {
   edits: EditRec[];
   /** A UserPromptSubmit has arrived: hooks are being delivered for this session. */
   promptsSeen: boolean;
+  /** Time of the last slash-command prompt (it opens no window; a wire turn it expands into is not "injected"). */
+  lastSlashAt: number | null;
+  /** Recent main-chat wire classifications (`new`, `continuation`, `side:<kind>`), newest last. */
+  recentWire: { readonly at: number; readonly label: string }[];
 }
 
 const h = (s: string): string => crypto.createHash("sha256").update(s).digest("hex").slice(0, 16);
@@ -151,7 +167,7 @@ export class OutcomeTracker {
   #session(id: string): Session {
     let s = this.#sessions.get(id);
     if (!s) {
-      s = { id, seq: 0, turns: new Map(), current: null, agents: new Map(), pendingAgentDecisions: new Map(), edits: [], promptsSeen: false };
+      s = { id, seq: 0, turns: new Map(), current: null, agents: new Map(), pendingAgentDecisions: new Map(), edits: [], promptsSeen: false, lastSlashAt: null, recentWire: [] };
       this.#sessions.set(id, s);
     }
     return s;
@@ -192,6 +208,11 @@ export class OutcomeTracker {
     switch (e.type) {
       case "UserPromptSubmit": {
         s.promptsSeen = true;
+        if (e.prompt.trimStart().startsWith("/")) {
+          // A slash command is not a turn of its own: no window, and the current turn stays open for the next real prompt.
+          s.lastSlashAt = this.#now();
+          return;
+        }
         if (s.current && !s.current.closed) this.#close(s, s.current, "next_prompt", correctionSignal(e.prompt));
         const key = e.base.promptId ?? `anon-${s.seq + 1}`;
         const w = this.#window("main", key, ++s.seq);
@@ -334,6 +355,7 @@ export class OutcomeTracker {
       agent_type: w.agentType,
       attribution: w.scope === "main" ? "prompt_id" : "agent_id",
       models: w.decision ? { requested: w.decision.requestedModel, sent: w.decision.sentModel } : null,
+      no_decision: w.decision ? null : { reason: "no_wire_turn", nearest_wire: w.scope === "main" ? this.#nearestWire(s, w, now) : null },
       window: { closed_by: closedBy, duration_ms: now - w.openedAt, ms_to_last_stop: w.lastStopAt !== null ? w.lastStopAt - w.openedAt : null },
       counts: { edits: w.edits, bash: w.bash, bash_failures: w.bashFailures, test_runs: w.testRuns, test_failures: w.testFailures.length },
       signals: {
@@ -345,11 +367,23 @@ export class OutcomeTracker {
     });
   }
 
-  /** Called by the router for every classified request; only `new` turns are joined. Never throws. */
+  /** The main-chat wire classification closest to the start of `w`, among those inside the window. */
+  #nearestWire(s: Session, w: Window, closedAt: number): string | null {
+    const inside = s.recentWire.filter((x) => x.at >= w.openedAt - WIRE_LEAD_MS && x.at <= closedAt);
+    inside.sort((a, b) => Math.abs(a.at - w.openedAt) - Math.abs(b.at - w.openedAt));
+    return inside[0]?.label ?? null;
+  }
+
+  /** Called by the router for every classified request; `new` turns are joined, main-chat ones remembered. Never throws. */
   onDecision(d: DecisionInfo): void {
     try {
-      if (d.turn !== "new" || d.sessionId === null || d.kind === "unknown") return;
+      if (d.sessionId === null || d.kind === "unknown") return;
       const s = this.#session(d.sessionId);
+      if (d.kind === "main") {
+        s.recentWire.push({ at: d.at, label: d.turn === "side" ? `side:${d.sideKind ?? "unclassified"}` : d.turn });
+        if (s.recentWire.length > RECENT_WIRE_MAX) s.recentWire.shift();
+      }
+      if (d.turn !== "new") return;
       if (d.kind === "subagent") {
         if (d.agentId === null) return;
         const w = s.agents.get(d.agentId);
@@ -364,8 +398,9 @@ export class OutcomeTracker {
         return;
       }
       // Without any UserPromptSubmit in this session the hooks are not arriving (e.g. blocked by managed policy),
-      // so the absence of one proves nothing: no flag.
+      // so the absence of one proves nothing: no flag. A slash command that expands into a model turn is not injected.
       if (!s.promptsSeen) return;
+      if (s.lastSlashAt !== null && s.lastSlashAt <= d.at + PROMPT_MATCH_AFTER_MS && s.lastSlashAt >= d.at - PROMPT_MATCH_BEFORE_MS) return;
       this.d.emit({ v: 1, record: "harness_injected", id: this.#newId(), at: new Date(d.at).toISOString(), session: hashId(d.sessionId), decision_id: d.id, conv: d.conv, reason: "no_user_prompt_submit" });
     } catch {
       // best effort
