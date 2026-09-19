@@ -89,5 +89,20 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
   out(`version check:   ${verdict.level} (${verdict.reason})${describeVerdict(verdict) ? ` - ${describeVerdict(verdict)}` : ""}`);
   const eff = resolveEffectiveMode(c, verdict);
   out(`mode effective:  ${eff.mode}${eff.degradedReason ? ` (${eff.degradedReason})` : ""}`);
-  return envProblem ? 1 : 0;
+
+  // REFLEX_DELEGATE=1 is silent when it cannot work: the hint travels through reflex's own UserPromptSubmit hook, and
+  // both paths below run `claude` with no settings file at all, so no hook is ever installed and nothing reports it.
+  // Say so loudly and fail, rather than let a session run believing the hint is on.
+  let hintBroken = false;
+  if (c.delegate) {
+    const why =
+      c.mode === "off" ? "REFLEX_MODE=off runs claude directly: no settings file, no hooks"
+      // The remaining effective modes are shadow and route, and the worker answers hooks in both (Router.active).
+      : eff.mode === "passthrough" ? `mode effective is passthrough (${eff.degradedReason ?? "unknown"}): claude runs directly, no hooks are injected`
+      : null;
+    hintBroken = why !== null;
+    out(`hint injection:  ${why === null ? `ok (${HINT_VERSION} via reflex's UserPromptSubmit hook)` : `CANNOT INJECT - ${why}`}`);
+    if (hintBroken) out("                 the hint will NOT reach Claude Code; unset REFLEX_DELEGATE or fix the above");
+  }
+  return envProblem || hintBroken ? 1 : 0;
 }

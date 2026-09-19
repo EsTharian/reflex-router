@@ -152,6 +152,29 @@ describe("reflex doctor: env file and setting sources", () => {
     assert.ok(!/config error/.test(text), text);
     assert.ok(!/ANTHROPIC_BASE_URL/.test(text), text);
   });
+  it("REFLEX_DELEGATE=1 with no backend key: the hint cannot inject, said loudly, exit 1", async () => {
+    // passthrough runs claude directly, so reflex's UserPromptSubmit hook is never installed and the hint is silently lost.
+    const { code, text } = await run({ REFLEX_DELEGATE: "1", REFLEX_MODE: "route" }, {});
+    assert.equal(code, 1);
+    assert.match(text, /hint injection:\s+CANNOT INJECT - mode effective is passthrough \(no_backend_key\)/);
+    assert.match(text, /the hint will NOT reach Claude Code/);
+  });
+  it("REFLEX_DELEGATE=1 with REFLEX_MODE=off: the hint cannot inject, exit 1", async () => {
+    const { code, text } = await run({ REFLEX_DELEGATE: "1", REFLEX_MODE: "off", TYPESAFE_API_KEY: KEY }, {});
+    assert.equal(code, 1);
+    assert.match(text, /hint injection:\s+CANNOT INJECT - REFLEX_MODE=off runs claude directly/);
+  });
+  it("REFLEX_DELEGATE=1 with a usable backend: hint injection is ok, exit 0", async () => {
+    const { code, text } = await run({ REFLEX_DELEGATE: "1", REFLEX_MODE: "shadow", TYPESAFE_API_KEY: KEY }, {});
+    assert.equal(code, 0);
+    assert.match(text, /hint injection:\s+ok \(delegate-1 via reflex's UserPromptSubmit hook\)/);
+    assert.ok(!text.includes(KEY));
+  });
+  it("without REFLEX_DELEGATE there is no hint-injection line at all", async () => {
+    const { text } = await run({ REFLEX_MODE: "route" }, {});
+    assert.ok(!/hint injection/.test(text), text);
+  });
+
   it("shows URL settings without credentials or query", async () => {
     const { text } = await run({ REFLEX_UPSTREAM_URL: "https://user:pw@gw.example.com/anthropic?token=abc" }, {});
     assert.match(text, /REFLEX_UPSTREAM_URL\s+https:\/\/gw\.example\.com\/anthropic/);
