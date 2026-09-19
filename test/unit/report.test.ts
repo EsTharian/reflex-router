@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, reportCommand } from "../../src/report/index.js";
 import { parseDuration, parseRecords } from "../../src/report/records.js";
-import { classifyMoves, costOf, MIN_OUTCOME_N, outcomeGroups, s0Workflow, SECTIONS, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { classifyMoves, costOf, hintArms, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, SECTIONS, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
@@ -92,6 +92,48 @@ describe("report: workflow profile", () => {
     assert.equal(p.orphanContinuations, 1);
     assert.equal(p.undecidedNew, 1);
     assert.match(s0Workflow(ctxOf(text)).join("\n"), /routing can touch at most 50\.0% of your tokens; 80\.0% of that is in subagents/);
+  });
+});
+
+describe("report: delegation hint split", () => {
+  // Session H (hint on): two user turns, a subagent carries most tokens. Session N (off): one turn, a long loop.
+  const text = (): string => {
+    const H = "hhhhhhhhhhhhhhhh";
+    const N = "nnnnnnnnnnnnnnnn";
+    const hinted = (r: Rec): Rec => ({ ...r, delegate_hint: "delegate-1" });
+    return toJsonl([
+      hinted(dec({ id: "h1", t: 0, session: H, conv: `${H}:m:1`, probs: [0, 0, 1], pickMass: "opus", planTier: null, usage: [0, 0, 0, 1000] })),
+      hinted(dec({ id: "h2", t: 1, session: H, conv: `${H}:a:2`, kind: "subagent", probs: [0, 1, 0], pickMass: "sonnet", planTier: "sonnet", usage: [0, 0, 0, 3000] })),
+      hinted(dec({ id: "h3", t: 2, session: H, conv: `${H}:a:2`, kind: "subagent", turn: "continuation", usage: [0, 0, 0, 3000] })),
+      hinted(dec({ id: "h4", t: 3, session: H, conv: `${H}:m:1`, probs: [0, 0, 1], pickMass: "opus", planTier: null, usage: [0, 0, 0, 1000] })),
+      hinted(dec({ id: "h5", t: 4, session: H, conv: `${H}:m:1`, turn: "side", side: "suggestion", usage: [0, 0, 0, 2000] })),
+      { v: 1, record: "delegate_hint", id: "dh1", at: at(0), session: H, version: "delegate-1" },
+      { v: 1, record: "delegate_hint", id: "dh2", at: at(3), session: H, version: "delegate-1" },
+      dec({ id: "n1", t: 10, session: N, conv: `${N}:m:1`, probs: [0, 0, 1], pickMass: "opus", planTier: null, usage: [0, 0, 0, 1000] }),
+      dec({ id: "n2", t: 11, session: N, conv: `${N}:m:1`, turn: "continuation", usage: [0, 0, 0, 4000] }),
+    ]);
+  };
+  it("arms by hint version: sessions, delivered hints, user turns, tokens, subagent and side shares", () => {
+    const arms = hintArms(parse(text()));
+    assert.deepEqual(arms.map((a) => [a.hint, a.sessions, a.delivered, a.userTurns, a.tokens, a.subagentTokens, a.sideTokens]), [
+      ["off", 1, 0, 1, 5000, 0, 0],
+      ["delegate-1", 1, 2, 2, 10000, 6000, 2000],
+    ]);
+    assert.ok(arms.every((a) => a.usdAtSent > 0));
+  });
+  it("the profile shows tokens and $ per user turn by hint; section 8 compares with and without, marking n", () => {
+    const profile = s0Workflow(ctxOf(text())).join("\n");
+    assert.match(profile, /delegate-1\s+1\s+2\s+2\s+10,000\s+5,000\s+\$\S+\s+\$\S+\s+60\.0%\s+20\.0%/);
+    assert.match(profile, /off\s+1\s+-\s+1\s+5,000\s+5,000/);
+    const s8 = s8Cost(ctxOf(text())).join("\n");
+    assert.match(s8, /delegation \(all requests incl\. side calls.*too few to compare\): with delegate-1 \(n=1 session, 2 user turns\): subagent share 60\.0%, 5,000 tokens per user turn; without \(n=1 session, 1 user turn\): subagent share 0\.0%, 5,000 tokens per user turn/);
+    assert.match(s8Cost(ctxOf(text(), true)).join("\n"), /5,000 tokens and \$\S+ per user turn/);
+    assert.match(s8Cost(ctxOf(singleTurnLongLoop())).join("\n"), /delegation: no session ran with the hint/);
+  });
+  it("delegate_hint records are counted in the header, not as unknown records", () => {
+    const out = buildReport(parse(text()), { usd: false });
+    assert.match(out, /2 delegate_hint/);
+    assert.doesNotMatch(out, /of an unknown type/);
   });
 });
 

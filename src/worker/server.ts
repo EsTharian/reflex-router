@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Config } from "../config.js";
@@ -10,11 +11,13 @@ import { errorSummary } from "../wire/anthropic.js";
 import { JevBackend } from "../backend/jev.js";
 import { LocalBackend } from "../backend/local.js";
 import type { DecisionBackend } from "../backend/types.js";
-import { DecisionLog } from "../log/decision-log.js";
+import { DecisionLog, hashId, type DelegateHintRecord } from "../log/decision-log.js";
+import { HINT_VERSION } from "../delegate/hint.js";
+import { hintReply } from "../delegate/reply.js";
 import { Breaker } from "./breaker.js";
 import { Router, type Observation } from "./router.js";
 import { HOOK_PATH } from "../outcome/hooks-config.js";
-import { parseHookEvent } from "../outcome/hooks.js";
+import { parseHookEvent, type HookEvent } from "../outcome/hooks.js";
 import { OutcomeTracker, type DecisionInfo } from "../outcome/tracker.js";
 import { RecentPrompts } from "./recent-prompts.js";
 
@@ -119,8 +122,22 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     }
 
     if (url === HOOK_PATH) {
-      res.writeHead(204).end(); // answer first: a hook must never wait on outcome capture
-      const event = tracker ? parseHookEvent(body) : null;
+      // Answer first: a hook must never wait on outcome capture. The only body ever sent is the delegation hint
+      // (REFLEX_DELEGATE=1, user-typed prompts); anything else, or any failure, is a 204 ("no hook output").
+      let event: HookEvent | null = null;
+      let reply: Buffer | null = null;
+      try {
+        event = tracker ? parseHookEvent(body) : null;
+        reply = opts.config.delegate ? hintReply(event) : null;
+      } catch {
+        reply = null;
+      }
+      if (reply) res.writeHead(200, { "content-type": "application/json", "content-length": reply.length }).end(reply);
+      else res.writeHead(204).end();
+      if (reply && event) {
+        const rec: DelegateHintRecord = { v: 1, record: "delegate_hint", id: crypto.randomUUID(), at: new Date().toISOString(), session: hashId(event.base.sessionId), version: HINT_VERSION };
+        void decisionLog.appendRecord(rec);
+      }
       if (event?.type === "UserPromptSubmit") prompts.add(event.base.sessionId, event.prompt);
       if (event) tracker?.ingest(event);
       return;

@@ -20,4 +20,8 @@
     (d) side calls                               111   5,951,661     32.6%
     total                                        290  18,274,664    100.0%
   work units (a new turn and its continuations): 53; 25 with a plan below the requested tier (ignoring the cost guard); 22 new turn(s) without a decision count as not touchable
+
+  by delegation hint (REFLEX_DELEGATE; "off" = not set or recorded before it existed); $ = the tokens at the sent model's list price, an estimate (section 8):
+    hint  sessions  hints delivered  user turns      tokens  tokens per user turn  $ at sent  $ per user turn  subagent share  side-call share
+    off         10                -          47  18,274,664               388,823     $13.13          $0.2794            6.6%            32.6%
   routing can touch at most 28.1% of your tokens; 16.3% of that is in subagents

@@ -28,6 +28,7 @@ import { BackendError, type DecisionBackend } from "../backend/types.js";
 import type { Breaker } from "./breaker.js";
 import { UsageTee } from "./usage-tee.js";
 import type { DecisionInfo } from "../outcome/tracker.js";
+import { HINT_VERSION } from "../delegate/hint.js";
 
 /** A tier whose rewritten request was rejected stays off for the session this long. */
 export const TIER_DISABLE_MS = 30 * 60 * 1000;
@@ -312,6 +313,7 @@ export class Router {
               usage: u.usage ? { input: u.usage.input, output: u.usage.output, cache_read: u.usage.cacheRead, cache_create: u.usage.cacheCreate } : null,
               usage_unknown_reason: u.unknownReason,
               ...(fingerprint !== undefined ? { side_fingerprint: fingerprint } : {}),
+              delegate_hint: this.d.config.delegate ? HINT_VERSION : null,
             };
             this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
             return this.d.log.append(record, v.turn === "new" ? v.task : null);

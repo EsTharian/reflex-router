@@ -4,7 +4,7 @@
 import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import {
-  BETA_EXTENDED_CACHE_TTL, BETA_MID_CONVERSATION_SYSTEM, BILLING_ENTRYPOINT, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
+  BETA_EXTENDED_CACHE_TTL, BETA_MID_CONVERSATION_SYSTEM, BILLING_ENTRYPOINT, HANDBACK_PROMPT_PREFIX, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
   INJECTED_PROMPT_MARKERS, MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
 } from "./markers.js";
 
@@ -172,6 +172,16 @@ function previousAssistant(nonSystem: readonly Json[]): string | null {
 export function injectedPromptKind(prompt: string): SideKind | null {
   const head = prompt.trimStart().replace(/^<system-reminder>\s*/, "");
   return INJECTED_PROMPT_MARKERS.find((m) => head.startsWith(m.text))?.kind ?? null;
+}
+
+/**
+ * For a hook `UserPromptSubmit.prompt`: true only for a prompt the user typed as a turn of its own. False for messages
+ * Claude Code injected (injectedPromptKind), a subagent's hand-back, slash commands (`/compact`, `/model`, skills: not
+ * a turn of their own) and blank prompts.
+ */
+export function isTypedPrompt(prompt: string): boolean {
+  const head = prompt.trimStart().replace(/^<system-reminder>\s*/, "");
+  return head.trim() !== "" && !head.startsWith("/") && !head.startsWith(HANDBACK_PROMPT_PREFIX.text) && injectedPromptKind(prompt) === null;
 }
 
 export function parseRequest(headers: IncomingHttpHeaders, body: Buffer): ParseResult {

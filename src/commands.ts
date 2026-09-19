@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { loadConfig, SETTING_NAMES } from "./config.js";
 import { resolveEffectiveMode } from "./effective-mode.js";
+import { HINT_VERSION } from "./delegate/hint.js";
 import { mergeEnvFile, type MergedEnv } from "./env-file.js";
 import { resolveClaude, realResolveIO } from "./launcher/claude-bin.js";
 import { assessVersion, describeVerdict, probeClaudeVersion } from "./launcher/version.js";
@@ -74,6 +75,7 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
   out(`backend:         ${c.backend} (key ${c.typesafeApiKey ? "present" : merged.state === "refused" ? "missing: the env file was refused (see above)" : "missing"})`);
   out(`upstream:        ${new URL(c.upstreamUrl).origin}${new URL(c.upstreamUrl).pathname === "/" ? "" : new URL(c.upstreamUrl).pathname}`);
   out(`state directory: ${c.home}`);
+  out(`delegation hint: ${c.delegate ? `on (${HINT_VERSION}; REFLEX_DELEGATE)` : "off"}`);
 
   const bin = resolveClaude(c.claudeBin, realResolveIO(io.env));
   if (!bin) {

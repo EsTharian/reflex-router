@@ -23,7 +23,7 @@ export function buildReport(all: Records, opts: ReportOptions): string {
   const lines = [
     "reflex report",
     `  files: ${all.sources.length === 0 ? "(none)" : all.sources.join(", ")}`,
-    `  records in range: ${rec.decisions.length} decisions, ${rec.outcomes.length} outcomes, ${rec.updates.length} outcome updates, ${rec.harnessInjected.length} harness_injected${rec.decisions.length > 0 ? `, ${sessions} session${sessions === 1 ? "" : "s"}` : ""}`,
+    `  records in range: ${rec.decisions.length} decisions, ${rec.outcomes.length} outcomes, ${rec.updates.length} outcome updates, ${rec.harnessInjected.length} harness_injected${rec.hints.length > 0 ? `, ${rec.hints.length} delegate_hint` : ""}${rec.decisions.length > 0 ? `, ${sessions} session${sessions === 1 ? "" : "s"}` : ""}`,
     `  span: ${span}${opts.sinceText ? ` (--since ${opts.sinceText})` : ""}`,
     ...(all.unterminatedLines === 0
       ? all.skippedLines > 0 ? [`  skipped ${all.skippedLines} line(s) that are not valid records`] : []

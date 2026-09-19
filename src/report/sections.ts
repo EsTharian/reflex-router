@@ -91,6 +91,52 @@ export function workProfile(d: readonly Dec[]): WorkProfile {
 
 /** Shown per session before the list is cut. */
 const MAX_SESSION_ROWS = 20;
+/** Below this many sessions on either side the delegation comparison says so. */
+export const MIN_DELEGATION_SESSIONS = 5;
+const HINT_OFF = "off";
+
+export interface HintArm {
+  /** Hint version, or "off" (REFLEX_DELEGATE off, or records from before it existed). */
+  readonly hint: string;
+  readonly sessions: number;
+  /** `delegate_hint` records: hints actually returned to Claude Code in these sessions. */
+  readonly delivered: number;
+  readonly userTurns: number;
+  readonly tokens: number;
+  readonly usdAtSent: number;
+  readonly subagentTokens: number;
+  readonly sideTokens: number;
+}
+
+/** Sessions grouped by the delegation hint their decision records carry; all their requests, side calls included. */
+export function hintArms(rec: Records): HintArm[] {
+  const bySession = new Map<string, Dec[]>();
+  for (const x of rec.decisions) bySession.set(x.session ?? "?", [...(bySession.get(x.session ?? "?") ?? []), x]);
+  const arms = new Map<string, { sessions: Set<string>; d: Dec[] }>();
+  for (const [s, v] of bySession) {
+    const hint = v.find((x) => x.hint !== null)?.hint ?? HINT_OFF;
+    const a = arms.get(hint) ?? { sessions: new Set<string>(), d: [] };
+    a.sessions.add(s);
+    a.d.push(...v);
+    arms.set(hint, a);
+  }
+  return [...arms.entries()]
+    .map(([hint, a]) => {
+      const p = workProfile(a.d);
+      return {
+        hint,
+        sessions: a.sessions.size,
+        delivered: rec.hints.filter((h) => a.sessions.has(h.session ?? "?")).length,
+        userTurns: p.requests.new,
+        tokens: p.total,
+        usdAtSent: costOf(a.d).atSentUsd,
+        subagentTokens: p.tokens.subagent,
+        sideTokens: p.tokens.side,
+      };
+    })
+    .sort((a, b) => (a.hint === HINT_OFF ? -1 : b.hint === HINT_OFF ? 1 : a.hint.localeCompare(b.hint)));
+}
+const perTurn = (v: number, turns: number): number | null => (turns === 0 ? null : v / turns);
 
 /** 0. Workflow profile: where the tokens go, and how much of them per-turn routing could reach at all. */
 export function s0Workflow({ rec }: Ctx): string[] {
@@ -122,6 +168,11 @@ export function s0Workflow({ rec }: Ctx): string[] {
     ["total", String(d.length), int(p.total), pct(p.total, p.total)],
   ], "    "));
   out.push(`  work units (a new turn and its continuations): ${p.units}; ${p.touchableUnits} with a plan below the requested tier (ignoring the cost guard)${p.undecidedNew > 0 ? `; ${p.undecidedNew} new turn(s) without a decision count as not touchable` : ""}${p.orphanContinuations > 0 ? `; ${p.orphanContinuations} continuation(s) before any new turn count as not touchable` : ""}`);
+  const arms = hintArms(rec);
+  out.push("", `  by delegation hint (REFLEX_DELEGATE; "${HINT_OFF}" = not set or recorded before it existed); $ = the tokens at the sent model's list price, an estimate (section 8):`, ...table([
+    ["hint", "sessions", "hints delivered", "user turns", "tokens", "tokens per user turn", "$ at sent", "$ per user turn", "subagent share", "side-call share"],
+    ...arms.map((a) => [a.hint, String(a.sessions), a.hint === HINT_OFF ? "-" : String(a.delivered), String(a.userTurns), int(a.tokens), int(perTurn(a.tokens, a.userTurns)), usd(a.usdAtSent), a.userTurns === 0 ? "-" : usd(a.usdAtSent / a.userTurns), pct(a.subagentTokens, a.tokens), pct(a.sideTokens, a.tokens)]),
+  ], "    "));
   out.push(`  routing can touch at most ${pct(p.touchable, p.total)} of your tokens; ${pct(p.touchableSubagent, p.touchable)} of that is in subagents`);
   return out;
 }
@@ -391,7 +442,20 @@ export function s8Cost({ rec, usd: showUsd }: Ctx): string[] {
   ], "    "));
   if (!showUsd) out.push("  Dollar amounts: rerun with --usd. Without it only relative usage is shown.");
   out.push("  Side calls are excluded here and shown in section 9.");
+  out.push(...delegationLine(hintArms(rec), showUsd));
   return out;
+}
+
+/** The delegation comparison for section 8: sessions with each hint version vs without, all requests (side calls included). */
+function delegationLine(arms: readonly HintArm[], showUsd: boolean): string[] {
+  const off = arms.find((a) => a.hint === HINT_OFF);
+  const on = arms.filter((a) => a.hint !== HINT_OFF);
+  if (on.length === 0) return ["  delegation: no session ran with the hint (REFLEX_DELEGATE=1); nothing to compare"];
+  const arm = (name: string, a: HintArm | undefined): string =>
+    a === undefined ? `${name} (n=0 sessions)`
+    : `${name} (n=${a.sessions} session${a.sessions === 1 ? "" : "s"}, ${a.userTurns} user turn${a.userTurns === 1 ? "" : "s"}): subagent share ${pct(a.subagentTokens, a.tokens)}, ${int(perTurn(a.tokens, a.userTurns))} tokens${showUsd ? ` and ${a.userTurns === 0 ? "-" : usd(a.usdAtSent / a.userTurns)}` : ""} per user turn`;
+  const few = [off, ...on].some((a) => (a?.sessions ?? 0) < MIN_DELEGATION_SESSIONS);
+  return [`  delegation (all requests incl. side calls, per user turn; different sessions and tasks, not a controlled comparison${few ? `; fewer than ${MIN_DELEGATION_SESSIONS} sessions on a side: too few to compare` : ""}): ${[...on.map((a) => arm(`with ${a.hint}`, a)), arm("without", off)].join("; ")}`];
 }
 
 /** 9. Side-call usage on its own line. */

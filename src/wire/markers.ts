@@ -39,6 +39,12 @@ export const SIDE_MARKERS: readonly { readonly kind: Exclude<SideKind, "no_tools
 ];
 
 /**
+ * A subagent's report handed back into the main chat arrives as a UserPromptSubmit prompt too. Used only to keep the
+ * delegation hint off it (isTypedPrompt); outcome capture does not use it yet.
+ */
+export const HANDBACK_PROMPT_PREFIX = { text: "<agent-message ", evidence: "interactive.hooks.jsonl: UserPromptSubmit prompt `<agent-message from=\"AGENT-1\">` [Subagent hand-back]" } as const;
+
+/**
  * Texts that start a `UserPromptSubmit.prompt` Claude Code injected itself (hooks fire for these too): the wire's side
  * markers, plus the hook-side form of a background task notification.
  */

@@ -62,6 +62,8 @@ export interface Dec {
   readonly claudeVersion: string | null;
   /** `side_fingerprint` of an unclassified side call, as logged (src/wire/fingerprint.ts); null when absent. */
   readonly fingerprint: J | null;
+  /** Delegation hint version the session ran with (`delegate_hint`); null: off, or recorded before it existed. */
+  readonly hint: string | null;
 }
 
 export interface OutcomeRec {
@@ -90,6 +92,8 @@ export interface Records {
   readonly updates: readonly OutcomeUpdate[];
   /** Timestamps of `harness_injected` records. */
   readonly harnessInjected: readonly number[];
+  /** `delegate_hint` records: a hint actually returned to Claude Code. */
+  readonly hints: readonly { readonly atMs: number; readonly session: string | null; readonly version: string }[];
   readonly other: number;
   /** Lines not turned into a record: not valid JSON objects, plus every unterminated final line (below). */
   readonly skippedLines: number;
@@ -151,6 +155,7 @@ function toDec(o: J): Dec | null {
     upstreamFirstByteMs: num(at(o, "timing", "upstream_first_byte_ms")),
     claudeVersion: str(o["claude_version"]),
     fingerprint: isObj(o["side_fingerprint"]) ? o["side_fingerprint"] : null,
+    hint: str(o["delegate_hint"]),
   };
 }
 
@@ -184,6 +189,7 @@ export function parseRecords(texts: readonly { readonly source: string; readonly
   const updates: OutcomeUpdate[] = [];
   const seen = new Set<string>();
   const harnessInjected: number[] = [];
+  const hints: { atMs: number; session: string | null; version: string }[] = [];
   let other = 0;
   let skippedLines = 0;
   let unterminatedLines = 0;
@@ -228,10 +234,11 @@ export function parseRecords(texts: readonly { readonly source: string; readonly
         const signal = str(o["signal"]);
         if (decisionId !== null && signal !== null) updates.push({ atMs, decisionId, signal });
       } else if (kind === "harness_injected") harnessInjected.push(atMs);
+      else if (kind === "delegate_hint") hints.push({ atMs, session: str(o["session"]), version: str(o["version"]) ?? "?" });
       else other++;
     }
   }
-  return { decisions, outcomes, updates, harnessInjected, other, skippedLines, unterminatedLines, sources: texts.map((t) => t.source) };
+  return { decisions, outcomes, updates, harnessInjected, hints, other, skippedLines, unterminatedLines, sources: texts.map((t) => t.source) };
 }
 
 /** Keeps what happened at or after `fromMs`. Outcome joins still look decisions up in the unfiltered set (see `allDecisions`). */
@@ -242,6 +249,7 @@ export function sinceView(r: Records, fromMs: number): Records {
     outcomes: r.outcomes.filter((o) => o.atMs >= fromMs),
     updates: r.updates.filter((u) => u.atMs >= fromMs),
     harnessInjected: r.harnessInjected.filter((t) => t >= fromMs),
+    hints: r.hints.filter((h) => h.atMs >= fromMs),
   };
 }
 

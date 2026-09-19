@@ -18,6 +18,10 @@ reflex report
     (d) side calls                                 0       0      0.0%
     total                                          1  40,705    100.0%
   work units (a new turn and its continuations): 1; 1 with a plan below the requested tier (ignoring the cost guard)
+
+  by delegation hint (REFLEX_DELEGATE; "off" = not set or recorded before it existed); $ = the tokens at the sent model's list price, an estimate (section 8):
+    hint  sessions  hints delivered  user turns  tokens  tokens per user turn  $ at sent  $ per user turn  subagent share  side-call share
+    off          1                -           1  40,705                40,705    $0.0056          $0.0056            0.0%             0.0%
   routing can touch at most 100.0% of your tokens; 0.0% of that is in subagents
 
 1. Decisions by kind, turn and tier
@@ -90,6 +94,7 @@ reflex report
     all (unrouted count as equal)  1  40,705                               20.0%
   Dollar amounts: rerun with --usd. Without it only relative usage is shown.
   Side calls are excluded here and shown in section 9.
+  delegation: no session ran with the hint (REFLEX_DELEGATE=1); nothing to compare
 
 9. Side-call usage
   (no records)

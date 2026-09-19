@@ -102,7 +102,19 @@ export interface DecisionRecord {
   readonly sent: { readonly keys: readonly string[]; readonly chars: number } | null;
   /** `side` / `unclassified` only: the request's structure, so the call can be given a side_kind (src/wire/fingerprint.ts). null: could not be built. */
   readonly side_fingerprint?: SideFingerprint | null;
+  /** Version of the delegation hint this session runs with (REFLEX_DELEGATE=1, src/delegate/hint.ts); null when off. */
+  readonly delegate_hint: string | null;
   readonly prompt_preview?: string;
+}
+
+/** One per delegation hint actually returned to Claude Code (a UserPromptSubmit answered with the hint). */
+export interface DelegateHintRecord {
+  readonly v: 1;
+  readonly record: "delegate_hint";
+  readonly id: string;
+  readonly at: string;
+  readonly session: string | null;
+  readonly version: string;
 }
 
 export const hashId = (id: string | null): string | null => (id === null ? null : crypto.createHash("sha256").update(id).digest("hex").slice(0, 16));
