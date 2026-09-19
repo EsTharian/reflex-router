@@ -57,6 +57,7 @@ Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacte
 - **An outcome signal may raise a tier and may do nothing else.** This replaces the earlier "nothing changes because of an outcome signal", which conflated a privacy guarantee (above, unchanged) with a staging decision that Phase 2b ends. A signal may raise the tier a later request in the same conversation is routed to; it may never lower a tier, never go above the tier the client asked for, never change prompt text, never change a hook answer, never reach the backend, and never leave the machine. It is off unless `REFLEX_ESCALATE=1`, it lives in `src/worker/escalation.ts`, its state is in memory only, and the worst case it can produce is a session running on the model the client asked for — which is every other fail-open path's worst case too. The delegation hint remains a fixed text chosen by `REFLEX_DELEGATE`, never by an outcome.
 - **Real-API experiments** run with the user's actual Claude Code settings: no `--model` (or other settings) override in the `claude` invocation, and the experiment's results file records the settings it ran under (model setting, entrypoint, betas seen). State the cost cap before running.
 - Small, well-described commits; run `npm test` first. Phase/plan documents are local working files (`docs/plan-*.md`, gitignored) and are never committed or referenced from tracked files.
+- Never run `git stash pop` on a stash you did not create in this session.
 
 ## Fixtures and re-capturing
 
