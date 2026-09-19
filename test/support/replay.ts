@@ -35,11 +35,17 @@ export type Rec = Record<string, unknown> & {
   guard: { allowed: boolean; reason: string; ctx: number | null; penalty_usd: number | null } | null;
   forwarded: { requested_model: string | null; model: string | null; rewritten: boolean; fields: string[]; fallback: boolean; fallback_status: number | null; fallback_error: string | null };
 };
-/** Every line of decisions.jsonl (decisions and the outcome records keyed to them). */
+/**
+ * Every complete line of decisions.jsonl (decisions and the outcome records keyed to them). The worker appends
+ * `JSON + "\n"` while tests read, so whatever follows the last newline may be a line still being written: it is
+ * skipped now and seen on a later poll.
+ */
 export const allRecords = (stack: Stack): Record<string, unknown>[] => {
   const f = path.join(stack.config.home, "decisions.jsonl");
   if (!fs.existsSync(f)) return [];
-  return fs.readFileSync(f, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
+  const lines = fs.readFileSync(f, "utf8").split("\n");
+  lines.pop();
+  return lines.filter((l) => l.trim() !== "").map((l) => JSON.parse(l) as Record<string, unknown>);
 };
 /** Decision records only. */
 export const records = (stack: Stack): Rec[] => allRecords(stack).filter((r) => r["record"] === "decision") as Rec[];
