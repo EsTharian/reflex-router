@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import fs from "node:fs";
-import { DEFAULT_UPSTREAM, defaultHome, isReflexEnvName, loadConfig, SETTING_NAMES, type Config } from "../../src/config.js";
+import { DEFAULT_UPSTREAM, defaultHome, isReflexEnvName, loadConfig, SETTING_NAMES, unknownReflexEnvNames, type Config } from "../../src/config.js";
 
 const load = (env: NodeJS.ProcessEnv): { config: Config; warnings: readonly string[] } => {
   const r = loadConfig(env, "/home/u");
@@ -117,6 +117,17 @@ describe("SETTING_NAMES", () => {
     }
     assert.deepEqual([...SETTING_NAMES].sort(), [...read].sort());
   });
+  it("unknownReflexEnvNames names what nothing reads, and stays quiet about what is read", () => {
+    // A REFLEX_* name nothing reads is ignored by loadConfig and then stripped from the child's environment, so it
+    // vanishes without a word: REFLEX_DUMP=1 ran for a whole session before anyone noticed. doctor now names it.
+    assert.deepEqual(unknownReflexEnvNames({ REFLEX_DUMP: "1", REFLEX_MODE: "shadow", PATH: "/bin" }), ["REFLEX_DUMP"]);
+    assert.deepEqual(unknownReflexEnvNames({ TYPESAFE_DEBUG: "1", TYPESAFE_API_KEY: "k" }), ["TYPESAFE_DEBUG"]);
+    assert.deepEqual(unknownReflexEnvNames(Object.fromEntries(SETTING_NAMES.map((n) => [n, "x"]))), [], "no known setting is ever reported");
+    assert.deepEqual(unknownReflexEnvNames({ REFLEX_DUMP: "  " }), [], "an empty value is not a setting anyone meant");
+    assert.deepEqual(unknownReflexEnvNames({ ANTHROPIC_WHATEVER: "1", reflex_dump: "1" }), [], "only our own prefixes, case-sensitively");
+    assert.deepEqual(unknownReflexEnvNames({ REFLEX_Z: "1", REFLEX_A: "1" }), ["REFLEX_A", "REFLEX_Z"], "sorted");
+  });
+
   it("defaultHome is REFLEX_HOME, else ~/.reflex", () => {
     assert.equal(defaultHome({}, "/h"), "/h/.reflex");
     assert.equal(defaultHome({ REFLEX_HOME: " /x " }, "/h"), "/x");

@@ -113,6 +113,18 @@ export const SETTING_NAMES: readonly string[] = [
 /** Names the claude child must never inherit: our own settings and the decision-backend credentials. */
 export const isReflexEnvName = (name: string): boolean => name.startsWith("REFLEX_") || name.startsWith("TYPESAFE_");
 
+/**
+ * Names that look like ours but that nothing reads: a typo, or a variable from a plan that was never built.
+ * Neither loadConfig nor anything else looks at them, and the launcher strips them from the
+ * environment it gives `claude` (every REFLEX_ and TYPESAFE_ name, via isReflexEnvName), so such a variable is
+ * silently dropped twice over. `REFLEX_DUMP=1`
+ * was set for a whole session on the strength of a note in docs/prior-art.md before anyone noticed nothing read it.
+ */
+export function unknownReflexEnvNames(env: NodeJS.ProcessEnv): string[] {
+  const known = new Set(SETTING_NAMES);
+  return Object.keys(env).filter((n) => isReflexEnvName(n) && !known.has(n) && (env[n] ?? "").trim() !== "").sort();
+}
+
 const truthy = (v: string | undefined): boolean => v !== undefined && ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
 
 function parseEnum<T extends string>(raw: string | undefined, allowed: readonly T[], fallback: T, name: string, errors: string[]): T {

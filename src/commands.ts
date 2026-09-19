@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { loadConfig, SETTING_NAMES } from "./config.js";
+import { loadConfig, SETTING_NAMES, unknownReflexEnvNames } from "./config.js";
 import { resolveEffectiveMode } from "./effective-mode.js";
 import { HINT_VERSION } from "./delegate/hint.js";
 import { mergeEnvFile, type MergedEnv } from "./env-file.js";
@@ -62,6 +62,9 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
   for (const w of merged.warnings) if (merged.reason === null || !w.includes(merged.reason)) out(`env file warning: ${w}`);
   out("settings (process environment over env file):");
   for (const line of describeSettingSources(merged)) out(line);
+  // A REFLEX_*/TYPESAFE_* name nothing reads is dropped without a word, and then stripped from the child's
+  // environment too, so a typo looks exactly like a setting that had no effect. Name it.
+  for (const name of unknownReflexEnvNames(merged.env)) out(`unknown setting:  ${name} is set but nothing reads it (not one of the ${String(SETTING_NAMES.length)} known settings); it is ignored, and stripped from the environment given to claude`);
   const envProblem = merged.state === "refused" || merged.state === "unreadable";
 
   const loaded = loadConfig(merged.env, io.homedir);

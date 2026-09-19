@@ -4,7 +4,8 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
-_Nothing yet._
+- **`reflex doctor` names a `REFLEX_*`/`TYPESAFE_*` variable nothing reads.** Such a name is ignored by `loadConfig` and then stripped from the environment given to `claude`, so a typo — or a variable from a plan that was never built — vanishes without a word and looks exactly like a setting that had no effect. `REFLEX_DUMP=1` was set for a whole session on the strength of a stale note before anyone noticed nothing read it.
+- `docs/prior-art.md` no longer claims reflex adopts `REFLEX_DUMP`: it never existed, and bodies are deliberately never written to disk by a live session. It points at the dump-only proxy `scripts/spike/capture.mjs` instead.
 
 ## 0.2.4-alpha — 2026-09-19
 

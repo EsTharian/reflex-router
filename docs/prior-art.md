@@ -123,7 +123,7 @@ Read directly from docs.typesafe.ai (`introduction`, `primitives/{choice,score,n
 
 ### Stated limitations
 - "The user's prompt text is sent to TypeSafe for the routing decision. Nothing else is." — **false in code**: `current_model`, `context_tokens`, and `available_models` are also sent.
-- "Claude Code and Codex request formats are not public contracts. Use `JEV_DUMP` to diagnose upstream changes." (We adopt `REFLEX_DUMP`.)
+- "Claude Code and Codex request formats are not public contracts. Use `JEV_DUMP` to diagnose upstream changes." (We do the same with a separate dump-only proxy, `scripts/spike/capture.mjs`, not an environment variable on the running proxy: a live session never writes request bodies to disk.)
 - "Developed and tested on Windows against Claude Code v2.1.101."
 - Jev adds latency on the first request of a turn only.
 
