@@ -1,11 +1,12 @@
   ESTIMATE, not a measurement: what sending no_tools, notification, suggestion to a shared haiku tier would have cost, over the tokens actually recorded.
   A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.
+  A call whose prompt exceeds haiku's 150,000-token ceiling cannot be routed there at all and is counted under "over ceiling", never in the saving.
   Both columns are priced at the same TTL per request (the one the record's extended-cache-ttl beta implies); no record in range logged it, so 5m was assumed throughout.
-    side kind     calls  warm  cold   tokens  cache read  gap p50  $ at requested  $ at haiku   $ saved
-    suggestion        3     2     1  185,135       98.8%     60 s         $0.1071     $0.0911   $0.0160
-    notification      2     1     1  134,084       99.2%     20 s         $0.0766     $0.0963  $-0.0196
-    no_tools          1     1     0    6,130       32.6%     10 s         $0.0224     $0.0008   $0.0216
-    total             6     4     2  325,349                              $0.2061     $0.1881   $0.0180
+    side kind     routable  warm  cold  over ceiling   tokens  cache read  gap p50  $ at requested  $ at haiku   $ saved
+    suggestion           3     2     1             -  185,135       98.8%     60 s         $0.1071     $0.0911   $0.0160
+    notification         2     1     1             -  134,084       99.2%     20 s         $0.0766     $0.0963  $-0.0196
+    no_tools             1     1     0             -    6,130       32.6%     10 s         $0.0224     $0.0008   $0.0216
+    total                6     4     2             -  325,349                              $0.2061     $0.1881   $0.0180
   amortisation (break-even 3.1 warm calls per cold write; applies to kinds above 80.0% cache read, whose cost is the cached prefix):
     suggestion: 2.0 warm per cold - BELOW break-even, saves $0.0160
     notification: 1.0 warm per cold - BELOW break-even, COSTS $0.0196

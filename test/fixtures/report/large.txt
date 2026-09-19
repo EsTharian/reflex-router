@@ -141,12 +141,13 @@ reflex report
 12. Side-call routing estimate
   ESTIMATE, not a measurement: what sending no_tools, notification, suggestion to a shared haiku tier would have cost, over the tokens actually recorded.
   A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.
+  A call whose prompt exceeds haiku's 150,000-token ceiling cannot be routed there at all and is counted under "over ceiling", never in the saving.
   Both columns are priced at the same TTL per request (the one the record's extended-cache-ttl beta implies); no record in range logged it, so 5m was assumed throughout.
-    side kind     calls   warm  cold      tokens  cache read  gap p50  $ at requested  $ at haiku  $ saved
-    notification    808    549   259  33,637,116       96.3%     40 s          $24.35      $23.79  $0.5585
-    suggestion      790    530   260  32,484,998       96.3%     40 s          $23.61      $23.46  $0.1475
-    no_tools        775    552   223  30,811,499       96.1%     40 s          $22.75      $21.88  $0.8742
-    total         2,373  1,631   742  96,933,613                               $70.71      $69.13    $1.58
+    side kind     routable   warm  cold  over ceiling      tokens  cache read  gap p50  $ at requested  $ at haiku  $ saved
+    notification       808    549   259             -  33,637,116       96.3%     40 s          $24.35      $23.79  $0.5585
+    suggestion         790    530   260             -  32,484,998       96.3%     40 s          $23.61      $23.46  $0.1475
+    no_tools           775    552   223             -  30,811,499       96.1%     40 s          $22.75      $21.88  $0.8742
+    total            2,373  1,631   742             -  96,933,613                               $70.71      $69.13    $1.58
   amortisation (break-even 3.1 warm calls per cold write; applies to kinds above 80.0% cache read, whose cost is the cached prefix):
     notification: 2.1 warm per cold - BELOW break-even, saves $0.5585
     suggestion: 2.0 warm per cold - BELOW break-even, saves $0.1475

@@ -76,7 +76,7 @@ describe("report: side-call routing estimate", () => {
 
   it("a cold call is priced as a full write of the whole prompt, so it costs more than leaving it alone", () => {
     // One lone side call in its own conversation can never be warm: the estimate must not show it as a saving.
-    const lone = toJsonl([dec({ id: "c-new", t: 0, conv: "c", turn: "new" }), dec({ id: "c-s", t: 10, conv: "c", turn: "side", side: "notification", usage: [2, 50, 200_000, 500] })]);
+    const lone = toJsonl([dec({ id: "c-new", t: 0, conv: "c", turn: "new" }), dec({ id: "c-s", t: 10, conv: "c", turn: "side", side: "notification", usage: [2, 50, 100_000, 500] })]);
     const e = sideRoutingEstimate(parse(lone).decisions);
     assert.equal(e.warm, 0);
     assert.equal(e.cold, 1);
@@ -91,6 +91,19 @@ describe("report: side-call routing estimate", () => {
     assert.equal(b.upMoves, 1);
     assert.deepEqual(b.upMoveCacheWrites, [47_000]);
     assert.ok(!e.convs.some((c) => c.conv === "conv-side-a"), "a conversation that never moved tier is not exposed");
+  });
+
+  it("a call larger than the side tier's context ceiling is not routable and never counts as a saving", () => {
+    // The biggest side calls in real logs are hundreds of thousands of tokens; haiku cannot hold them at all.
+    const big = toJsonl([
+      dec({ id: "d-new", t: 0, conv: "d", turn: "new" }),
+      dec({ id: "d-s", t: 10, conv: "d", turn: "side", side: "notification", usage: [2, 50, 400_000, 500] }),
+    ]);
+    const e = sideRoutingEstimate(parse(big).decisions);
+    assert.equal(e.calls, 0, "nothing is routable");
+    assert.equal(e.overCeiling, 1);
+    assert.equal(e.usdAtRequested - e.usdAtSide, 0, "an unroutable call contributes no saving either way");
+    assert.equal(e.perKind.find((k) => k.kind === "notification")?.overCeiling, 1);
   });
 
   it("the TTL is flagged as assumed when no record logged the beta", () => {

@@ -4,7 +4,7 @@ import { TIERS, type Tier } from "../config.js";
 import { DOWNGRADE_MIN_CONFIDENCE } from "../policy.js";
 import { CACHE_WRITE_MULT, LAST_VERIFIED, PRICES, usageCostUsd, type CacheTtl } from "../pricing.js";
 import { DECISION_GRACE_MS } from "../timing.js";
-import { tierRank } from "../tiers.js";
+import { CONTEXT_CEILING, fitsContext, tierRank } from "../tiers.js";
 import { countBy, int, mean, median, ms, pct, percentile, sum, table, usd } from "./format.js";
 import { num, totalTokens, type Dec, type OutcomeRec, type Records, type Usage } from "./records.js";
 
@@ -623,6 +623,11 @@ const TTL_SECONDS = { "5m": 300, "1h": 3600 } as const;
 const ASSUMED_TTL: CacheTtl = "5m";
 
 const ttlOf = (d: Dec): CacheTtl => (d.cacheTtlBeta === true ? "1h" : ASSUMED_TTL);
+/**
+ * A side call can only be routed to a tier that can hold it. The recorded token count is used directly here, where the
+ * router estimates from request bytes (src/tiers.ts) -- close enough to size the opportunity, not to decide a request.
+ */
+const fitsSideTier = (u: Usage): boolean => fitsContext(SIDE_TIER, ctxOf(u));
 /** The whole prompt of one request: what a cold target would have to write. */
 const ctxOf = (u: Usage): number => u.input + u.cacheRead + u.cacheCreate;
 
@@ -638,6 +643,9 @@ export interface SideKindEstimate {
   readonly gapP50: number | null;
   readonly usdAtRequested: number;
   readonly usdAtSide: number;
+  /** Calls whose prompt is larger than the side tier's context ceiling: not routable at all, and excluded above. */
+  readonly overCeiling: number;
+  readonly overCeilingTokens: number;
 }
 
 /** One conversation's exposure to §4 of the design: only a conversation pinned below requested can lose a free warm cache. */
@@ -661,6 +669,8 @@ export interface SideRoutingEstimate {
   /** Warm calls needed per cold write before a swap pays, at the TTL that dominates the sample. */
   readonly breakEven: number;
   readonly observedWarmPerCold: number | null;
+  readonly overCeiling: number;
+  readonly overCeilingTokens: number;
   /** No record in the sample logged the cache-TTL beta, so the shorter TTL was assumed throughout. */
   readonly ttlAssumed: boolean;
   readonly convs: ConvExposure[];
@@ -673,20 +683,28 @@ export interface SideRoutingEstimate {
  * An estimate over recorded token counts, not a measurement of a run.
  */
 export function sideRoutingEstimate(decisions: readonly Dec[]): SideRoutingEstimate {
-  const routable = decisions.filter((d) => d.turn === "side" && d.sideKind !== null && SIDE_ROUTABLE_KINDS.includes(d.sideKind) && d.usage !== null && d.requestedTier !== null && d.conv !== null);
+  const onGoList = decisions.filter((d) => d.turn === "side" && d.sideKind !== null && SIDE_ROUTABLE_KINDS.includes(d.sideKind) && d.usage !== null && d.requestedTier !== null && d.conv !== null);
+  // A prompt larger than the side tier's context ceiling cannot go there at all, however good the cache arithmetic is.
+  const routable = onGoList.filter((d) => fitsSideTier(d.usage!));
+  const tooBig = onGoList.filter((d) => !fitsSideTier(d.usage!));
   const byConv = new Map<string, Dec[]>();
   for (const d of routable) byConv.set(d.conv!, [...(byConv.get(d.conv!) ?? []), d]);
 
-  const perKindAcc = new Map<string, { calls: number; warm: number; cold: number; tokens: number; read: number; gaps: number[]; atReq: number; atSide: number }>();
+  const perKindAcc = new Map<string, { calls: number; warm: number; cold: number; tokens: number; read: number; gaps: number[]; atReq: number; atSide: number; over: number; overTok: number }>();
   const acc = (k: string): NonNullable<ReturnType<typeof perKindAcc.get>> => {
     let v = perKindAcc.get(k);
     if (!v) {
-      v = { calls: 0, warm: 0, cold: 0, tokens: 0, read: 0, gaps: [], atReq: 0, atSide: 0 };
+      v = { calls: 0, warm: 0, cold: 0, tokens: 0, read: 0, gaps: [], atReq: 0, atSide: 0, over: 0, overTok: 0 };
       perKindAcc.set(k, v);
     }
     return v;
   };
 
+  for (const d of tooBig) {
+    const a = acc(d.sideKind!);
+    a.over++;
+    a.overTok += totalTokens(d.usage!);
+  }
   let warm = 0;
   let cold = 0;
   let usdAtRequested = 0;
@@ -741,11 +759,16 @@ export function sideRoutingEstimate(decisions: readonly Dec[]): SideRoutingEstim
       gapP50: median(v.gaps),
       usdAtRequested: v.atReq,
       usdAtSide: v.atSide,
+      overCeiling: v.over,
+      overCeilingTokens: v.overTok,
     }))
+    .filter((k) => k.calls > 0 || k.overCeiling > 0)
     .sort((a, b) => b.usdAtRequested - a.usdAtRequested || a.kind.localeCompare(b.kind));
 
   return {
     perKind,
+    overCeiling: tooBig.length,
+    overCeilingTokens: sum(tooBig.map((d) => totalTokens(d.usage!))),
     calls: routable.length,
     warm,
     cold,
@@ -778,31 +801,36 @@ export function convExposure(decisions: readonly Dec[]): ConvExposure[] {
 /** 12. What routing the go-list side kinds to one shared cheaper tier would have cost on this log. */
 export function s12SideRouting({ rec, usd: showUsd }: Ctx): string[] {
   const e = sideRoutingEstimate(rec.decisions);
-  if (e.calls === 0) return ["  (no routable side calls with usage in range)"];
+  if (e.calls === 0 && e.overCeiling === 0) return ["  (no routable side calls with usage in range)"];
   const out = [
     `  ESTIMATE, not a measurement: what sending ${SIDE_ROUTABLE_KINDS.join(", ")} to a shared ${SIDE_TIER} tier would have cost, over the tokens actually recorded.`,
     "  A call is warm only when the previous routable side call of the same conversation was inside the cache TTL; nothing else would keep that tier warm. Cold calls pay a full write of the whole prompt.",
+    `  A call whose prompt exceeds ${SIDE_TIER}'s ${int(CONTEXT_CEILING[SIDE_TIER])}-token ceiling cannot be routed there at all and is counted under "over ceiling", never in the saving.`,
     `  Both columns are priced at the same TTL per request (the one the record's extended-cache-ttl beta implies)${e.ttlAssumed ? `; no record in range logged it, so ${ASSUMED_TTL} was assumed throughout` : ""}.`,
     ...table([
-      ["side kind", "calls", "warm", "cold", "tokens", "cache read", "gap p50", ...(showUsd ? ["$ at requested", `$ at ${SIDE_TIER}`, "$ saved"] : [])],
+      ["side kind", "routable", "warm", "cold", "over ceiling", "tokens", "cache read", "gap p50", ...(showUsd ? ["$ at requested", `$ at ${SIDE_TIER}`, "$ saved"] : [])],
       ...e.perKind.map((k) => [
-        k.kind, int(k.calls), int(k.warm), int(k.cold), int(k.tokens), pct(k.cacheReadShare, 1), k.gapP50 === null ? "-" : `${int(Math.round(k.gapP50))} s`,
+        k.kind, int(k.calls), int(k.warm), int(k.cold), k.overCeiling === 0 ? "-" : `${int(k.overCeiling)} (${int(k.overCeilingTokens)} tok)`, int(k.tokens), pct(k.cacheReadShare, 1), k.gapP50 === null ? "-" : `${int(Math.round(k.gapP50))} s`,
         ...(showUsd ? [usd(k.usdAtRequested), usd(k.usdAtSide), usd(k.usdAtRequested - k.usdAtSide)] : []),
       ]),
-      ["total", int(e.calls), int(e.warm), int(e.cold), int(sum(e.perKind.map((k) => k.tokens))), "", "",
+      ["total", int(e.calls), int(e.warm), int(e.cold), e.overCeiling === 0 ? "-" : `${int(e.overCeiling)} (${int(e.overCeilingTokens)} tok)`, int(sum(e.perKind.map((k) => k.tokens))), "", "",
         ...(showUsd ? [usd(e.usdAtRequested), usd(e.usdAtSide), usd(e.usdAtRequested - e.usdAtSide)] : [])],
     ], "    "),
   ];
   if (!showUsd) out.push("    (rerun with --usd for the dollar columns)");
   // The amortisation rule only decides the kinds whose cost IS the cached prefix. Quoting it over every kind would
   // let a cheap small-context kind (title generation) drag the ratio below break-even while plainly saving money.
-  const prefixKinds = e.perKind.filter((k) => k.cacheReadShare >= PREFIX_DOMINATED_SHARE);
-  out.push(`  amortisation (break-even ${e.breakEven.toFixed(1)} warm calls per cold write; applies to kinds above ${pct(PREFIX_DOMINATED_SHARE, 1)} cache read, whose cost is the cached prefix):`);
+  const withRoutable = e.perKind.filter((k) => k.calls > 0);
+  for (const k of e.perKind.filter((x) => x.calls === 0)) {
+    out.push(`  ${k.kind}: NOT ROUTABLE at all - all ${int(k.overCeiling)} calls exceed ${SIDE_TIER}'s context ceiling (${int(k.overCeilingTokens)} tokens, none of it reachable).`);
+  }
+  const prefixKinds = withRoutable.filter((k) => k.cacheReadShare >= PREFIX_DOMINATED_SHARE);
+  if (prefixKinds.length > 0 || withRoutable.length > 0) out.push(`  amortisation (break-even ${e.breakEven.toFixed(1)} warm calls per cold write; applies to kinds above ${pct(PREFIX_DOMINATED_SHARE, 1)} cache read, whose cost is the cached prefix):`);
   for (const k of prefixKinds) {
     const r = k.cold === 0 ? null : k.warm / k.cold;
     out.push(`    ${k.kind}: ${r === null ? "no cold write" : `${r.toFixed(1)} warm per cold`}${r === null || r >= e.breakEven ? "" : " - BELOW break-even"}, ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
   }
-  for (const k of e.perKind.filter((x) => x.cacheReadShare < PREFIX_DOMINATED_SHARE)) {
+  for (const k of withRoutable.filter((x) => x.cacheReadShare < PREFIX_DOMINATED_SHARE)) {
     out.push(`    ${k.kind}: ${pct(k.cacheReadShare, 1)} cache read - little prefix to lose, the rule does not apply; ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
   }
   const net = e.usdAtRequested - e.usdAtSide;
