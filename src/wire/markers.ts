@@ -37,3 +37,12 @@ export const SIDE_MARKERS: readonly { readonly kind: Exclude<SideKind, "no_tools
   { kind: "cross_session", text: "Another Claude session sent a message:", evidence: "interactive.main-cross-session" },
   { kind: "notification", text: "[SYSTEM NOTIFICATION - NOT USER INPUT]", evidence: "interactive.main-notification" },
 ];
+
+/**
+ * Texts that start a `UserPromptSubmit.prompt` Claude Code injected itself (hooks fire for these too): the wire's side
+ * markers, plus the hook-side form of a background task notification.
+ */
+export const INJECTED_PROMPT_MARKERS: readonly { readonly kind: Exclude<SideKind, "no_tools" | "unclassified">; readonly text: string; readonly evidence: string }[] = [
+  ...SIDE_MARKERS,
+  { kind: "notification", text: "<task-notification>", evidence: "M4 acceptance session 2, seq 6: hook prompt; transcript origin task_notification; wire side/notification" },
+];

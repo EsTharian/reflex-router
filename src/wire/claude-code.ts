@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import {
   BETA_EXTENDED_CACHE_TTL, BETA_MID_CONVERSATION_SYSTEM, BILLING_ENTRYPOINT, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
-  MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
+  INJECTED_PROMPT_MARKERS, MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
 } from "./markers.js";
 
 export type RequestKind = "main" | "subagent" | "unknown";
@@ -162,6 +162,16 @@ function previousAssistant(nonSystem: readonly Json[]): string | null {
     .join("\n\n")
     .trim();
   return t === "" ? null : t;
+}
+
+/**
+ * For a hook `UserPromptSubmit.prompt`: the side kind when Claude Code injected the message itself (another
+ * session's message, a task notification, ...), null for a prompt the user typed. Prefix match, after whitespace and
+ * a leading <system-reminder> tag, so a typed prompt that merely quotes a marker is not affected.
+ */
+export function injectedPromptKind(prompt: string): SideKind | null {
+  const head = prompt.trimStart().replace(/^<system-reminder>\s*/, "");
+  return INJECTED_PROMPT_MARKERS.find((m) => head.startsWith(m.text))?.kind ?? null;
 }
 
 export function parseRequest(headers: IncomingHttpHeaders, body: Buffer): ParseResult {

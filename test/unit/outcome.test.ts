@@ -178,7 +178,7 @@ describe("OutcomeTracker", () => {
     t.flush();
     const [o] = outcomes(out);
     assert.equal(o?.signals.test_failure_after_edit.detected, false);
-    assert.deepEqual(o?.counts, { edits: 1, bash: 3, bash_failures: 2, test_runs: 2, test_failures: 1 });
+    assert.deepEqual(o?.counts, { edits: 1, bash: 3, bash_failures: 2, test_runs: 2, test_failures: 1, injected_prompts: 0 });
   });
 
   it("a revert beyond the window is not attributed", () => {
@@ -243,26 +243,38 @@ describe("OutcomeTracker", () => {
     assert.equal(out.length, 0);
   });
 
-  it("a window without a wire new turn says why: no_wire_turn and the nearest main-chat wire classification (session 2, seq 5/6)", () => {
+  it("session 2 seq 5/6 replay: injected messages keep the user's turn open and are never scored as its correction", () => {
     const { t, out, tick, now } = tracker();
     t.ingest(prompt("P4", "real prompt"));
     t.onDecision(decision({ id: "D4", at: now() }));
     tick(10_000);
-    // UserPromptSubmit fires for a message from another session; the wire saw it as side/cross_session.
-    t.ingest(prompt("P5", "Another Claude session sent a message: ..."));
+    // UserPromptSubmit fires for a message from another session and for a task notification (seq 5 and 6).
+    t.ingest(prompt("P5", "Another Claude session sent a message:\n<message>no, that's wrong</message>"));
     t.onDecision(decision({ id: "W1", at: now() + 100, turn: "side", sideKind: "cross_session" }));
-    t.onDecision(decision({ id: "W2", at: now() + 4000, turn: "continuation" }));
+    t.ingest(bash("P5", "npm test", "Exit code 1")); // work done in response to the injected message joins the open turn
     tick(12_000);
-    t.ingest(prompt("P6", "<task-notification>..."));
+    t.ingest(prompt("P6", "<task-notification>\n<task-id>x</task-id>\nrevert it"));
     t.onDecision(decision({ id: "W3", at: now() - 300, turn: "side", sideKind: "notification" }));
+    assert.equal(outcomes(out).length, 0, "neither injected message closed P4 or opened a window");
     tick(3_000);
-    t.ingest(prompt("P7", "next real prompt"));
+    t.ingest(prompt("P7", "thanks, looks good"));
     const os = outcomes(out);
+    assert.equal(os.length, 1);
     assert.equal(os[0]?.decision_id, "D4");
-    assert.equal(os[0]?.no_decision, null, "a decided window needs no reason");
-    assert.deepEqual(os[1]?.no_decision, { reason: "no_wire_turn", nearest_wire: "side:cross_session" });
-    assert.deepEqual(os[2]?.no_decision, { reason: "no_wire_turn", nearest_wire: "side:notification" }, "a request just before the hook still counts");
+    assert.equal(os[0]?.counts.injected_prompts, 2);
+    assert.equal(os[0]?.counts.test_runs, 1, "the injected turn's tool events were attributed to the open user turn");
+    assert.deepEqual(os[0]?.signals.correction, { score: 0, matched: [], prompt_chars: "thanks, looks good".length }, "scored on the next TYPED prompt, not on the injected text");
     assert.equal(out.filter((r) => r.record === "harness_injected").length, 0);
+  });
+
+  it("a typed prompt without a wire new turn: no_wire_turn with the nearest main-chat wire classification", () => {
+    const { t, out, tick, now } = tracker();
+    t.ingest(prompt("P1", "continue"));
+    t.onDecision(decision({ id: "W1", at: now() + 100, turn: "continuation" }));
+    t.onDecision(decision({ id: "W2", at: now() + 900, turn: "side", sideKind: "suggestion" }));
+    tick(2000);
+    t.ingest(prompt("P2", "next"));
+    assert.deepEqual(outcomes(out)[0]?.no_decision, { reason: "no_wire_turn", nearest_wire: "continuation" });
   });
 
   it("no wire request at all in the window: nearest_wire is null", () => {
@@ -298,7 +310,7 @@ describe("OutcomeTracker", () => {
     const os = outcomes(out);
     assert.deepEqual(os.map((o) => o.scope), ["subagent", "main"]);
     const main = os[1]!;
-    assert.deepEqual(main.counts, { edits: 1, bash: 2, bash_failures: 1, test_runs: 0, test_failures: 0 });
+    assert.deepEqual(main.counts, { edits: 1, bash: 2, bash_failures: 1, test_runs: 0, test_failures: 0, injected_prompts: 0 });
     assert.equal(main.signals.test_failure_after_edit.detected, false, "`node -e process.exit(1)` is not a test run");
   });
 

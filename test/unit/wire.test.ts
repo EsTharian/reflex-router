@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import type { IncomingHttpHeaders } from "node:http";
 import { describe, it } from "node:test";
-import { isMessagesRequest, parseRequest, type RequestView } from "../../src/wire/claude-code.js";
+import { injectedPromptKind, isMessagesRequest, parseRequest, type RequestView } from "../../src/wire/claude-code.js";
 import { assertShape, ShapeTracker } from "../../src/wire/shape.js";
 import { loadFixtures, viewOf, type Fixture } from "../support/fixtures.js";
 
@@ -198,5 +198,18 @@ describe("shape assertions on mutated fixtures: each mutation trips exactly its 
     const v = mutate(side, (_b, h) => (h["x-claude-code-session-id"] = "other"));
     assert.deepEqual(t.observe(v), []);
     assert.equal(t.status, "checking");
+  });
+});
+
+describe("injectedPromptKind (hook UserPromptSubmit text)", () => {
+  it("recognises messages Claude Code injected itself, by prefix", () => {
+    assert.equal(injectedPromptKind("Another Claude session sent a message:\n<m>hi</m>"), "cross_session");
+    assert.equal(injectedPromptKind("<task-notification>\n<task-id>ab06</task-id>"), "notification");
+    assert.equal(injectedPromptKind("<system-reminder>\n[SYSTEM NOTIFICATION - NOT USER INPUT] done"), "notification");
+    assert.equal(injectedPromptKind("  [SUGGESTION MODE: x]"), "suggestion");
+  });
+  it("a typed prompt, even one quoting a marker, is not injected", () => {
+    assert.equal(injectedPromptKind("fix the bug"), null);
+    assert.equal(injectedPromptKind('why did I get "Another Claude session sent a message:" earlier?'), null);
   });
 });

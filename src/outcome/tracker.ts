@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 import { hashId } from "../log/decision-log.js";
 import { CORRECTION_WINDOW_CHARS, REVERT_WINDOW_TURNS, correctionSignal, coversFile, exitCode, gitRestoredPaths, testRunnerKind, type CorrectionSignal } from "./heuristics.js";
 import { EDIT_TOOLS, type HookEvent, type ToolUse } from "./hooks.js";
+import { injectedPromptKind } from "../wire/claude-code.js";
 
 /** Version of the heuristics that produced a record; bump when rules or weights change. */
 export const HEURISTICS_VERSION = 1;
@@ -62,7 +63,15 @@ export interface OutcomeRecord {
    */
   readonly no_decision: { readonly reason: "no_wire_turn" | "slash_command"; readonly nearest_wire: string | null } | null;
   readonly window: { readonly closed_by: "next_prompt" | "subagent_stop" | "session_end"; readonly duration_ms: number; readonly ms_to_last_stop: number | null };
-  readonly counts: { readonly edits: number; readonly bash: number; readonly bash_failures: number; readonly test_runs: number; readonly test_failures: number };
+  readonly counts: {
+    readonly edits: number;
+    readonly bash: number;
+    readonly bash_failures: number;
+    readonly test_runs: number;
+    readonly test_failures: number;
+    /** Harness-injected messages (other-session messages, task notifications, ...) that arrived while the window was open. */
+    readonly injected_prompts: number;
+  };
   readonly signals: {
     /** Strength of the next prompt looking like a correction; null when there was no next prompt (subagents, session end). */
     readonly correction: { readonly score: number; readonly matched: readonly string[]; readonly prompt_chars: number } | null;
@@ -115,6 +124,7 @@ interface Window {
   bashFailures: number;
   testRuns: number;
   testFailures: { kind: string; exit_code: number | null; edits_before: number }[];
+  injectedPrompts: number;
   reverts: { kind: RevertKind; file: string | null; offset_turns: number }[];
   closed: boolean;
 }
@@ -174,7 +184,7 @@ export class OutcomeTracker {
   }
 
   #window(scope: Window["scope"], key: string, seq: number): Window {
-    return { scope, key, seq, openedAt: this.#now(), agentType: null, decision: null, lastStopAt: null, edits: 0, bash: 0, bashFailures: 0, testRuns: 0, testFailures: [], reverts: [], closed: false };
+    return { scope, key, seq, openedAt: this.#now(), agentType: null, decision: null, lastStopAt: null, edits: 0, bash: 0, bashFailures: 0, testRuns: 0, testFailures: [], injectedPrompts: 0, reverts: [], closed: false };
   }
 
   /** The main-chat turn an event belongs to: its prompt_id's turn, else the current one (created if none yet). */
@@ -211,6 +221,16 @@ export class OutcomeTracker {
         if (e.prompt.trimStart().startsWith("/")) {
           // A slash command is not a turn of its own: no window, and the current turn stays open for the next real prompt.
           s.lastSlashAt = this.#now();
+          return;
+        }
+        if (injectedPromptKind(e.prompt) !== null) {
+          // Claude Code injected this message itself. It is not the user's reaction to the previous reply, so it neither
+          // closes that turn nor feeds its correction signal; events under its prompt_id join the open user turn.
+          const open = s.current && !s.current.closed ? s.current : null;
+          if (open) {
+            open.injectedPrompts++;
+            if (e.base.promptId !== null) s.turns.set(e.base.promptId, open);
+          }
           return;
         }
         if (s.current && !s.current.closed) this.#close(s, s.current, "next_prompt", correctionSignal(e.prompt));
@@ -357,7 +377,7 @@ export class OutcomeTracker {
       models: w.decision ? { requested: w.decision.requestedModel, sent: w.decision.sentModel } : null,
       no_decision: w.decision ? null : { reason: "no_wire_turn", nearest_wire: w.scope === "main" ? this.#nearestWire(s, w, now) : null },
       window: { closed_by: closedBy, duration_ms: now - w.openedAt, ms_to_last_stop: w.lastStopAt !== null ? w.lastStopAt - w.openedAt : null },
-      counts: { edits: w.edits, bash: w.bash, bash_failures: w.bashFailures, test_runs: w.testRuns, test_failures: w.testFailures.length },
+      counts: { edits: w.edits, bash: w.bash, bash_failures: w.bashFailures, test_runs: w.testRuns, test_failures: w.testFailures.length, injected_prompts: w.injectedPrompts },
       signals: {
         correction: correction ? { score: correction.score, matched: correction.matched, prompt_chars: correction.promptChars } : null,
         test_failure_after_edit: { detected: w.testFailures.some((f) => f.edits_before > 0), runs: w.testFailures },
