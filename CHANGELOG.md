@@ -2,6 +2,10 @@
 
 None of these versions has been published to a registry.
 
+## Unreleased
+
+- CI: `actions/checkout` and `actions/setup-node` bumped to v7, `ubuntu-latest` pinned to `ubuntu-24.04` in the test matrix. No functional change.
+
 ## 0.2.3-alpha — 2026-09-19
 
 Measurement only: nothing routes differently from 0.2.2-alpha. `REFLEX_ROUTE_SIDE` was designed, priced and **not built** — see `docs/observations.md`, "side-call routing: priced, and parked".
