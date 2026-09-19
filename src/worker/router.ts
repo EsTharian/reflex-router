@@ -157,7 +157,7 @@ export class Router {
     const untouched: Prepared = { body, rewritten: false, obs: null };
     try {
       if (!isMessagesRequest(method, url)) return untouched;
-      const parsed = parseRequest(headers, body);
+      const parsed = parseRequest(headers, body, this.d.typedPrompts);
       if (!parsed.ok) return untouched;
       return await this.#prepare(parsed.view, body, headers);
     } catch (e) {
@@ -297,6 +297,7 @@ export class Router {
               signals: v.signals,
               turn: v.turn,
               side_kind: v.sideKind,
+              ...(v.interjection ? { interjection: true as const } : {}),
               entrypoint: v.entrypoint,
               mode_requested: this.d.config.mode,
               mode_effective: routing ? "route" : "shadow",

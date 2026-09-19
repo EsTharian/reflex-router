@@ -208,6 +208,9 @@
  ],
  "method": "scripts/spike/capture.mjs (dump-only passthrough proxy) + scripts/spike/redact-fixtures.mjs",
  "gaps": [
-  "see docs/wire-format.md"
+  "see docs/wire-format.md",
+  "UNCAPTURED side_kind notification (AFK session recap): observed only as a side_fingerprint head in the maintainer's 2.1.278 route-mode log of 2026-09-19 (2 calls; last content a 253-character plain string; messages 78 and 242). The marker in src/wire/markers.ts is that redacted 80-code-point head; no body was captured, so no fixture asserts it. Synthetic cases in test/unit/wire.test.ts.",
+  "UNCAPTURED side_kind tool_result_text (tool results plus harness text in the last user message): same log, 2 calls, one main chat and one subagent, both with 9,417 characters of text beside the results. Recognised by shape, not by a marker, so no text was needed to implement it; no body was captured, so no fixture asserts it. Synthetic cases in test/unit/wire.test.ts.",
+  "UNCAPTURED interjection (a message typed mid-tool-loop, classified as a continuation): same log, 2 calls whose fingerprint head was dropped as typed_prompt. Recognising one needs the session's UserPromptSubmit prompts, so a request fixture alone cannot carry the case; a future capture must pair the request with its hooks.jsonl."
  ]
 }

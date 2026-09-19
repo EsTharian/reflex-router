@@ -54,7 +54,7 @@ Only **positively identified** work is ever decided on. `src/wire/claude-code.ts
 | Turn | Rule |
 | --- | --- |
 | `new` | `user` role, content is an **array** of text blocks whose text, after dropping reminder blocks and `<local-command-…>`/`<command-…>` wrappers, is non-empty, and no side marker (below). A subagent is `new` only on its first request |
-| `continuation` | `user` role with `tool_result` blocks and nothing else except reminder blocks. Failed Bash arrives as `tool_result` with **`is_error: true`, content `"Exit code 1"`** |
+| `continuation` | `user` role with `tool_result` blocks and nothing else except reminder blocks, **or** a message the user typed mid-loop (an *interjection*, §4.2). Failed Bash arrives as `tool_result` with **`is_error: true`, content `"Exit code 1"`** |
 | `side` | everything else, tagged with a `side_kind` |
 
 Every user-typed prompt observed (both entrypoints) and every subagent start arrived as an array of blocks; every plain-string content was a harness side call.
@@ -70,10 +70,37 @@ These carry the full tool list and the same `messages[0]` as the real conversati
 | `compaction` | `tool_result` + text `CRITICAL: Respond with TEXT ONLY…`; **lacks the `extended-cache-ttl` beta** | `interactive.main-compaction` |
 | `cross_session` | text `Another Claude session sent a message:` (no `UserPromptSubmit` hook) | `interactive.main-cross-session` |
 | `notification` | reminder-only, `[SYSTEM NOTIFICATION - NOT USER INPUT]` (no `UserPromptSubmit`) | `interactive.main-notification` |
+| `notification` | plain string `The user stepped away and is coming back. Recap in under 40 words…` — Claude Code's AFK session recap | **uncaptured**, see §4.2 |
 | `no_tools` | no or empty `tools`: title generation (`output_config.format` JSON schema), `max_tokens: 64` side calls, the `max_tokens: 1` quota probe (no system prompt at all) | `interactive.title-generation`, `…side-no-tools`, `…quota-probe` |
+| `tool_result_text` | `tool_result` blocks **plus** text that is neither a reminder nor a prompt the user typed. Recognised by shape, not by a marker | **uncaptured**, see §4.2 |
 | `unclassified` | anything else not positively identified | — |
 
 Consequences: main-chat model turns are **not** 1:1 with `UserPromptSubmit`; `SubagentStop` also fires for agent ids that never had a `SubagentStart` and never appear as an `x-claude-code-agent-id` header (likely the suggestion forks).
+
+### 4.2 Tool results carrying text: a side call or the user interjecting
+
+A last `user` message with `tool_result` blocks **and** a non-reminder text block is ambiguous on the wire. Two different
+things produce it, and they must not share a label:
+
+- **The user typed into a running tool loop.** Still their own turn: the pin is held, no new decision is taken, and the
+  turn is `continuation` with `interjection: true` (logged only when true).
+- **The harness put its own text beside the results.** A side call: `side` / `tool_result_text`.
+
+They are told apart by the prompts `UserPromptSubmit` delivered for the session, which the worker holds in memory only
+(`src/worker/recent-prompts.ts`); the test is the shared matcher in `src/wire/typed-prompt.ts`, used by the classifier
+and by the fingerprint's `typed_prompt` head omission so the two can never disagree about the same sentence. With no
+hook stream (no prompt seen yet, hooks not installed) an interjection is never claimed and the request stays
+`tool_result_text` — the fail-open direction, since neither outcome routes anything.
+
+**Evidence, and its limits.** Both kinds and the interjection come from the maintainer's 2.1.278 route-mode log of
+2026-09-19, where all eight `unclassified` side calls fell into these shapes: 2 AFK recaps (plain-string content, 253
+characters, `messages` 78 and 242), 2 `tool_result_text` (9,417 characters of text beside the results, one main chat and
+one subagent), 2 interjections (362 and 412 characters, at message 218 and 234, head dropped as `typed_prompt`), and 2
+older records written before `side_fingerprint` existed, whose shape is unrecoverable. **No body was captured for any of
+them** — that log stores fingerprints, not bodies — so no fixture asserts these three cases; they are covered by
+synthetic unit cases in `test/unit/wire.test.ts` and listed in the 2.1.278 manifest's `gaps`. The recap marker text is
+the redacted 80-code-point fingerprint head of those two calls. A future capture should pair the request with its
+`hooks.jsonl`, because an interjection cannot be recognised from a request alone.
 
 ## 5. Native Haiku request shape (Claude Code choosing Haiku itself)
 

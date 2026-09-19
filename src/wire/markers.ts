@@ -31,18 +31,31 @@ export const SYSTEM_REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 export const PASTED_CONTENT_TAG = /<\/?pasted_content(?:\s+id="[^"]*")?\s*>/g;
 export const LOCAL_COMMAND_BLOCK = /<(local-command-caveat|local-command-stdout|local-command-stderr|command-name|command-message|command-args)>[\s\S]*?<\/\1>/g;
 
-export type SideKind = "no_tools" | "suggestion" | "agent_summary" | "compaction" | "cross_session" | "notification" | "unclassified";
+/**
+ * `tool_result_text` is the one kind with no marker: it is recognised by shape alone (last user message carries tool
+ * results AND text that is neither a harness reminder nor a prompt the user typed). See classifyTurn.
+ */
+export type SideKind = "no_tools" | "suggestion" | "agent_summary" | "compaction" | "cross_session" | "notification" | "tool_result_text" | "unclassified";
+
+/** The side kinds recognised by a text marker in the last message. */
+export type MarkedSideKind = Exclude<SideKind, "no_tools" | "tool_result_text" | "unclassified">;
 
 /**
  * Harness-generated requests that carry the full tool list and look like turns. Matched ONLY against the last
  * non-system message (these texts stay in the history and reappear in later requests).
  */
-export const SIDE_MARKERS: readonly { readonly kind: Exclude<SideKind, "no_tools" | "unclassified">; readonly text: string; readonly evidence: string }[] = [
+export const SIDE_MARKERS: readonly { readonly kind: MarkedSideKind; readonly text: string; readonly evidence: string }[] = [
   { kind: "suggestion", text: "[SUGGESTION MODE:", evidence: "interactive.main-suggestion" },
   { kind: "agent_summary", text: "Describe your most recent action", evidence: "interactive.subagent-summary" },
   { kind: "compaction", text: "CRITICAL: Respond with TEXT ONLY", evidence: "interactive.main-compaction" },
   { kind: "cross_session", text: "Another Claude session sent a message:", evidence: "interactive.main-cross-session" },
   { kind: "notification", text: "[SYSTEM NOTIFICATION - NOT USER INPUT]", evidence: "interactive.main-notification" },
+  // Claude Code's AFK "session recap": the user stepped away, the harness asks for a <=40-word catch-up. Arrives as a
+  // plain-string content, so it reaches the marker scan through blocksOf. NOT CAPTURED: no fixture has this body. The
+  // text is the redacted 80-code-point fingerprint head of two such calls in the maintainer's 2.1.278 route-mode log
+  // of 2026-09-19 (side_fingerprint.head, both `messages` 78 and 242, last content a 253-character string); the
+  // marker is the part of that head before the template fills in. See 2.1.278 manifest `gaps`.
+  { kind: "notification", text: "The user stepped away and is coming back.", evidence: "2.1.278 route-mode log 2026-09-19 (fingerprint head); uncaptured, see 2.1.278 manifest gaps" },
 ];
 
 /**
@@ -55,7 +68,7 @@ export const HANDBACK_PROMPT_PREFIX = { text: "<agent-message ", evidence: "inte
  * Texts that start a `UserPromptSubmit.prompt` Claude Code injected itself (hooks fire for these too): the wire's side
  * markers, plus the hook-side form of a background task notification.
  */
-export const INJECTED_PROMPT_MARKERS: readonly { readonly kind: Exclude<SideKind, "no_tools" | "unclassified">; readonly text: string; readonly evidence: string }[] = [
+export const INJECTED_PROMPT_MARKERS: readonly { readonly kind: MarkedSideKind; readonly text: string; readonly evidence: string }[] = [
   ...SIDE_MARKERS,
   { kind: "notification", text: "<task-notification>", evidence: "M4 acceptance session 2, seq 6: hook prompt; transcript origin task_notification; wire side/notification" },
 ];

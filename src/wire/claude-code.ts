@@ -7,13 +7,15 @@ import {
   BETA_EXTENDED_CACHE_TTL, BETA_MID_CONVERSATION_SYSTEM, BILLING_ENTRYPOINT, HANDBACK_PROMPT_PREFIX, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
   INJECTED_PROMPT_MARKERS, MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
 } from "./markers.js";
+import { matchesTypedPrompt } from "./typed-prompt.js";
 
 export type RequestKind = "main" | "subagent" | "unknown";
 /** Which signal classified a subagent. Header first; the system-prompt markers are the fallback. */
 export type KindSignal = "header" | "marker:cc_is_subagent" | "marker:agent_prompt" | "none";
 /**
  * new          a positively identified start of work: a user-typed main-chat prompt, or a subagent's first request
- * continuation a tool-loop step (the last message carries only tool results)
+ * continuation a tool-loop step (the last message carries tool results, and at most harness reminders or a message the
+ *              user typed mid-loop — an interjection, which stays on the turn's pin and is never decided again)
  * side         everything else: harness side calls, notifications, anything not positively identified. Never decided.
  */
 export type Turn = "new" | "continuation" | "side";
@@ -48,6 +50,8 @@ export interface RequestView {
   readonly signals: Signals;
   readonly turn: Turn;
   readonly sideKind: SideKind | null;
+  /** `continuation` only: the tool results arrived with a message the user typed mid-loop. */
+  readonly interjection: boolean;
   readonly entrypoint: string | null;
   /** claude-cli/<version> from the user-agent, the version of the client that actually talks to us. */
   readonly clientVersion: string | null;
@@ -124,11 +128,17 @@ interface TurnResult {
   readonly turn: Turn;
   readonly sideKind: SideKind | null;
   readonly task: string | null;
+  /** A continuation whose tool results arrived with a message the user typed mid-loop. Never true off a continuation. */
+  readonly interjection: boolean;
 }
-const side = (k: SideKind): TurnResult => ({ turn: "side", sideKind: k, task: null });
+const side = (k: SideKind): TurnResult => ({ turn: "side", sideKind: k, task: null, interjection: false });
+const continuation = (interjection: boolean): TurnResult => ({ turn: "continuation", sideKind: null, task: null, interjection });
 
-/** Pure. Anything not positively identified as a user turn or a tool-loop step is `side`. */
-function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: RequestKind): TurnResult {
+/**
+ * Pure. Anything not positively identified as a user turn or a tool-loop step is `side`.
+ * `typed`: prompts UserPromptSubmit delivered in this session (memory only), or null when none has arrived.
+ */
+function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: RequestKind, typed: readonly string[] | null): TurnResult {
   if (toolCount === 0) return side("no_tools");
   const last = nonSystem.at(-1);
   if (!last || last["role"] !== "user") return side("unclassified");
@@ -137,9 +147,14 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
   for (const m of SIDE_MARKERS) if (texts.some((t) => t.includes(m.text))) return side(m.kind);
 
   if (blocks.some((b) => b.type === "tool_result")) {
-    // A tool-loop step carries tool results and at most harness reminders; anything else is not positively identified.
+    // A tool-loop step carries tool results and at most harness reminders.
     const onlyResults = blocks.every((b) => b.type === "tool_result" || (b.type === "text" && isReminderOnly(b.text ?? "")));
-    return onlyResults ? { turn: "continuation", sideKind: null, task: null } : side("unclassified");
+    if (onlyResults) return continuation(false);
+    // Tool results plus text. Two different things wear this shape, and they must not share a label:
+    //  - the user typed into a running tool loop. Still their own turn, still the same pin, no new decision.
+    //  - the harness put its own text alongside the results (observed: a large tool_result payload with a trailing
+    //    instruction, main chat and subagent alike). That is a side call.
+    return matchesTypedPrompt(ownText(blocks), typed) ? continuation(true) : side("tool_result_text");
   }
   // Every observed user-typed prompt (both entrypoints) and every subagent start arrives as an array of blocks;
   // plain-string contents were all harness side calls.
@@ -149,7 +164,7 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
   if (task === "") return side("unclassified");
   // A subagent's work starts with its first request; a later text message inside its run is not a new task.
   if (kind === "subagent" && nonSystem.length !== 1) return side("unclassified");
-  return { turn: "new", sideKind: null, task };
+  return { turn: "new", sideKind: null, task, interjection: false };
 }
 
 /** The assistant text right before the last message (thinking and tool_use blocks excluded). */
@@ -193,7 +208,16 @@ export function isTypedPrompt(prompt: string): boolean {
   return head.trim() !== "" && !head.startsWith("/") && !isHandbackPrompt(prompt) && injectedPromptKind(prompt) === null;
 }
 
-export function parseRequest(headers: IncomingHttpHeaders, body: Buffer): ParseResult {
+/**
+ * `typedPrompts`: looks up the prompts UserPromptSubmit delivered for a session (the worker's memory), null when none
+ * has arrived. Omitted by callers that have no hook stream (tests, spikes): an interjection is then never claimed and
+ * such a request stays `side` / `tool_result_text`.
+ */
+export function parseRequest(
+  headers: IncomingHttpHeaders,
+  body: Buffer,
+  typedPrompts?: (sessionId: string | null) => readonly string[] | null,
+): ParseResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body.toString("utf8"));
@@ -218,7 +242,7 @@ export function parseRequest(headers: IncomingHttpHeaders, body: Buffer): ParseR
   const mdSessionId = metadataSessionId(b);
   const sessionId = headerSessionId ?? mdSessionId;
 
-  const t = classifyTurn(nonSystem, toolCount, kind);
+  const t = classifyTurn(nonSystem, toolCount, kind, typedPrompts?.(sessionId) ?? null);
 
   let convKey: string | null = null;
   if (sessionId !== null && kind !== "unknown") {
@@ -242,6 +266,7 @@ export function parseRequest(headers: IncomingHttpHeaders, body: Buffer): ParseR
       signals,
       turn: t.turn,
       sideKind: t.sideKind,
+      interjection: t.interjection,
       entrypoint: BILLING_ENTRYPOINT.exec(sys)?.[1] ?? null,
       clientVersion: USER_AGENT_VERSION.exec(ua)?.[1] ?? null,
       requestedModel: str(b["model"]),

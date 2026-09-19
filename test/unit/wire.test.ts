@@ -13,8 +13,18 @@ const TOOLS = [{ name: "Bash" }, { name: "Read" }];
 const reminder = (t: string): { type: string; text: string } => ({ type: "text", text: `<system-reminder>\n${t}\n</system-reminder>` });
 const text = (t: string): { type: string; text: string } => ({ type: "text", text: t });
 
+const body = (messages: unknown[], over: Record<string, unknown> = {}): Buffer =>
+  Buffer.from(JSON.stringify({ model: "claude-sonnet-5", system: SYSTEM, tools: TOOLS, messages, metadata: { user_id: JSON.stringify({ session_id: SID }) }, ...over }));
+
 const view = (messages: unknown[], over: Record<string, unknown> = {}, headers: IncomingHttpHeaders = H): RequestView => {
-  const r = parseRequest(headers, Buffer.from(JSON.stringify({ model: "claude-sonnet-5", system: SYSTEM, tools: TOOLS, messages, metadata: { user_id: JSON.stringify({ session_id: SID }) }, ...over })));
+  const r = parseRequest(headers, body(messages, over));
+  assert.ok(r.ok);
+  return r.view;
+};
+
+/** As `view`, with the prompts UserPromptSubmit delivered for this session (what the worker holds in memory). */
+const viewTyped = (messages: unknown[], typed: readonly string[], over: Record<string, unknown> = {}): RequestView => {
+  const r = parseRequest(H, body(messages, over), (sessionId) => (sessionId === SID ? typed : null));
   assert.ok(r.ok);
   return r.view;
 };
@@ -57,9 +67,44 @@ describe("turn classification: only positively identified user turns are `new`",
     assert.equal(view([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, reminder("note")] }]).turn, "continuation");
   });
 
-  it("tool results with unexplained text are NOT positively identified", () => {
-    const v = view([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, text("also do X")] }]);
-    assert.deepEqual([v.turn, v.sideKind], ["side", "unclassified"]);
+  it("tool results plus harness text are side/tool_result_text", () => {
+    // No UserPromptSubmit seen (typedPrompts omitted): an interjection is never claimed, so this stays a side call.
+    const v = view([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, text("Summarise the result above in one line.")] }]);
+    assert.deepEqual([v.turn, v.sideKind, v.interjection], ["side", "tool_result_text", false]);
+    // Observed shape: several results and a trailing instruction, main chat and subagent alike (2.1.278 log).
+    const many = view([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, { type: "tool_result", tool_use_id: "b" }, text("Summarise.")] }]);
+    assert.deepEqual([many.turn, many.sideKind], ["side", "tool_result_text"]);
+  });
+
+  it("tool results plus a message the user typed mid-loop are a continuation, flagged as an interjection", () => {
+    const typed = ["actually, skip the tests and just show me the diff"];
+    const msgs = [{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, text("actually, skip the tests and just show me the diff")] }];
+    const v = viewTyped(msgs, typed);
+    assert.deepEqual([v.turn, v.sideKind, v.interjection, v.task], ["continuation", null, true, null]);
+    // The same bytes without the hook stream are not claimed as an interjection.
+    assert.deepEqual([view(msgs).turn, view(msgs).sideKind], ["side", "tool_result_text"]);
+    // A different prompt in the same session does not make unrelated harness text an interjection.
+    assert.equal(viewTyped(msgs, ["run the build"]).sideKind, "tool_result_text");
+  });
+
+  it("an interjection is recognised when the harness appends a reminder to the user's words", () => {
+    const typed = ["please also update the changelog before you commit"];
+    const v = viewTyped([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, text("please also update the changelog before you commit\n<system-reminder>note</system-reminder>")] }], typed);
+    assert.deepEqual([v.turn, v.interjection], ["continuation", true]);
+  });
+
+  it("an interjection is recognised when the text is only the start of the typed prompt, or wraps it", () => {
+    const typed = ["rewrite the parser so it handles the empty case, then run the suite and report back"];
+    const truncated = viewTyped([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, text("rewrite the parser so it handles the empty case")] }], typed);
+    assert.equal(truncated.interjection, true);
+    const wrapped = viewTyped([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, text("The user says: rewrite the parser so it handles the empty case, then run the suite and report back")] }], typed);
+    assert.equal(wrapped.interjection, true);
+  });
+
+  it("a continuation with only results or reminders is never an interjection", () => {
+    const typed = ["run the build"];
+    assert.equal(viewTyped([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }] }], typed).interjection, false);
+    assert.equal(viewTyped([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, reminder("run the build")] }], typed).interjection, false);
   });
 
   it("reminder-only, plain-string content, images, and a trailing assistant message are side/unclassified", () => {
@@ -87,6 +132,10 @@ describe("turn classification: only positively identified user turns are `new`",
       [[{ type: "tool_result", tool_use_id: "a" }, text("CRITICAL: Respond with TEXT ONLY. Summarise.")], "compaction"],
       [[text("Another Claude session sent a message: hi")], "cross_session"],
       [[reminder("[SYSTEM NOTIFICATION - NOT USER INPUT] task done")], "notification"],
+      // Claude Code's AFK session recap. Arrives as a plain-string content, which blocksOf turns into one text block,
+      // so it reaches the marker scan before the string-content fallback below. Uncaptured: text from a 2.1.278
+      // fingerprint head (see 2.1.278 manifest gaps).
+      ["The user stepped away and is coming back. Recap in under 40 words, 1-2 plain sentences.", "notification"],
     ];
     for (const [content, kind] of cases) assert.equal(view([{ role: "user", content }]).sideKind, kind);
   });

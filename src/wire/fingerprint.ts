@@ -9,11 +9,16 @@ import type { IncomingHttpHeaders } from "node:http";
 import { head } from "../privacy/budget.js";
 import { redact } from "../privacy/redact.js";
 import { LOCAL_COMMAND_BLOCK, PASTED_CONTENT_TAG, SYSTEM_REMINDER } from "./markers.js";
+import { matchesTypedPrompt } from "./typed-prompt.js";
 
 /** Code points of harness text kept at most. A constant, deliberately not configurable. */
 export const FINGERPRINT_HEAD_MAX = 80;
-/** Bump when a field or a heuristic changes, so fingerprints from different builds are not merged by mistake. */
-export const FINGERPRINT_VERSION = 1;
+/**
+ * Bump when a field or a heuristic changes, so fingerprints from different builds are not merged by mistake.
+ * 2: the `typed_prompt` test moved to the shared matcher (src/wire/typed-prompt.ts), which the classifier uses too;
+ *    empty or whitespace-only text no longer counts as a typed prompt (it used to match any prompt).
+ */
+export const FINGERPRINT_VERSION = 2;
 /** A long role sequence keeps its first ROLES_HEAD and last ROLES_TAIL letters. */
 const ROLES_HEAD = 8;
 const ROLES_TAIL = 30;
@@ -59,7 +64,6 @@ type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-const norm = (t: string): string => t.replace(/\s+/g, " ").trim().toLowerCase();
 
 const roleLetter = (r: unknown): string => (r === "user" ? "u" : r === "assistant" ? "a" : r === "system" ? "s" : "?");
 const blockTypes = (m: Json): string[] => (Array.isArray(m["content"]) ? m["content"].filter(isObj).map((b) => str(b["type"]) ?? "?") : []);
@@ -95,13 +99,7 @@ const PATH_OR_URL = /[a-z][a-z0-9+.-]*:\/\/|www\.|\S@\S|~[/\\]|(?:^|[\s"'`(])\.{
 function userTextReason(text: string, typed: readonly string[] | null): HeadOmitted | null {
   if (text.search(PASTED_CONTENT_TAG) !== -1 || text.search(LOCAL_COMMAND_BLOCK) !== -1) return "user_wrapper";
   if (typed === null) return "no_prompt_hooks";
-  const t = norm(text);
-  const lead = norm(head(text, FINGERPRINT_HEAD_MAX));
-  if (typed.some((p) => {
-    const q = norm(p);
-    // The text is (the start of) a typed prompt, or contains the start of one (a harness prefix around the user's words).
-    return q !== "" && (q.includes(lead) || (q.length >= 4 && t.includes(q.slice(0, 40))));
-  })) return "typed_prompt";
+  if (matchesTypedPrompt(text, typed)) return "typed_prompt";
   const lead80 = head(text.trimStart(), FINGERPRINT_HEAD_MAX);
   if (!/^(<[A-Za-z]|\[|[A-Z])/.test(lead80)) return "not_template_start";
   if (/[^\t\n\r\x20-\x7E]/.test(lead80)) return "non_ascii"; // anything but printable ASCII and whitespace

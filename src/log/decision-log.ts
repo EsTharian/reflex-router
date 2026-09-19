@@ -33,6 +33,8 @@ export interface DecisionRecord {
   readonly signals: { readonly header: boolean; readonly s1: boolean; readonly s2: boolean; readonly s3: boolean };
   readonly turn: "new" | "continuation" | "side";
   readonly side_kind: string | null;
+  /** Present only when true: a `continuation` whose tool results arrived with a message the user typed mid-loop. */
+  readonly interjection?: true;
   readonly entrypoint: string | null;
   readonly mode_requested: string;
   readonly mode_effective: string;
