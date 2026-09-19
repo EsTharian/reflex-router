@@ -82,6 +82,18 @@ export interface DecisionRecord {
     readonly fallback_error: string | null;
   };
   readonly upstream: { readonly status: number | null; readonly msToHeaders: number | null };
+  /**
+   * Where the time to the upstream's response headers went. `msToHeaders` (measured from the request's arrival) is
+   * decision_wait_ms + the router's own work + upstream_first_byte_ms.
+   */
+  readonly timing: {
+    /** Time the request waited for the backend decision before going upstream: route mode, `new` turns; 0 otherwise (shadow decides off the critical path). Bounded by decision_deadline_ms + DECISION_GRACE_MS (src/timing.ts). */
+    readonly decision_wait_ms: number;
+    /** REFLEX_JEV_DEADLINE_MS in force. */
+    readonly decision_deadline_ms: number;
+    /** From handing the request to the upstream until its response headers (the first response byte we see); includes a rejected first attempt and the retry after a fallback. null: no response. */
+    readonly upstream_first_byte_ms: number | null;
+  };
   readonly usage: { readonly input: number; readonly output: number; readonly cache_read: number; readonly cache_create: number } | null;
   readonly usage_unknown_reason: string | null;
   /** Backend or pipeline error category; never a message body. */

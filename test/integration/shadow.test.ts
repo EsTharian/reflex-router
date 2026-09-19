@@ -150,6 +150,10 @@ describe("shadow mode: the decision backend failing never touches the session", 
     assert.equal(rec.error, "backend:timeout");
     assert.equal(rec.decision, null);
     assert.deepEqual(rec["usage"], USAGE, "the response is still measured");
+    const t = (rec as unknown as { timing: { decision_wait_ms: number; decision_deadline_ms: number; upstream_first_byte_ms: number | null } }).timing;
+    assert.equal(t.decision_wait_ms, 0, "shadow decides off the critical path: the request never waits for the backend");
+    assert.equal(t.decision_deadline_ms, 600);
+    assert.ok(t.upstream_first_byte_ms !== null && t.upstream_first_byte_ms < 400);
   });
 
   it("HTTP errors and junk are recorded by category; the upstream still sees the original bytes", async () => {

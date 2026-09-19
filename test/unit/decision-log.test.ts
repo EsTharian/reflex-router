@@ -12,7 +12,7 @@ const record = (id: string): DecisionRecord => ({
   v: 1, record: "decision", id, at: "2026-09-19T00:00:00.000Z", session: null, conv: null, kind: "main", signal: "none", signals: { header: false, s1: false, s2: false, s3: true },
   turn: "new", side_kind: null, entrypoint: "cli", mode_requested: "shadow", mode_effective: "shadow", degraded_reason: null, shape: { status: "checking", violations: [] },
   claude_version: "2.1.277", backend: "jev", requested: { model: "claude-sonnet-5", tier: "sonnet", effort: "medium" }, decision: null, plan: null, guard: null, override: null, pin: null,
-  forwarded: { requested_model: "claude-sonnet-5", model: "claude-sonnet-5", rewritten: false, fields: [], fallback: false, fallback_status: null, fallback_error: null }, upstream: { status: 200, msToHeaders: 5 }, usage: null, usage_unknown_reason: null, error: null, sent: null,
+  forwarded: { requested_model: "claude-sonnet-5", model: "claude-sonnet-5", rewritten: false, fields: [], fallback: false, fallback_status: null, fallback_error: null }, upstream: { status: 200, msToHeaders: 5 }, timing: { decision_wait_ms: 0, decision_deadline_ms: 1500, upstream_first_byte_ms: 5 }, usage: null, usage_unknown_reason: null, error: null, sent: null,
 });
 const lines = (file: string): Record<string, unknown>[] => fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
 

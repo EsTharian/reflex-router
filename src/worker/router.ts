@@ -13,6 +13,7 @@ import { guard, type GuardResult } from "../guard.js";
 import { assessVersion, type VersionLevel } from "../launcher/version.js";
 import { hashId, type DecisionLog, type DecisionRecord } from "../log/decision-log.js";
 import { parseOverride } from "../overrides.js";
+import { DECISION_GRACE_MS } from "../timing.js";
 import { buildQuestions, clampUp, judge, plan } from "../policy.js";
 import { buildState } from "../privacy/state.js";
 import { estimateTokens, fitsContext, tierOfModel, tierRank } from "../tiers.js";
@@ -30,7 +31,6 @@ import type { DecisionInfo } from "../outcome/tracker.js";
 /** A tier whose rewritten request was rejected stays off for the session this long. */
 export const TIER_DISABLE_MS = 30 * 60 * 1000;
 /** Safety margin on top of the backend's own deadline before route mode gives up waiting. */
-const DECISION_GRACE_MS = 250;
 
 export interface RouterDeps {
   readonly config: Config;
@@ -174,6 +174,8 @@ export class Router {
     const requestedTier = tierOfModel(v.requestedModel);
 
     let outcomeP: Promise<Outcome> = Promise.resolve({ part: NONE, target: null, reasons: [] });
+    /** How long this request waited for the backend before going upstream: route mode, `new` turns only (shadow decides off the critical path). */
+    let decisionWaitMs = 0;
     let pinState: DecisionRecord["pin"] = null;
     let sendBody = body;
     let sendHeaders: IncomingHttpHeaders | undefined;
@@ -205,7 +207,9 @@ export class Router {
     if (v.turn === "new") {
       outcomeP = this.#decide(v, s, conv, routing, ctx);
       if (routing) {
+        const waitStarted = this.#now();
         let outcome = await this.#bounded(outcomeP);
+        decisionWaitMs = this.#now() - waitStarted;
         // A decision that never arrived counts as a backend failure: a main-chat pin below the requested tier stays.
         const pinned = conv?.pin?.target;
         if (outcome.part.error === "decision_late" && v.kind === "main" && pinned && !this.#tierDisabled(s, pinned.tier)) {
@@ -236,6 +240,9 @@ export class Router {
 
     let status: number | null = null;
     let msToHeaders: number | null = null;
+    let upstreamFirstByteMs: number | null = null;
+    /** Set just before the request is handed back for forwarding; the upstream clock starts here. */
+    let forwardStarted = started;
     let tee: UsageTee | null = null;
     let finished = false;
     let fallbackStatus: number | null = null;
@@ -246,7 +253,9 @@ export class Router {
     const obs: Observation = {
       headers: (st, h) => {
         status = st;
-        msToHeaders = this.#now() - started;
+        const arrived = this.#now();
+        msToHeaders = arrived - started;
+        upstreamFirstByteMs = arrived - forwardStarted;
         const ct = h["content-type"];
         const ce = h["content-encoding"];
         tee = new UsageTee(typeof ct === "string" ? ct : undefined, typeof ce === "string" ? ce : undefined);
@@ -295,6 +304,7 @@ export class Router {
               pin: pinState,
               forwarded: { requested_model: v.requestedModel, model: sentModel, rewritten: rewritten && fallbackStatus === null, fields: rewritten ? fields : [], fallback: fallbackStatus !== null, fallback_status: fallbackStatus, fallback_error: fallbackError },
               upstream: { status, msToHeaders },
+              timing: { decision_wait_ms: decisionWaitMs, decision_deadline_ms: this.d.config.jevDeadlineMs, upstream_first_byte_ms: upstreamFirstByteMs },
               usage: u.usage ? { input: u.usage.input, output: u.usage.output, cache_read: u.usage.cacheRead, cache_create: u.usage.cacheCreate } : null,
               usage_unknown_reason: u.unknownReason,
             };
@@ -304,6 +314,7 @@ export class Router {
           .catch((e: unknown) => this.d.logger("error", `router: record failed: ${e instanceof Error ? e.message : String(e)}`));
       },
     };
+    forwardStarted = this.#now();
     return { body: sendBody, ...(sendHeaders ? { headers: sendHeaders } : {}), rewritten, obs };
   }
 

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import zlib from "node:zlib";
+import { DECISION_GRACE_MS } from "../../src/timing.js";
 import { startFakeJev, type FakeJev } from "../support/fake-jev.js";
 import { loadFixtures, type Fixture } from "../support/fixtures.js";
 import { replay, requestHeaders, sseHandler } from "../support/replay.js";
@@ -40,6 +41,13 @@ const insertAfterPasteTag = (token: string) => (b: Json): void => {
   block.text = block.text!.replace(/^(\s*<pasted_content id="[^"]*">)/, `$1${token}`);
 };
 const sentBody = (stack: Stack, i: number): Json => JSON.parse(stack.upstream.seen[i]!.body.toString()) as Json;
+
+interface Timing {
+  decision_wait_ms: number;
+  decision_deadline_ms: number;
+  upstream_first_byte_ms: number | null;
+}
+const timingOf = (rec: object): Timing => (rec as { timing: Timing }).timing;
 
 describe("route mode", () => {
   let jev: FakeJev;
@@ -81,6 +89,18 @@ describe("route mode", () => {
       assert.equal(sentBody(stack, n)["model"], HAIKU);
       assert.equal(rec.pin, "hit");
       assert.equal(rec.forwarded.rewritten, true);
+    });
+
+    it("every record carries a timing breakdown: a decided new turn waited for the backend, a continuation did not", async () => {
+      const first = await replay(stack, inSession(fx("subagent-new-turn"), "s-timing"));
+      const cont = await replay(stack, inSession(fx("subagent-continuation"), "s-timing"));
+      const a = timingOf(first.rec);
+      assert.equal(a.decision_deadline_ms, 500);
+      assert.ok(a.decision_wait_ms >= 0 && a.decision_wait_ms < 500 + DECISION_GRACE_MS, `waited ${a.decision_wait_ms} ms`);
+      assert.ok(a.upstream_first_byte_ms !== null && a.upstream_first_byte_ms >= 0);
+      const b = timingOf(cont.rec);
+      assert.equal(b.decision_wait_ms, 0, "a pinned continuation never waits for the backend");
+      assert.ok(b.upstream_first_byte_ms !== null);
     });
 
     it("the subagent's harness side call passes through unchanged even though the agent is pinned", async () => {
@@ -277,6 +297,13 @@ describe("route mode", () => {
       assert.ok(ms < 500 + 250 + 400, `took ${ms} ms`);
       assert.ok(stack.upstream.seen[n]!.body.equals(f.body));
       assert.equal(rec.error, "backend:timeout");
+      // The timing breakdown is what shows, from the log alone, that the wait stayed within the deadline.
+      const t = timingOf(rec);
+      assert.equal(t.decision_deadline_ms, 500);
+      assert.ok(t.decision_wait_ms >= 450 && t.decision_wait_ms <= 500 + DECISION_GRACE_MS, `decision waited ${t.decision_wait_ms} ms`);
+      assert.ok(t.upstream_first_byte_ms !== null && t.upstream_first_byte_ms >= 0);
+      const ttfb = (rec["upstream"] as { msToHeaders: number }).msToHeaders;
+      assert.ok(ttfb >= t.decision_wait_ms + t.upstream_first_byte_ms && ttfb - (t.decision_wait_ms + t.upstream_first_byte_ms) < 100, "msToHeaders = decision wait + router work + upstream first byte");
       const c = inSession(fx("subagent-continuation"), "s-hang");
       const cont = await replay(stack, c);
       assert.equal(cont.rec.pin, "hit");
