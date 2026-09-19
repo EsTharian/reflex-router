@@ -4,6 +4,22 @@ reflex report
   span: 2026-09-19T10:00:00.000Z .. 2026-09-20T19:19:40.000Z
   Every figure below is computed from these records only; small samples are marked, and none of it is a benchmark (see docs/observations.md).
 
+0. Workflow profile
+  tokens = input + output + cache read + cache write of each classified request; each request counts once
+  1 session; user turns (main-chat new turns) per session: p50 956, max 956
+    session   user turns  subagent runs  requests       tokens
+    cccccccc         956              0      6000  260,480,238
+
+  where the tokens went:
+    category                                requests       tokens  % tokens
+    (a) new turns, main chat                     956   47,914,827     18.4%
+    (b) tool-loop continuations, main chat      2671  115,631,798     44.4%
+    (c) subagents (first request and loop)         0            0      0.0%
+    (d) side calls                              2373   96,933,613     37.2%
+    total                                       6000  260,480,238    100.0%
+  work units (a new turn and its continuations): 956; 637 with a plan below the requested tier (ignoring the cost guard); 1560 continuation(s) before any new turn count as not touchable
+  routing can touch at most 24.8% of your tokens; 0.0% of that is in subagents
+
 1. Decisions by kind, turn and tier
   6000 classified requests
 

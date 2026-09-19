@@ -4,6 +4,9 @@ reflex report
   span: no records
   Every figure below is computed from these records only; small samples are marked, and none of it is a benchmark (see docs/observations.md).
 
+0. Workflow profile
+  (no records)
+
 1. Decisions by kind, turn and tier
   (no records)
 

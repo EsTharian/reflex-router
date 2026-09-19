@@ -1,4 +1,4 @@
-// `reflex report`: reads the decision log (JSONL files only, no network) and prints the ten sections.
+// `reflex report`: reads the decision log (JSONL files only, no network) and prints its sections.
 import { defaultHome } from "../config.js";
 import { SECTIONS, type Ctx } from "./sections.js";
 import { defaultLogFiles, parseDuration, parseRecords, readLogFiles, sinceView, type Records } from "./records.js";

@@ -6,8 +6,8 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, reportCommand } from "../../src/report/index.js";
 import { parseDuration, parseRecords } from "../../src/report/records.js";
-import { classifyMoves, costOf, MIN_OUTCOME_N, outcomeGroups, SECTIONS, wouldRoute, type Ctx } from "../../src/report/sections.js";
-import { at, dec, large, mixed, outcome, toJsonl, update, type Rec } from "../support/report-fixtures.js";
+import { classifyMoves, costOf, MIN_OUTCOME_N, outcomeGroups, s0Workflow, SECTIONS, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { at, dec, large, mixed, outcome, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
 const parse = (text: string) => parseRecords([{ source: "test.jsonl", text }]);
@@ -47,6 +47,51 @@ describe("report: golden files", () => {
     const out = buildReport(parse(text), { usd: true });
     assert.ok(Date.now() - started < 5000, "report over 6000 records takes under 5 s");
     golden("large", out);
+  });
+});
+
+describe("report: workflow profile", () => {
+  const archiveDir = path.join(GOLDEN_DIR, "archives");
+  it("golden: the archived real sessions (structural copies, scripts/report/strip-archive.mjs)", () => {
+    const files = fs.readdirSync(archiveDir).filter((f) => f.endsWith(".jsonl")).sort();
+    assert.ok(files.length >= 6, "the six archived logs are present");
+    const rec = parseRecords(files.map((f) => ({ source: f, text: fs.readFileSync(path.join(archiveDir, f), "utf8") })));
+    golden("workflow-archives", s0Workflow({ rec, byId: new Map(), usd: false }).join("\n") + "\n");
+  });
+  it("golden: a single-turn, long-loop log shaped like the first real-work dogfood", () => {
+    golden("workflow-single-turn-long-loop", s0Workflow(ctxOf(singleTurnLongLoop())).join("\n") + "\n");
+  });
+  it("single-turn long loops judged opus: nothing is touchable, continuations carry the tokens", () => {
+    const p = workProfile(parse(singleTurnLongLoop()).decisions);
+    assert.deepEqual(p.requests, { new: 2, continuation: 43, subagent: 0, side: 5 });
+    assert.equal(p.tokens.side, 2 * 226_310 + 3 * 40_053);
+    assert.equal(p.touchable, 0);
+    assert.equal(p.units, 2);
+    const out = s0Workflow(ctxOf(singleTurnLongLoop())).join("\n");
+    assert.match(out, /routing can touch at most 0\.0% of your tokens; - of that is in subagents/);
+  });
+  it("a turn planned below the requested tier makes its whole loop touchable; subagent share is of the touchable part", () => {
+    const S = "eeeeeeeeeeeeeeee";
+    const M = `${S}:m:0000000000000001`;
+    const A = `${S}:a:0000000000000002`;
+    const text = toJsonl([
+      dec({ id: "m1", t: 0, session: S, conv: M, probs: [0, 0, 1], pickMass: "opus", planTier: null, usage: [0, 0, 0, 100] }),
+      dec({ id: "m2", t: 1, session: S, conv: M, turn: "continuation", usage: [0, 0, 0, 100] }),
+      dec({ id: "a1", t: 2, session: S, conv: A, kind: "subagent", probs: [0, 1, 0], pickMass: "sonnet", planTier: "sonnet", usage: [0, 0, 0, 200] }),
+      dec({ id: "a2", t: 3, session: S, conv: A, kind: "subagent", turn: "continuation", usage: [0, 0, 0, 200] }),
+      dec({ id: "m3", t: 4, session: S, conv: M, probs: [1, 0, 0], pickMass: "haiku", planTier: "haiku", usage: [0, 0, 0, 50] }),
+      dec({ id: "m4", t: 5, session: S, conv: M, turn: "continuation", usage: [0, 0, 0, 50] }),
+      dec({ id: "sd", t: 6, session: S, conv: M, turn: "side", side: "suggestion", usage: [0, 0, 0, 300] }),
+      dec({ id: "x1", t: 7, session: S, conv: "orphan", turn: "continuation", usage: [0, 0, 0, 0] }),
+      dec({ id: "g1", t: 8, session: S, conv: "guarded", planTier: null, guard: { allowed: false, reason: "over_limit", penalty: 0.1 }, reasons: ["guard_blocked"], usage: [0, 0, 0, 0] }),
+    ]);
+    const p = workProfile(parse(text).decisions);
+    assert.equal(p.total, 1000);
+    assert.equal(p.touchable, 500, "the subagent loop (400) and the second main turn with its continuation (100); the first turn and the side call are not");
+    assert.equal(p.touchableSubagent, 400);
+    assert.equal(p.orphanContinuations, 1);
+    assert.equal(p.undecidedNew, 1);
+    assert.match(s0Workflow(ctxOf(text)).join("\n"), /routing can touch at most 50\.0% of your tokens; 80\.0% of that is in subagents/);
   });
 });
 

@@ -217,3 +217,23 @@ export function large(n: number): string {
   }
   return toJsonl(out);
 }
+
+/**
+ * Shaped like the first real-work dogfood (docs/observations.md, Phase 2 entry): two shadow sessions, one user turn each,
+ * judged opus, followed by long tool loops (20 and 23 continuations), no subagents, two unclassified side calls of
+ * ~226k tokens each and three prompt suggestions. 50 requests, ~8.9M tokens. Synthetic numbers of that shape only.
+ */
+export function singleTurnLongLoop(): string {
+  const out: Rec[] = [];
+  const session = (s: string, t0: number, loop: number, extraSuggestion: boolean): void => {
+    const conv = `${s}:m:0000000000000009`;
+    const base = { session: s, conv, mode: "shadow" as const };
+    out.push(dec({ ...base, id: `${s.slice(0, 2)}-new`, t: t0, probs: [0, 0.05, 0.95], confidence: 0.9, pickMass: "opus", planTier: null, reasons: ["same_tier"], usage: [5, 1500, 60000, 120000] }));
+    for (let i = 0; i < loop; i++) out.push(dec({ ...base, id: `${s.slice(0, 2)}-c${i}`, t: t0 + 10 + i * 10, turn: "continuation", usage: [5, 900, 180000, 4000] }));
+    out.push(dec({ ...base, id: `${s.slice(0, 2)}-u`, t: t0 + 20 + loop * 10, turn: "side", side: "unclassified", usage: [10, 300, 200000, 26000] }));
+    for (let i = 0; i < (extraSuggestion ? 2 : 1); i++) out.push(dec({ ...base, id: `${s.slice(0, 2)}-s${i}`, t: t0 + 30 + loop * 10 + i, turn: "side", side: "suggestion", usage: [3, 50, 40000, 0] }));
+  };
+  session("d1d1d1d1d1d1d1d1", 0, 20, false);
+  session("d2d2d2d2d2d2d2d2", 5000, 23, true);
+  return toJsonl(out);
+}

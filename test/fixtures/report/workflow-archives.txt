@@ -1,0 +1,23 @@
+  tokens = input + output + cache read + cache write of each classified request; each request counts once
+  10 sessions; user turns (main-chat new turns) per session: p50 4, max 11
+    session   user turns  subagent runs  requests     tokens
+    383bb180          11              1        61  4,269,427
+    86577c30           7              2        59  3,626,672
+    1cc8b715           2              0        11    651,755
+    ba0f7059           0              0         1          0
+    eec092bf           3              0        19  1,310,535
+    1dc50458           3              1        23  1,205,711
+    caacab3b           4              0        18  1,290,500
+    27fc5072           7              0        41  2,713,269
+    86d1d76f           5              1        29  1,443,180
+    b8e30316           5              1        28  1,763,615
+
+  where the tokens went:
+    category                                requests      tokens  % tokens
+    (a) new turns, main chat                      47   3,595,666     19.7%
+    (b) tool-loop continuations, main chat        97   7,527,343     41.2%
+    (c) subagents (first request and loop)        35   1,199,994      6.6%
+    (d) side calls                               111   5,951,661     32.6%
+    total                                        290  18,274,664    100.0%
+  work units (a new turn and its continuations): 53; 25 with a plan below the requested tier (ignoring the cost guard); 22 new turn(s) without a decision count as not touchable
+  routing can touch at most 28.1% of your tokens; 16.3% of that is in subagents

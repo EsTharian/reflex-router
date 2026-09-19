@@ -6,6 +6,23 @@ reflex report
   1 record(s) of an unknown type ignored
   Every figure below is computed from these records only; small samples are marked, and none of it is a benchmark (see docs/observations.md).
 
+0. Workflow profile
+  tokens = input + output + cache read + cache write of each classified request; each request counts once
+  2 sessions; user turns (main-chat new turns) per session: p50 5, max 10
+    session   user turns  subagent runs  requests   tokens
+    aaaaaaaa           5              0         8  323,503
+    bbbbbbbb          10              1        14  915,672
+
+  where the tokens went:
+    category                                requests     tokens  % tokens
+    (a) new turns, main chat                      15    913,358     73.7%
+    (b) tool-loop continuations, main chat         2    131,156     10.6%
+    (c) subagents (first request and loop)         2     42,806      3.5%
+    (d) side calls                                 3    151,855     12.3%
+    total                                         22  1,239,175    100.0%
+  work units (a new turn and its continuations): 16; 7 with a plan below the requested tier (ignoring the cost guard); 6 new turn(s) without a decision count as not touchable
+  routing can touch at most 37.5% of your tokens; 9.2% of that is in subagents
+
 1. Decisions by kind, turn and tier
   22 classified requests
 

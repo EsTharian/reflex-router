@@ -1,4 +1,4 @@
-// The ten sections of `reflex report`. Each takes the normalised records and returns lines of text; the numbers a section
+// The sections of `reflex report`. Each takes the normalised records and returns lines of text; the numbers a section
 // computes that are worth testing on their own (moves, cost, outcome join) are exported. Pure, no I/O, no network.
 import { TIERS, type Tier } from "../config.js";
 import { DOWNGRADE_MIN_CONFIDENCE } from "../policy.js";
@@ -24,6 +24,107 @@ const tierCols = (used: ReadonlySet<string>): string[] => [...TIERS.filter((t) =
 const tl = (t: Tier | null): string => t ?? "?";
 const newTurns = (d: readonly Dec[]): Dec[] => d.filter((x) => x.turn === "new");
 const tokens = (d: Dec): number => (d.usage ? totalTokens(d.usage) : 0);
+
+/** Where a request's tokens count in the workflow profile. Anything not a positively identified turn or loop step is `side`, as in the classifier. */
+export type WorkCategory = "new" | "continuation" | "subagent" | "side";
+export const workCategory = (d: Dec): WorkCategory =>
+  d.turn !== "new" && d.turn !== "continuation" ? "side" : d.kind === "subagent" ? "subagent" : d.turn;
+
+/** The plan for this new turn put it below the requested tier (shadow: would have; route: before the cost guard), or it was sent there. */
+const planMovesDown = (x: Dec): boolean =>
+  x.requestedTier !== null && ((x.planTier !== null && tierRank(x.planTier) < tierRank(x.requestedTier)) || (x.routed && x.sentTier !== null && tierRank(x.sentTier) < tierRank(x.requestedTier)));
+
+export interface WorkProfile {
+  readonly requests: Readonly<Record<WorkCategory, number>>;
+  readonly tokens: Readonly<Record<WorkCategory, number>>;
+  readonly total: number;
+  /** Work units: a new turn (main chat or subagent) and the continuations of its conversation up to the next new turn. */
+  readonly units: number;
+  readonly touchableUnits: number;
+  /** New turns whose plan has no target and that never reached the backend (guard refusal before it, errors, no key). */
+  readonly undecidedNew: number;
+  /** Continuations with no new turn before them in the log (it started mid-loop): no unit, not touchable. */
+  readonly orphanContinuations: number;
+  /** Tokens of the units whose plan moved below the requested tier: the most any per-turn routing could have moved. */
+  readonly touchable: number;
+  readonly touchableSubagent: number;
+}
+
+/** Pure. Side calls are never rewritten, so they are never touchable; a loop is touchable when the turn that started it was. */
+export function workProfile(d: readonly Dec[]): WorkProfile {
+  const requests: Record<WorkCategory, number> = { new: 0, continuation: 0, subagent: 0, side: 0 };
+  const tok: Record<WorkCategory, number> = { new: 0, continuation: 0, subagent: 0, side: 0 };
+  for (const x of d) {
+    requests[workCategory(x)]++;
+    tok[workCategory(x)] += tokens(x);
+  }
+  const byConv = new Map<string, Dec[]>();
+  for (const x of d) {
+    if (workCategory(x) === "side") continue;
+    const k = x.conv ?? `\u0000${x.id}`; // no conversation key: the request is a unit (or an orphan) on its own
+    byConv.set(k, [...(byConv.get(k) ?? []), x]);
+  }
+  let units = 0;
+  let touchableUnits = 0;
+  let undecidedNew = 0;
+  let orphanContinuations = 0;
+  let touchable = 0;
+  let touchableSubagent = 0;
+  for (const list of byConv.values()) {
+    list.sort((a, b) => a.atMs - b.atMs);
+    let unit: boolean | null = null; // null: no new turn seen yet in this conversation
+    for (const x of list) {
+      if (x.turn === "new") {
+        units++;
+        unit = planMovesDown(x);
+        if (unit) touchableUnits++;
+        if (!x.decided && x.planTier === null) undecidedNew++;
+      } else if (unit === null) orphanContinuations++;
+      if (unit) {
+        touchable += tokens(x);
+        if (x.kind === "subagent") touchableSubagent += tokens(x);
+      }
+    }
+  }
+  return { requests, tokens: tok, total: sum(Object.values(tok)), units, touchableUnits, undecidedNew, orphanContinuations, touchable, touchableSubagent };
+}
+
+/** Shown per session before the list is cut. */
+const MAX_SESSION_ROWS = 20;
+
+/** 0. Workflow profile: where the tokens go, and how much of them per-turn routing could reach at all. */
+export function s0Workflow({ rec }: Ctx): string[] {
+  const d = rec.decisions;
+  if (d.length === 0) return NONE;
+  const sessions = new Map<string, Dec[]>();
+  for (const x of [...d].sort((a, b) => a.atMs - b.atMs)) sessions.set(x.session ?? "?", [...(sessions.get(x.session ?? "?") ?? []), x]);
+  const userTurns = (v: readonly Dec[]): number => v.filter((x) => workCategory(x) === "new").length;
+  const perSession = [...sessions.values()].map(userTurns);
+  const out = [
+    "  tokens = input + output + cache read + cache write of each classified request; each request counts once",
+    `  ${sessions.size} session${sessions.size === 1 ? "" : "s"}; user turns (main-chat new turns) per session: p50 ${int(median(perSession))}, max ${int(Math.max(...perSession))}`,
+    ...table([
+      ["session", "user turns", "subagent runs", "requests", "tokens"],
+      ...[...sessions.entries()].slice(0, MAX_SESSION_ROWS).map(([s, v]) => [s.slice(0, 8), String(userTurns(v)), String(v.filter((x) => x.kind === "subagent" && x.turn === "new").length), String(v.length), int(sum(v.map(tokens)))]),
+    ], "    "),
+  ];
+  if (sessions.size > MAX_SESSION_ROWS) out.push(`    ... ${sessions.size - MAX_SESSION_ROWS} more session(s)`);
+  const p = workProfile(d);
+  const label: Record<WorkCategory, string> = {
+    new: "(a) new turns, main chat",
+    continuation: "(b) tool-loop continuations, main chat",
+    subagent: "(c) subagents (first request and loop)",
+    side: "(d) side calls",
+  };
+  out.push("", "  where the tokens went:", ...table([
+    ["category", "requests", "tokens", "% tokens"],
+    ...(["new", "continuation", "subagent", "side"] as const).map((c) => [label[c], String(p.requests[c]), int(p.tokens[c]), pct(p.tokens[c], p.total)]),
+    ["total", String(d.length), int(p.total), pct(p.total, p.total)],
+  ], "    "));
+  out.push(`  work units (a new turn and its continuations): ${p.units}; ${p.touchableUnits} with a plan below the requested tier (ignoring the cost guard)${p.undecidedNew > 0 ? `; ${p.undecidedNew} new turn(s) without a decision count as not touchable` : ""}${p.orphanContinuations > 0 ? `; ${p.orphanContinuations} continuation(s) before any new turn count as not touchable` : ""}`);
+  out.push(`  routing can touch at most ${pct(p.touchable, p.total)} of your tokens; ${pct(p.touchableSubagent, p.touchable)} of that is in subagents`);
+  return out;
+}
 
 /** 1. Decisions by kind, turn and tier (requested -> sent), mode and degraded reasons. */
 export function s1Decisions({ rec }: Ctx): string[] {
@@ -357,6 +458,7 @@ export function s10CacheMoves({ rec }: Ctx): string[] {
 }
 
 export const SECTIONS: readonly { readonly title: string; readonly run: (c: Ctx) => string[] }[] = [
+  { title: "0. Workflow profile", run: s0Workflow },
   { title: "1. Decisions by kind, turn and tier", run: s1Decisions },
   { title: "2. mass vs argmax", run: s2MassVsArgmax },
   { title: "3. Shadow vs actual", run: s3ShadowVsActual },
