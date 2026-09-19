@@ -7,3 +7,7 @@ _dumps/
 
 # Phase plans are local working documents, never committed
 docs/plan-*.md
+
+# Release tarballs are build output, attached to a release, never committed
+*.tgz
+*.tgz.sha256
