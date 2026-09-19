@@ -11,7 +11,7 @@ npm run test:live                          # tests needing a real TYPESAFE_API_K
 npm run build                              # tsc -> dist/
 npm run gen:versions                       # regenerate src/wire/tested-versions.generated.ts from test/fixtures/claude-code/*
 node bin/reflex.js doctor                  # run the built CLI (after `npm run build`); shows where each setting came from
-node bin/reflex.js report [--since 2h] [--usd]   # summarise ~/.reflex/decisions.jsonl (reads files only); section 0 = workflow profile
+node bin/reflex.js report [--since 2h] [--usd] [--json]   # summarise ~/.reflex/decisions.jsonl (reads files only); section 0 = workflow profile; --json emits the same sections keyed by section number
 node bin/reflex.js report --fingerprints   # unclassified side-call fingerprints as JSON lines (what users send back)
 node scripts/report/strip-archive.mjs <in> <out>   # structural copy of an archived log (allow-listed fields) for test/fixtures/report/archives/
 node scripts/acceptance/check-archives.mjs # Phase 1 acceptance checks over ~/.reflex/archive/*.jsonl (docs/acceptance-phase1.md)

@@ -41,6 +41,53 @@ export function buildFingerprints(all: Records, opts: Pick<ReportOptions, "fromM
   return fingerprintGroups(rec.decisions.filter((d) => d.turn === "side" && d.sideKind === "unclassified")).map((g) => JSON.stringify(g) + "\n").join("");
 }
 
+export interface ReportJson {
+  readonly files: readonly string[];
+  readonly counts: {
+    readonly decisions: number;
+    readonly outcomes: number;
+    readonly outcomeUpdates: number;
+    readonly harnessInjected: number;
+    readonly delegateHints: number;
+    readonly sessions: number;
+  };
+  /** null when there are no records to span. */
+  readonly span: { readonly from: string; readonly to: string } | null;
+  readonly since?: string;
+  readonly skippedLines: number;
+  readonly unterminatedLines: number;
+  readonly otherRecords: number;
+  /** Same sections as the text report, in the same order, keyed by section number (matching the text output's own numbering, not by title text). */
+  readonly sections: Record<string, { readonly title: string; readonly lines: readonly string[] }>;
+}
+
+/** `--json`: the same sections `buildReport` prints, as one JSON object keyed by section number. Never used to derive the text report, so it cannot drift it. */
+export function buildReportJson(all: Records, opts: ReportOptions): ReportJson {
+  const rec = opts.fromMs === undefined ? all : sinceView(all, opts.fromMs);
+  const ctx: Ctx = { rec, byId: new Map(all.decisions.map((d) => [d.id, d])), usd: opts.usd };
+  const times = [...rec.decisions.map((d) => d.atMs), ...rec.outcomes.map((o) => o.atMs)];
+  const sessions = new Set(rec.decisions.map((d) => d.session ?? "?")).size;
+  const sections: Record<string, { title: string; lines: readonly string[] }> = {};
+  for (const s of SECTIONS) sections[s.id] = { title: s.title, lines: s.run(ctx) };
+  return {
+    files: all.sources,
+    counts: {
+      decisions: rec.decisions.length,
+      outcomes: rec.outcomes.length,
+      outcomeUpdates: rec.updates.length,
+      harnessInjected: rec.harnessInjected.length,
+      delegateHints: rec.hints.length,
+      sessions,
+    },
+    span: times.length === 0 ? null : { from: iso(Math.min(...times)), to: iso(Math.max(...times)) },
+    ...(opts.sinceText !== undefined ? { since: opts.sinceText } : {}),
+    skippedLines: all.skippedLines,
+    unterminatedLines: all.unterminatedLines,
+    otherRecords: all.other,
+    sections,
+  };
+}
+
 export interface ReportIO {
   readonly env: NodeJS.ProcessEnv;
   readonly stdout: (t: string) => void;
@@ -48,17 +95,19 @@ export interface ReportIO {
   readonly now?: () => number;
 }
 
-const USAGE = "usage: reflex report [--since <2h|30m|7d>] [--usd | --fingerprints] [<decisions.jsonl> ...]\n";
+const USAGE = "usage: reflex report [--since <2h|30m|7d>] [--usd] [--json | --fingerprints] [<decisions.jsonl> ...]\n";
 
 /** Exit code: 0 ok, 2 bad arguments, 1 unreadable input. */
 export function reportCommand(args: readonly string[], io: ReportIO): number {
   let usd = false;
+  let json = false;
   let fingerprints = false;
   let sinceText: string | undefined;
   const files: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--usd") usd = true;
+    else if (a === "--json") json = true;
     else if (a === "--fingerprints") fingerprints = true;
     else if (a === "--since" || a.startsWith("--since=")) {
       const v = a === "--since" ? args[++i] : a.slice("--since=".length);
@@ -75,6 +124,10 @@ export function reportCommand(args: readonly string[], io: ReportIO): number {
       return 2;
     } else files.push(a);
   }
+  if (json && fingerprints) {
+    io.stderr(`reflex report: --json and --fingerprints are two different output modes; use one\n${USAGE}`);
+    return 2;
+  }
   const home = defaultHome(io.env);
   const sources = files.length > 0 ? files : defaultLogFiles(home);
   let texts;
@@ -90,6 +143,8 @@ export function reportCommand(args: readonly string[], io: ReportIO): number {
     io.stdout(buildFingerprints(parseRecords(texts), fromMs !== undefined ? { fromMs } : {}));
     return 0;
   }
-  io.stdout(buildReport(parseRecords(texts), { usd, ...(fromMs !== undefined ? { fromMs } : {}), ...(sinceText !== undefined ? { sinceText } : {}) }));
+  const opts: ReportOptions = { usd, ...(fromMs !== undefined ? { fromMs } : {}), ...(sinceText !== undefined ? { sinceText } : {}) };
+  const records = parseRecords(texts);
+  io.stdout(json ? JSON.stringify(buildReportJson(records, opts), null, 2) + "\n" : buildReport(records, opts));
   return 0;
 }

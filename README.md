@@ -79,7 +79,7 @@ Here is what the report looks like. This is real output (`reflex report` on the 
     connection not logged  12  823 ms  1,136 ms
 ```
 
-The full report has ten sections: decisions by kind and tier; `mass` vs `argmax`; shadow vs actual; guard refusals; fallbacks and breaker; latency (Jev by new vs reused connection, the decision wait and the upstream's first byte); outcome rates for routed vs unchanged turns, with sample sizes and an explicit "insufficient data" line below 20 windows; cost at list prices; side-call usage on its own line; and cache writes by move type. Settings, route-mode details and safety nets: [`docs/reference.md`](docs/reference.md).
+The full report has ten sections: decisions by kind and tier; `mass` vs `argmax`; shadow vs actual; guard refusals; fallbacks and breaker; latency (Jev by new vs reused connection, the decision wait and the upstream's first byte); outcome rates for routed vs unchanged turns, with sample sizes and an explicit "insufficient data" line below 20 windows; cost at list prices; side-call usage on its own line; and cache writes by move type. `reflex report --json` prints the same sections as one JSON object, keyed by section number, for scripting against. Settings, route-mode details and safety nets: [`docs/reference.md`](docs/reference.md).
 
 ## How it compares
 

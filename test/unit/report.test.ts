@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
-import { buildReport, reportCommand } from "../../src/report/index.js";
-import { parseDuration, parseRecords } from "../../src/report/records.js";
+import { buildReport, buildReportJson, reportCommand, type ReportJson } from "../../src/report/index.js";
+import { parseDuration, parseRecords, sinceView } from "../../src/report/records.js";
 import { classifyMoves, costOf, hintArms, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, s12SideRouting, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
@@ -457,11 +457,142 @@ describe("reflex report (command)", () => {
     assert.equal(r.code, 1);
     assert.match(r.stderr, /cannot read/);
   });
+  it("--json emits the same sections as one JSON object, keyed by section number, and leaves the text report untouched", () => {
+    const h = home();
+    const file = path.join(h, "d.jsonl");
+    fs.writeFileSync(file, toJsonl([dec({ id: "only", t: 0, probs: [1, 0, 0], pickMass: "haiku", sent: "haiku" })]));
+    const text = run([file], {}).stdout;
+    const r = run(["--json", file], {});
+    assert.equal(r.code, 0);
+    const out = JSON.parse(r.stdout) as ReportJson;
+    for (const s of SECTIONS) {
+      assert.ok(Object.hasOwn(out.sections, s.id), s.id);
+      assert.equal(out.sections[s.id]!.title, s.title);
+      assert.deepEqual(out.sections[s.id]!.lines, s.run({ rec: parseRecords([{ source: file, text: fs.readFileSync(file, "utf8") }]), byId: new Map(), usd: false }));
+    }
+    assert.equal(out.counts.decisions, 1);
+    assert.ok(out.span !== null);
+    // The text report is built independently and must not change shape because --json exists.
+    assert.match(text, /reflex report/);
+    for (const s of SECTIONS) assert.ok(text.includes(s.title), s.title);
+  });
+  it("--json and --fingerprints together are rejected (exit 2); each alone still works", () => {
+    const h = home();
+    const file = path.join(h, "d.jsonl");
+    fs.writeFileSync(file, toJsonl([dec({ id: "only", t: 0 })]));
+    assert.equal(run(["--json", "--fingerprints", file], {}).code, 2);
+    assert.equal(run(["--json", file], {}).code, 0);
+    assert.equal(run(["--fingerprints", file], {}).code, 0);
+  });
+  it("--json --usd includes the same dollar-formatted lines as the text report with --usd", () => {
+    const h = home();
+    const file = path.join(h, "d.jsonl");
+    fs.writeFileSync(file, toJsonl([dec({ id: "1", t: 0, sent: "haiku", usage: [0, 0, 0, 1000] })]));
+    const text = run(["--usd", file], {}).stdout;
+    const out = JSON.parse(run(["--json", "--usd", file], {}).stdout) as ReportJson;
+    const s8 = out.sections["8"]!.lines.join("\n");
+    assert.match(s8, /\$ at requested/);
+    assert.match(text, /\$ at requested/);
+  });
   it("makes no network connection and writes nothing (it only reads)", () => {
     const h = home();
     fs.writeFileSync(path.join(h, "decisions.jsonl"), toJsonl([dec({ id: "a", t: 0 })]));
     const before = fs.readdirSync(h);
     run([], { REFLEX_HOME: h });
     assert.deepEqual(fs.readdirSync(h), before);
+  });
+});
+
+describe("report: --json schema", () => {
+  const archiveDir = path.join(GOLDEN_DIR, "archives");
+
+  /**
+   * Structural checks that must hold for `--json` on any input: field types, `sections` keyed by section
+   * number (matching the text report's own numbering) for every entry in `SECTIONS`, in order and nothing
+   * else, each carrying its title and lines identical to running that section directly on the same
+   * (already time-filtered) records — so the JSON view cannot silently drift from what `SECTIONS[i].run`
+   * actually computes or from the number the text report prints beside the same title.
+   */
+  function assertSchema(out: ReportJson, rec: ReturnType<typeof parseRecords>, usd: boolean): void {
+    assert.ok(Array.isArray(out.files));
+    for (const f of out.files) assert.equal(typeof f, "string");
+    const counts = out.counts;
+    for (const k of ["decisions", "outcomes", "outcomeUpdates", "harnessInjected", "delegateHints", "sessions"] as const) {
+      assert.equal(typeof counts[k], "number", k);
+      assert.ok(Number.isInteger(counts[k]) && counts[k] >= 0, k);
+    }
+    assert.equal(counts.decisions, rec.decisions.length);
+    assert.equal(counts.outcomes, rec.outcomes.length);
+    if (out.span === null) {
+      assert.equal(rec.decisions.length + rec.outcomes.length, 0, "span is null only when there is nothing to span");
+    } else {
+      assert.equal(typeof out.span.from, "string");
+      assert.equal(typeof out.span.to, "string");
+      assert.ok(!Number.isNaN(Date.parse(out.span.from)), "span.from is a valid date");
+      assert.ok(!Number.isNaN(Date.parse(out.span.to)), "span.to is a valid date");
+      assert.ok(Date.parse(out.span.from) <= Date.parse(out.span.to));
+    }
+    for (const k of ["skippedLines", "unterminatedLines", "otherRecords"] as const) assert.equal(typeof out[k], "number", k);
+    assert.deepEqual(Object.keys(out.sections), SECTIONS.map((s) => s.id), "sections are keyed by number, in order, exactly matching SECTIONS, and nothing else");
+    const ctx: Ctx = { rec, byId: new Map(rec.decisions.map((d) => [d.id, d])), usd };
+    for (const s of SECTIONS) {
+      const entry = out.sections[s.id];
+      assert.ok(entry, s.id);
+      assert.equal(entry.title, s.title, s.id);
+      assert.ok(Array.isArray(entry.lines), s.id);
+      for (const line of entry.lines) assert.equal(typeof line, "string", s.id);
+      assert.deepEqual(entry.lines, s.run(ctx), `section ${s.id}: --json content must match running the section directly`);
+      // The number the text report prints beside this title is the same number this section is keyed by in JSON.
+      assert.ok(s.title.startsWith(`${s.id}.`), `${s.title} must start with its own id ${s.id}`);
+    }
+    // No cycles, no functions, no undefined slipping through: what json.parse(stringify(out)) gives back is out itself.
+    assert.deepEqual(JSON.parse(JSON.stringify(out)) as unknown, out);
+  }
+
+  it("empty log: valid schema, null span, zero counts, every section still present", () => {
+    const rec = parse("");
+    const out = buildReportJson(rec, { usd: false });
+    assertSchema(out, rec, false);
+    assert.equal(out.span, null);
+    assert.deepEqual(out.counts, { decisions: 0, outcomes: 0, outcomeUpdates: 0, harnessInjected: 0, delegateHints: 0, sessions: 0 });
+    assert.deepEqual(out.files, ["test.jsonl"], "the fixture's source name, from Records.sources");
+  });
+
+  it("the archived real sessions, concatenated: valid schema at both --usd settings", () => {
+    const files = fs.readdirSync(archiveDir).filter((f) => f.endsWith(".jsonl")).sort();
+    assert.ok(files.length >= 6, "the six archived logs are present");
+    const rec = parseRecords(files.map((f) => ({ source: f, text: fs.readFileSync(path.join(archiveDir, f), "utf8") })));
+    assert.ok(rec.decisions.length > 0, "the archives are not empty");
+    for (const usd of [false, true]) assertSchema(buildReportJson(rec, { usd }), rec, usd);
+  });
+
+  it("each archived log read on its own: valid schema", () => {
+    const files = fs.readdirSync(archiveDir).filter((f) => f.endsWith(".jsonl")).sort();
+    for (const f of files) {
+      const rec = parseRecords([{ source: f, text: fs.readFileSync(path.join(archiveDir, f), "utf8") }]);
+      assertSchema(buildReportJson(rec, { usd: false }), rec, false);
+    }
+  });
+
+  it("--since narrows counts and span but the schema, and the section content it applies to, hold the same", () => {
+    const files = fs.readdirSync(archiveDir).filter((f) => f.endsWith(".jsonl")).sort();
+    const all = parseRecords(files.map((f) => ({ source: f, text: fs.readFileSync(path.join(archiveDir, f), "utf8") })));
+    const times = all.decisions.map((d) => d.atMs);
+    const fromMs = Math.round((Math.min(...times) + Math.max(...times)) / 2);
+    const out = buildReportJson(all, { usd: false, fromMs, sinceText: "test" });
+    assert.equal(out.since, "test");
+    assert.ok(out.counts.decisions > 0 && out.counts.decisions < all.decisions.length, "the cut actually narrows the set");
+    assertSchema(out, sinceView(all, fromMs), false);
+  });
+
+  it("through the CLI, --json output parses and matches buildReportJson on the same files", () => {
+    const files = fs.readdirSync(archiveDir).filter((f) => f.endsWith(".jsonl")).sort().map((f) => path.join(archiveDir, f));
+    let stdout = "";
+    const code = reportCommand(["--json", "--usd", ...files], { env: {}, stdout: (t) => (stdout += t), stderr: () => {} });
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout) as ReportJson;
+    const rec = parseRecords(files.map((f) => ({ source: f, text: fs.readFileSync(f, "utf8") })));
+    assertSchema(out, rec, true);
+    assert.deepEqual(out, buildReportJson(rec, { usd: true }));
   });
 });

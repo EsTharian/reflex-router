@@ -4,6 +4,7 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
+- **`reflex report --json`**: the same sections `reflex report` prints, as one JSON object (a header of counts/span plus a `sections` object keyed by section number — matching the text report's own numbering, not by title text — each value `{title, lines}`). Built from the same section functions the text report calls, so it cannot drift from the text output; mutually exclusive with `--fingerprints`. Schema stability covered by tests over the archived real logs and an empty log.
 - CI: `actions/checkout` and `actions/setup-node` bumped to v7, `ubuntu-latest` pinned to `ubuntu-24.04` in the test matrix. No functional change.
 
 ## 0.2.3-alpha — 2026-09-19

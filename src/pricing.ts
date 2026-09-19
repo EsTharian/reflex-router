@@ -36,6 +36,12 @@ export const cacheWriteUsd = (tier: Tier, tokens: number, ttl: CacheTtl): number
 /** $ to read `tokens` from the cache of `tier`. */
 export const cacheReadUsd = (tier: Tier, tokens: number): number => tokens * perToken(PRICES[tier].input) * PRICES[tier].cacheReadMult;
 
+/** $ per million tokens to read from the cache of `tier` (the rate `cacheReadUsd` charges, not a $ amount). */
+export const cacheReadRate = (tier: Tier): number => PRICES[tier].input * PRICES[tier].cacheReadMult;
+
+/** $ per million tokens to write into the cache of `tier` at `ttl` (the rate `cacheWriteUsd` charges, not a $ amount). */
+export const cacheWriteRate = (tier: Tier, ttl: CacheTtl): number => PRICES[tier].input * CACHE_WRITE_MULT[ttl];
+
 /** Token counts of one response, as `usage` in the decision log. */
 export interface UsageTokens {
   readonly input: number;

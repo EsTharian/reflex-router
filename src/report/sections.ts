@@ -2,7 +2,7 @@
 // computes that are worth testing on their own (moves, cost, outcome join) are exported. Pure, no I/O, no network.
 import { TIERS, type Tier } from "../config.js";
 import { DOWNGRADE_MIN_CONFIDENCE } from "../policy.js";
-import { CACHE_WRITE_MULT, LAST_VERIFIED, PRICES, usageCostUsd, type CacheTtl } from "../pricing.js";
+import { cacheReadRate, cacheWriteRate, LAST_VERIFIED, usageCostUsd, type CacheTtl } from "../pricing.js";
 import { DECISION_GRACE_MS } from "../timing.js";
 import { CONTEXT_CEILING, fitsContext, tierRank } from "../tiers.js";
 import { countBy, int, mean, median, ms, pct, percentile, sum, table, usd } from "./format.js";
@@ -628,20 +628,21 @@ export function s11Fingerprints({ rec }: Ctx): string[] {
   return out;
 }
 
-export const SECTIONS: readonly { readonly title: string; readonly run: (c: Ctx) => string[] }[] = [
-  { title: "0. Workflow profile", run: s0Workflow },
-  { title: "1. Decisions by kind, turn and tier", run: s1Decisions },
-  { title: "2. mass vs argmax", run: s2MassVsArgmax },
-  { title: "3. Shadow vs actual", run: s3ShadowVsActual },
-  { title: "4. Guard skips", run: s4Guard },
-  { title: "5. Fallbacks and breaker", run: s5Fallbacks },
-  { title: "6. Latency", run: s6Latency },
-  { title: "7. Outcome rates, routed vs unchanged", run: s7Outcomes },
-  { title: "8. Cost at list prices (estimate)", run: s8Cost },
-  { title: "9. Side-call usage", run: s9SideCalls },
-  { title: "10. Cache writes by move type", run: s10CacheMoves },
-  { title: "11. Unclassified side-call fingerprints", run: s11Fingerprints },
-  { title: "12. Side-call routing estimate", run: s12SideRouting },
+/** `id` is the section number as it appears at the start of `title` (and nowhere else) — the `--json` key, stable across wording changes to the title. */
+export const SECTIONS: readonly { readonly id: string; readonly title: string; readonly run: (c: Ctx) => string[] }[] = [
+  { id: "0", title: "0. Workflow profile", run: s0Workflow },
+  { id: "1", title: "1. Decisions by kind, turn and tier", run: s1Decisions },
+  { id: "2", title: "2. mass vs argmax", run: s2MassVsArgmax },
+  { id: "3", title: "3. Shadow vs actual", run: s3ShadowVsActual },
+  { id: "4", title: "4. Guard skips", run: s4Guard },
+  { id: "5", title: "5. Fallbacks and breaker", run: s5Fallbacks },
+  { id: "6", title: "6. Latency", run: s6Latency },
+  { id: "7", title: "7. Outcome rates, routed vs unchanged", run: s7Outcomes },
+  { id: "8", title: "8. Cost at list prices (estimate)", run: s8Cost },
+  { id: "9", title: "9. Side-call usage", run: s9SideCalls },
+  { id: "10", title: "10. Cache writes by move type", run: s10CacheMoves },
+  { id: "11", title: "11. Unclassified side-call fingerprints", run: s11Fingerprints },
+  { id: "12", title: "12. Side-call routing estimate", run: s12SideRouting },
 ];
 
 // ---- 12. Side-call routing estimate ---------------------------------------------------------------------------
@@ -784,7 +785,9 @@ export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRouting
       const write = ctx - read;
       // The TTL is a property of the request, so both sides of the comparison are priced at the same one.
       const atReq = usageCostUsd(d.requestedTier!, u, ttl);
-      const atSide = (u.output * PRICES[tier].output + read * PRICES[tier].input * PRICES[tier].cacheReadMult + write * PRICES[tier].input * CACHE_WRITE_MULT[ttl]) / 1_000_000;
+      // Same formula as usageCostUsd, with the request's own token counts replaced by this conversation's
+      // modelled read/write split on the side tier (no separate uncached-input term: read+write cover it all).
+      const atSide = usageCostUsd(tier, { input: 0, output: u.output, cacheRead: read, cacheCreate: write }, ttl);
       a.calls++;
       a.tokens += totalTokens(u);
       a.read += u.cacheRead;
@@ -805,7 +808,7 @@ export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRouting
   }
 
   const dominant: CacheTtl = opts.ttl !== undefined ? opts.ttl : ttlsSeen.filter((t) => t === "1h").length * 2 > ttlsSeen.length ? "1h" : ASSUMED_TTL;
-  const readRate = PRICES[tier].input * PRICES[tier].cacheReadMult;
+  const readRate = cacheReadRate(tier);
   const perKind = [...perKindAcc.entries()]
     .map(([kind, v]) => ({
       kind,
@@ -833,7 +836,7 @@ export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRouting
     usdAtRequested,
     usdAtSide,
     tier,
-    breakEven: (PRICES[tier].input * CACHE_WRITE_MULT[dominant]) / Math.max(1e-9, PRICES.opus.input * PRICES.opus.cacheReadMult - readRate),
+    breakEven: cacheWriteRate(tier, dominant) / Math.max(1e-9, cacheReadRate("opus") - readRate),
     observedWarmPerCold: cold === 0 ? null : warm / cold,
     ttlAssumed: opts.ttl === undefined && decisions.every((d) => d.cacheTtlBeta === null),
     convs: convExposure(decisions),
