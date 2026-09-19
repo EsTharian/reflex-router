@@ -19,7 +19,7 @@ import { tierOfModel, tierRank } from "../tiers.js";
 import type { ReasonCode } from "../types.js";
 import type { Log } from "../util/log.js";
 import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
-import { isVerifiedRetarget, retarget } from "../wire/rewrite.js";
+import { isVerifiedRetarget, retarget, retargetBetas } from "../wire/rewrite.js";
 import { ShapeTracker } from "../wire/shape.js";
 import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
 import { BackendError, type DecisionBackend } from "../backend/types.js";
@@ -57,6 +57,8 @@ export interface Observation {
 export interface Prepared {
   /** What to send upstream first. */
   readonly body: Buffer;
+  /** Headers to send with `body` when the rewrite changed them (e.g. a beta the target rejects); else undefined. */
+  readonly headers?: IncomingHttpHeaders;
   /** True when `body` is a rewrite; server.ts then retries with the original bytes on a rejection. */
   readonly rewritten: boolean;
   readonly obs: Observation | null;
@@ -150,14 +152,14 @@ export class Router {
       if (!isMessagesRequest(method, url)) return untouched;
       const parsed = parseRequest(headers, body);
       if (!parsed.ok) return untouched;
-      return await this.#prepare(parsed.view, body);
+      return await this.#prepare(parsed.view, body, headers);
     } catch (e) {
       this.d.logger("error", `router: prepare failed: ${e instanceof Error ? e.message : String(e)}`);
       return untouched;
     }
   }
 
-  async #prepare(v: RequestView, body: Buffer): Promise<Prepared> {
+  async #prepare(v: RequestView, body: Buffer, headers: IncomingHttpHeaders): Promise<Prepared> {
     const started = this.#now();
     const at = new Date(started).toISOString();
     const id = this.#newId();
@@ -171,9 +173,22 @@ export class Router {
     let outcomeP: Promise<Outcome> = Promise.resolve({ part: NONE, target: null, reasons: [] });
     let pinState: DecisionRecord["pin"] = null;
     let sendBody = body;
+    let sendHeaders: IncomingHttpHeaders | undefined;
     let fields: readonly string[] = [];
     let sentModel = v.requestedModel;
     let extraReasons: ReasonCode[] = [];
+    /** Retargets body and beta header to `to`; false when the body cannot be rewritten. */
+    const applyRetarget = (from: Tier, to: Tier, model: string): boolean => {
+      const r = retarget(body, { from, to, model });
+      if (!r.ok) return false;
+      const beta = headers["anthropic-beta"];
+      const b = retargetBetas(typeof beta === "string" ? beta : undefined, to);
+      sendBody = r.body;
+      fields = [...r.fields, ...b.stripped.map((x) => `anthropic-beta:-${x}`)];
+      if (b.stripped.length > 0) sendHeaders = { ...headers, "anthropic-beta": b.value };
+      sentModel = model;
+      return true;
+    };
 
     if (v.turn === "new") {
       outcomeP = this.#decide(v, s, conv, routing);
@@ -189,30 +204,16 @@ export class Router {
           conv.pin = { target: outcome.target, from: requestedTier };
           pinState = "set";
         }
-        if (outcome.target && requestedTier) {
-          const r = retarget(body, { from: requestedTier, to: outcome.target.tier, model: outcome.target.model });
-          if (r.ok) {
-            sendBody = r.body;
-            fields = r.fields;
-            sentModel = outcome.target.model;
-          } else {
-            extraReasons = ["rewrite_failed"];
-            if (conv) conv.pin = { target: null, from: requestedTier };
-          }
+        if (outcome.target && requestedTier && !applyRetarget(requestedTier, outcome.target.tier, outcome.target.model)) {
+          extraReasons = ["rewrite_failed"];
+          if (conv) conv.pin = { target: null, from: requestedTier };
         }
         outcomeP = Promise.resolve(outcome);
       }
     } else if (v.turn === "continuation" && conv) {
       pinState = conv.pin ? "hit" : "miss";
       const t = conv.pin?.target;
-      if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier)) {
-        const r = retarget(body, { from: requestedTier, to: t.tier, model: t.model });
-        if (r.ok) {
-          sendBody = r.body;
-          fields = r.fields;
-          sentModel = t.model;
-        } else extraReasons = ["rewrite_failed"];
-      }
+      if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier) && !applyRetarget(requestedTier, t.tier, t.model)) extraReasons = ["rewrite_failed"];
     }
 
     let status: number | null = null;
@@ -283,7 +284,7 @@ export class Router {
           .catch((e: unknown) => this.d.logger("error", `router: record failed: ${e instanceof Error ? e.message : String(e)}`));
       },
     };
-    return { body: sendBody, rewritten, obs };
+    return { body: sendBody, ...(sendHeaders ? { headers: sendHeaders } : {}), rewritten, obs };
   }
 
   /** Route mode never waits longer than the backend deadline plus a small grace; a late decision fails open. */

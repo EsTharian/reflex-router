@@ -609,6 +609,31 @@
    "file": "experiment.interactive-opus-first-turn-to-haiku.results.json",
    "kind": "experiment",
    "description": "The first main-chat request of an INTERACTIVE Opus 5 session (TUI in a pseudo-terminal, cc_entrypoint=cli), retargeted to Haiku by src/wire/rewrite.ts and probed; the real turn was not sent. Shape facts (max_tokens, thinking, effort, cache TTLs, beta names, tool count), status, usage, estimated cost; no prompts, no headers."
+  },
+  {
+   "file": "interactive-opus1m.main-new-turn.request.json",
+   "description": "interactive Opus 5 main chat, first user turn, with the model setting opus[1m]: model claude-opus-5 plus the context-1m-2025-08-07 beta (route acceptance session B1's shape)",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.277.72c",
+    "entrypoint": "cli"
+   },
+   "agent_scoped": false,
+   "response_status": null,
+   "source": "interactive-opus1m#001",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "new"
+   }
+  },
+  {
+   "file": "experiment.interactive-opus1m-first-turn-to-haiku.results.json",
+   "kind": "experiment",
+   "description": "The first main-chat request of an interactive session with the model setting opus[1m] (route acceptance session B1 shape), retargeted to Haiku: body rewrite only vs the product rewrite that also strips target-rejected betas. Statuses, API errors, shape facts incl. beta names; no prompts, no headers."
   }
  ],
  "findings": {
@@ -707,6 +732,16 @@
    "shape": "max_tokens 64000, thinking adaptive (no display), effort medium, cache_control ttl 1h, extended-cache-ttl-2025-04-11 beta present, 55 tools, 14 betas",
    "result": "200 with the unchanged product rewrite (model, output_config.effort, thinking, 1 system message folded)",
    "interpretation": "the 1h cache TTL (beta and cache_control ttl) is accepted by Haiku 4.5; it does not explain the 400 seen on route-mode acceptance session A. That request is not reproduced; the error text is now stored on every fallback record (forwarded.fallback_error)."
+  },
+  "long_context_beta_rejected_by_haiku": {
+   "status": "verified_fixed",
+   "date": "2026-09-19",
+   "est_cost_usd": 0.025,
+   "cause": "model setting opus[1m] sends claude-opus-5 with the context-1m-2025-08-07 beta; Haiku 4.5 on this subscription rejects it",
+   "before": "400 invalid_request_error: The long context beta is not yet available for this subscription. (body rewrite, headers untouched; also route acceptance session B1)",
+   "after": "200 with the beta removed from anthropic-beta (all other betas kept)",
+   "fix": "src/wire/rewrite.ts STRIP_BETAS + retargetBetas; the fallback re-sends the original headers",
+   "fixture": "interactive-opus1m.main-new-turn.request.json"
   }
  },
  "entrypoints": [

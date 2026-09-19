@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { retarget, HAIKU_THINKING_BUDGET } from "../../src/wire/rewrite.js";
+import { retarget, retargetBetas, HAIKU_THINKING_BUDGET, STRIP_BETAS } from "../../src/wire/rewrite.js";
 import { loadFixtures } from "../support/fixtures.js";
 
 type Json = Record<string, unknown>;
@@ -97,6 +97,36 @@ describe("retarget Sonnet 5 -> Haiku 4.5", () => {
   it("refuses non-JSON and bodies without messages", () => {
     assert.deepEqual(retarget(Buffer.from("x"), { from: "sonnet", to: "haiku", model: HAIKU }), { ok: false, reason: "not_json" });
     assert.deepEqual(retarget(Buffer.from("{}"), { from: "sonnet", to: "haiku", model: HAIKU }), { ok: false, reason: "no_messages" });
+  });
+});
+
+describe("retargetBetas: header values a target rejects", () => {
+  const opus1m = fixtures.find((f) => f.file === "interactive-opus1m.main-new-turn.request.json");
+  assert.ok(opus1m, "the opus[1m] fixture exists");
+  const header = String(opus1m.headers["anthropic-beta"]);
+
+  it("the opus[1m] fixture carries the long-context beta (route acceptance session B1's shape)", () => {
+    assert.match(header, /(^|,)context-1m-2025-08-07(,|$)/);
+  });
+
+  it("to Haiku: removes exactly the long-context beta and keeps every other value in order", () => {
+    const r = retargetBetas(header, "haiku");
+    assert.deepEqual(r.stripped, ["context-1m-2025-08-07"]);
+    assert.deepEqual(r.value?.split(","), header.split(",").filter((b) => b !== "context-1m-2025-08-07"));
+    assert.match(r.value ?? "", /context-management-2025-06-27/, "a similar prefix is not touched");
+  });
+
+  it("to Sonnet or Opus: unchanged (both accept it)", () => {
+    for (const t of ["sonnet", "opus"] as const) assert.deepEqual(retargetBetas(header, t), { value: header, stripped: [] });
+  });
+
+  it("no header, or no rejected value: unchanged", () => {
+    assert.deepEqual(retargetBetas(undefined, "haiku"), { value: undefined, stripped: [] });
+    assert.deepEqual(retargetBetas("a-1,b-2", "haiku"), { value: "a-1,b-2", stripped: [] });
+  });
+
+  it("every strip rule names its evidence", () => {
+    for (const r of STRIP_BETAS) assert.ok(r.evidence.length > 20 && r.prefix.endsWith("-"));
   });
 });
 

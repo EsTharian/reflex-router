@@ -24,6 +24,30 @@ const MIN_THINKING_BUDGET = 1024;
 const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>sonnet", "opus>haiku"]);
 export const isVerifiedRetarget = (from: Tier, to: Tier): boolean => VERIFIED_RETARGETS.has(`${from}>${to}`);
 
+/**
+ * `anthropic-beta` values a target model rejects, removed from the header when a request is retargeted to it (the
+ * rest of the header is kept as is). Each row names the evidence.
+ */
+export const STRIP_BETAS: readonly { readonly to: Tier; readonly prefix: string; readonly evidence: string }[] = [
+  {
+    to: "haiku",
+    prefix: "context-1m-",
+    evidence:
+      "route acceptance session B1 (opus[1m] -> Haiku): 400 \"The long context beta is not yet available for this subscription.\"; " +
+      "interactive-opus1m.main-new-turn fixture; experiment.interactive-opus1m-first-turn-to-haiku",
+  },
+];
+
+/** The `anthropic-beta` header for a request retargeted to `to`, and the values removed from it. Pure. */
+export function retargetBetas(header: string | undefined, to: Tier): { readonly value: string | undefined; readonly stripped: readonly string[] } {
+  if (header === undefined) return { value: undefined, stripped: [] };
+  const rules = STRIP_BETAS.filter((r) => r.to === to);
+  const parts = header.split(",").map((x) => x.trim()).filter(Boolean);
+  const stripped = parts.filter((b) => rules.some((r) => b.startsWith(r.prefix)));
+  if (stripped.length === 0) return { value: header, stripped: [] };
+  return { value: parts.filter((b) => !stripped.includes(b)).join(","), stripped };
+}
+
 export interface RewriteOptions {
   readonly from: Tier;
   readonly to: Tier;

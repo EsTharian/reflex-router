@@ -121,7 +121,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     try {
       const prepared = router ? await router.prepare(method, url, req.headers, body) : { body, rewritten: false, obs: null };
       obs = prepared.obs;
-      let up = await forward(upstream, { method, url, headers: req.headers, body: prepared.body }, { signal: ac.signal });
+      let up = await forward(upstream, { method, url, headers: prepared.headers ?? req.headers, body: prepared.body }, { signal: ac.signal });
       if (prepared.rewritten && isRejection(up.statusCode ?? 0)) {
         // The target model refused the rewritten request: send the client's original bytes instead.
         const rejected = up.statusCode ?? 0;

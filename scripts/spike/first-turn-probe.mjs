@@ -8,7 +8,10 @@
 // both). Probes stop at `message_start` and are aborted. The real turn is NOT sent: the proxy answers it with 503 and
 // ends the session, so the only model spend is the probes. Other requests (startup probe, quota check) pass through.
 //
-//   node --import tsx scripts/spike/first-turn-probe.mjs --model opus --to haiku --out DIR --cap-usd 0.25
+//   node --import tsx scripts/spike/first-turn-probe.mjs --model 'opus[1m]' --to haiku --out DIR --cap-usd 0.18 [--dump DIR]
+//
+// Variants: V0 body rewrite with the headers untouched; V1 the product rewrite (body + target-rejected betas stripped,
+// src/wire/rewrite.ts STRIP_BETAS); then, only if both are rejected, TTL / max_tokens variants.
 //
 // Recorded: statuses, API error messages, shape facts (max_tokens, thinking, effort, cache TTLs, beta names, tool
 // count, top-level keys), rewritten fields, usage, estimated cost. No prompt text, no headers.
@@ -18,7 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseRequest } from "../../src/wire/claude-code.ts";
-import { retarget } from "../../src/wire/rewrite.ts";
+import { retarget, retargetBetas } from "../../src/wire/rewrite.ts";
 import { tierOfModel } from "../../src/tiers.ts";
 
 const argv = process.argv.slice(2);
@@ -28,6 +31,10 @@ const to = flag("--to", "haiku");
 const out = flag("--out", join("_dumps", "first-turn-" + Date.now()));
 const capUsd = Number(flag("--cap-usd", "0.25"));
 const prompt = flag("--prompt", "Reply with the single word OK.");
+/** Model family to intercept; `--model opus[1m]` still sends `claude-opus-5` (plus a long-context beta). */
+const match = flag("--match", model.replace(/\[.*\]$/, ""));
+/** Also write the intercepted request (credential headers omitted) in capture format, for redact-fixtures.mjs. */
+const dumpDir = flag("--dump", null);
 mkdirSync(out, { recursive: true, mode: 0o700 });
 
 const MODELS = { haiku: "claude-haiku-4-5-20251001", sonnet: "claude-sonnet-5", opus: "claude-opus-5" };
@@ -107,8 +114,13 @@ async function investigate(req, raw, headers) {
   const noTtlHeaders = { ...headers, "anthropic-beta": facts.betas.filter((x) => !x.startsWith("extended-cache-ttl-")).join(",") };
   const cap = (b) => { const c = structuredClone(b); if (c.max_tokens > MAX_OUTPUT[to]) { c.max_tokens = MAX_OUTPUT[to]; if (c.thinking?.budget_tokens >= c.max_tokens) c.thinking.budget_tokens = c.max_tokens - 1; } return c; };
 
-  const ok0 = await probe("V0 product rewrite", req.url, headers, b0, base.fields);
+  const betas = retargetBetas(headers["anthropic-beta"], to);
+  const productHeaders = betas.stripped.length ? { ...headers, "anthropic-beta": betas.value } : headers;
+  facts.stripped_betas = betas.stripped;
+  const ok0 = await probe("V0 body rewrite only (headers untouched: the pre-fix behaviour)", req.url, headers, b0, base.fields);
   if (ok0) return;
+  const okP = await probe("V1 product rewrite (body + target-rejected betas stripped)", req.url, productHeaders, b0, [...base.fields, ...betas.stripped.map((x) => `anthropic-beta:-${x}`)]);
+  if (okP) return;
   const okTtl = await probe("V1 + 1h TTL removed (beta and cache_control.ttl)", req.url, noTtlHeaders, stripTtl(b0), [...base.fields, "cache_ttl"]);
   const okMax = await probe(`V2 + max_tokens capped to ${MAX_OUTPUT[to]}`, req.url, headers, cap(b0), [...base.fields, "max_tokens"]);
   if (!okTtl && !okMax) await probe("V3 + both", req.url, noTtlHeaders, cap(stripTtl(b0)), [...base.fields, "cache_ttl", "max_tokens"]);
@@ -122,8 +134,13 @@ const server = http.createServer((req, res) => {
     const headers = {};
     for (const [k, v] of Object.entries(req.headers)) if (!SKIP.has(k)) headers[k] = v;
     const view = req.method === "POST" && req.url.startsWith("/v1/messages") ? (() => { const r = parseRequest(req.headers, raw); return r.ok ? r.view : null; })() : null;
-    if (!intercepted && view && view.kind === "main" && view.turn === "new" && view.toolCount > 0 && String(view.requestedModel).includes(model)) {
+    if (!intercepted && view && view.kind === "main" && view.turn === "new" && view.toolCount > 0 && String(view.requestedModel).includes(match)) {
       intercepted = true;
+      if (dumpDir) {
+        mkdirSync(dumpDir, { recursive: true, mode: 0o700 });
+        const safe = Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, ["authorization", "x-api-key", "cookie", "proxy-authorization"].includes(k) ? "[omitted]" : v]));
+        writeFileSync(join(dumpDir, "001-POST-v1_messages.req.json"), JSON.stringify({ t: Date.now(), method: req.method, url: req.url, headers: safe, body_bytes: raw.length, body: JSON.parse(raw.toString("utf8")) }, null, 1), { mode: 0o600 });
+      }
       try { await investigate(req, raw, headers); } catch (e) { log(`error ${e.message}`); }
       res.writeHead(503, { "content-type": "application/json" });
       res.end(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "probe finished" } }));

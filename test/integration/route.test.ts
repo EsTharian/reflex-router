@@ -171,6 +171,52 @@ describe("route mode", () => {
     });
   });
 
+  describe("opus[1m] sessions: the long-context beta (acceptance session B1)", () => {
+    const opus1m = (): Fixture => {
+      const f = fixtures.find((x) => x.file === "interactive-opus1m.main-new-turn.request.json");
+      assert.ok(f);
+      return f;
+    };
+    it("to Haiku: the beta is removed from anthropic-beta, the rest kept, and the record lists it", async () => {
+      jev.set({ kind: "answer", tier: "haiku", confidence: 0.99, reasoning: 0.2 });
+      const f = inSession(opus1m(), "s-1m-h");
+      const n = stack.upstream.seen.length;
+      const { rec } = await replay(stack, f);
+      const sent = String(stack.upstream.seen[n]!.headers["anthropic-beta"]);
+      const orig = String(f.headers["anthropic-beta"]);
+      assert.doesNotMatch(sent, /context-1m/);
+      assert.deepEqual(sent.split(","), orig.split(",").filter((b) => !b.startsWith("context-1m-")));
+      assert.ok(rec.forwarded.fields.includes("anthropic-beta:-context-1m-2025-08-07"));
+      assert.equal(stack.upstream.seen[n]!.headers["authorization"], f.headers["authorization"], "credentials untouched");
+    });
+
+    it("to Sonnet: headers untouched", async () => {
+      jev.set({ kind: "answer", tier: "sonnet", confidence: 0.9, reasoning: 2 });
+      const f = inSession(opus1m(), "s-1m-s");
+      const n = stack.upstream.seen.length;
+      const { rec } = await replay(stack, f);
+      assert.equal(stack.upstream.seen[n]!.headers["anthropic-beta"], f.headers["anthropic-beta"]);
+      assert.deepEqual(rec.forwarded.fields, ["model"]);
+    });
+
+    it("a rejected Haiku rewrite is retried with the original headers, beta included", async () => {
+      jev.set({ kind: "answer", tier: "haiku", confidence: 0.99, reasoning: 0.2 });
+      stack.upstream.setHandler((req, res, body) => {
+        if (body.toString().includes(HAIKU)) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "x" } }));
+          return;
+        }
+        sseHandler(req, res, body);
+      });
+      const f = inSession(opus1m(), "s-1m-fb");
+      const n = stack.upstream.seen.length;
+      await replay(stack, f);
+      assert.equal(stack.upstream.seen[n + 1]!.headers["anthropic-beta"], f.headers["anthropic-beta"]);
+      assert.ok(stack.upstream.seen[n + 1]!.body.equals(f.body));
+    });
+  });
+
   describe("manual overrides", () => {
     it("`reflex:haiku` inside a pasted prompt bypasses Jev; a subagent spawned in that turn records it at its first request", async () => {
       const calls = jev.calls.length;
