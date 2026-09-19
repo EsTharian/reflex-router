@@ -67,3 +67,26 @@ Every logged main-chat `new` turn joined to a user prompt; the one miss in a fir
 **Result.** All 11 decisions in those sessions reused the connection (`decision.connection: "reused"`): p50 382 ms, p95 408 ms (n = 11; by file: 6, 4 and 1 decisions). For comparison, the first dogfood session above used a fresh connection for each of its 12 decisions: p50 823 ms, p95 1,136 ms.
 
 **Limits.** Different days, sessions, prompts and modes (shadow vs route), so this is not a controlled comparison of new vs reused connections; no decision in these sessions used a new connection, so there is no within-session contrast. Turns the cost guard refused before asking Jev are not decisions and are not in the sample. n = 11 says little about the tail. The live latency test (`npm run test:live`) is meant to measure new vs reused in one run; it has not been run yet (no key was available when it was written).
+
+## 2026-09-19 — `reflex report` over the shadow dogfood session (excerpt)
+
+**Setup.** `reflex report ~/.reflex/archive/shadow-1.jsonl` (v0.1.0 code) over the 61 records of the first dogfood session above: the M2 build, shadow mode, Opus 5 requested, Claude Code 2.1.277, run from Turkey, Jev `jev-latest`, a fresh connection per decision, and at that time the `argmax` rule with the 0.70 confidence floor (the `mass` rule came later). Sections 3 and 6, verbatim:
+
+```
+3. Shadow vs actual
+  new turns that reached the backend (n=12); tokens = input + output + cache read + cache write of that turn's own request
+    requested  would route to  turns  % turns  % tokens  actually sent there
+    opus                haiku      5    41.7%     42.7%                    0
+    opus               sonnet      1     8.3%      7.7%                    0
+    opus                 opus      6    50.0%     49.6%                    6
+
+  routed records (rewritten and accepted; includes pinned continuations): 0
+
+6. Latency
+  Jev decision latency (nearest-rank percentiles):
+                            n     p50       p95
+    all                    12  823 ms  1,136 ms
+    connection not logged  12  823 ms  1,136 ms
+```
+
+**Reading.** Nothing was routed: shadow mode records what the plan would have done. "Would route to" is what the recorded plan said at the time, under that build's rule. "% tokens" is the share of the tokens of each cell's own request, not a saving: it says nothing about what the routed model would have cost or produced. One session, 12 decisions.
