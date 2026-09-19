@@ -32,6 +32,13 @@ const prefixTask = (prefix: string) => (b: Json): void => {
   const block = [...last.content].reverse().find((c) => c.type === "text" && !c.text?.startsWith("<system-reminder>"))!;
   block.text = prefix + block.text!;
 };
+/** Inserts `token` right after the prompt's opening <pasted_content id=…> tag. */
+const insertAfterPasteTag = (token: string) => (b: Json): void => {
+  const msgs = b["messages"] as { role: string; content: { type: string; text?: string }[] }[];
+  const last = [...msgs].reverse().find((m) => m.role === "user")!;
+  const block = last.content.find((c) => c.type === "text" && /^\s*<pasted_content id="[^"]*">/.test(c.text ?? ""))!;
+  block.text = block.text!.replace(/^(\s*<pasted_content id="[^"]*">)/, `$1${token}`);
+};
 const sentBody = (stack: Stack, i: number): Json => JSON.parse(stack.upstream.seen[i]!.body.toString()) as Json;
 
 describe("route mode", () => {
@@ -165,9 +172,10 @@ describe("route mode", () => {
   });
 
   describe("manual overrides", () => {
-    it("`!haiku` on the main chat bypasses Jev; a subagent spawned in that turn records it at its first request", async () => {
+    it("`reflex:haiku` inside a pasted prompt bypasses Jev; a subagent spawned in that turn records it at its first request", async () => {
       const calls = jev.calls.length;
-      const main = await replay(stack, inSession(fx("main-new-turn"), "s-ovr", prefixTask("!haiku ")));
+      // The fixture's prompt is wrapped in <pasted_content id="ec1f">…; the token follows the opening tag.
+      const main = await replay(stack, inSession(fx("main-new-turn"), "s-ovr", insertAfterPasteTag("reflex:haiku ")));
       assert.equal(main.rec.override, "haiku");
       assert.deepEqual(main.rec.plan?.reasons, ["override"]);
       const n = stack.upstream.seen.length;
@@ -178,7 +186,7 @@ describe("route mode", () => {
     });
 
     it("an override to an unverified pair (Sonnet -> Opus) is recorded and not applied", async () => {
-      const f = inSession(fx("main-new-turn"), "s-ovr2", prefixTask("!opus "));
+      const f = inSession(fx("main-new-turn"), "s-ovr2", prefixTask("reflex:opus "));
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, f);
       assert.ok(stack.upstream.seen[n]!.body.equals(f.body));

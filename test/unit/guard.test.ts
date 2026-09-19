@@ -52,11 +52,12 @@ describe("guard", () => {
 });
 
 describe("overrides", () => {
-  it("a leading !tier token, case-insensitive; anything else is not an override", () => {
-    assert.equal(parseOverride("!opus fix the race"), "opus");
-    assert.equal(parseOverride("  !HAIKU list files"), "haiku");
-    assert.equal(parseOverride("!sonnet"), "sonnet");
-    for (const t of ["fix !opus", "!opuses", "!fable x", "", null]) assert.equal(parseOverride(t), null, String(t));
+  it("a leading reflex:<tier> token, case-insensitive; anything else is not an override", () => {
+    assert.equal(parseOverride("reflex:opus fix the race"), "opus");
+    assert.equal(parseOverride("  REFLEX:Haiku list files"), "haiku");
+    assert.equal(parseOverride("reflex:sonnet"), "sonnet");
+    assert.equal(parseOverride("reflex:haiku\nnext line"), "haiku");
+    for (const t of ["fix reflex:opus", "reflex:opuses", "reflex:fable x", "reflex: opus", "!haiku x", "", null]) assert.equal(parseOverride(t), null, String(t));
   });
 });
 
