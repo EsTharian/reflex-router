@@ -72,6 +72,16 @@ export interface Dec {
   readonly fingerprint: J | null;
   /** Delegation hint version the session ran with (`delegate_hint`); null: off, or recorded before it existed. */
   readonly hint: string | null;
+  /** Decision-backend version that answered (`backend_version`, e.g. `jev-1.13.0`); null: no backend call, or an older record. */
+  readonly backendVersion: string | null;
+  /** Set only on a turn REFLEX_ESCALATE raised (`escalation`); null everywhere else. */
+  readonly escalation: {
+    readonly signal: string;
+    readonly from: Tier | null;
+    readonly to: Tier | null;
+    readonly decisionId: string | null;
+    readonly turnSeq: number | null;
+  } | null;
 }
 
 export interface OutcomeRec {
@@ -171,6 +181,13 @@ function toDec(o: J): Dec | null {
     cacheTtlBeta: typeof o["cache_ttl_beta"] === "boolean" ? o["cache_ttl_beta"] : null,
     fingerprint: isObj(o["side_fingerprint"]) ? o["side_fingerprint"] : null,
     hint: str(o["delegate_hint"]),
+    backendVersion: str(o["backend_version"]) ?? str(at(o, "decision", "backendModel")),
+    escalation: (() => {
+      const e = at(o, "escalation");
+      if (!isObj(e)) return null;
+      const signal = str(e["signal"]);
+      return signal === null ? null : { signal, from: tierOf(e["from"]), to: tierOf(e["to"]), decisionId: str(e["decision_id"]), turnSeq: num(e["turn_seq"]) };
+    })(),
   };
 }
 

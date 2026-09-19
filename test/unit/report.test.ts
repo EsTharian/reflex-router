@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, buildReportJson, reportCommand, type ReportJson } from "../../src/report/index.js";
 import { parseDuration, parseRecords, sinceView } from "../../src/report/records.js";
-import { classifyMoves, costOf, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, s12SideRouting, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, escalationRows, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
@@ -620,5 +620,343 @@ describe("report: --json schema", () => {
     const rec = parseRecords(files.map((f) => ({ source: f, text: fs.readFileSync(f, "utf8") })));
     assertSchema(out, rec, true);
     assert.deepEqual(out, buildReportJson(rec, { usd: true }));
+  });
+});
+
+
+// Sections 1, 4, 5 and 11 had no test of their own (only whole-report golden files, which pin the wording of a
+// section but assert nothing about what it counts); 2 and 3 had their shared `wouldRoute` helper tested but never
+// their own output. These cover what each section computes, not how it is worded.
+
+describe("report: 1. decisions by kind, turn and tier", () => {
+  const log = (): string =>
+    toJsonl([
+      dec({ id: "m1", t: 0, kind: "main", turn: "new", sent: "haiku" }),
+      dec({ id: "m2", t: 1, kind: "main", turn: "continuation", sent: "haiku" }),
+      dec({ id: "m3", t: 2, kind: "main", turn: "side", side: "suggestion" }),
+      dec({ id: "m4", t: 3, kind: "main", turn: "side", side: "notification", sideMarker: "session_recap" }),
+      dec({ id: "a1", t: 4, kind: "subagent", turn: "new", sent: "sonnet" }),
+    ]);
+
+  it("counts every kind against every turn, and shows only the turn columns the log actually has", () => {
+    const out = s1Decisions(ctxOf(log())).join("\n");
+    assert.match(out, /5 classified requests/);
+    assert.match(out, /main\s+1\s+1\s+2/, out); // new, continuation, side
+    assert.match(out, /subagent\s+1\s+0\s+0/, out);
+    assert.doesNotMatch(out, /unknown/, "no record has an unknown turn or kind, so neither column appears");
+  });
+
+  it("names the side kinds, and maps requested tier to the tier actually sent", () => {
+    const out = s1Decisions(ctxOf(log())).join("\n");
+    assert.match(out, /side calls by kind: notification 1, suggestion 1/, "ties are ordered by kind name (countBy), not by first appearance");
+    // Everything requested opus; two went to haiku, one to sonnet, two stayed.
+    assert.match(out, /opus\s+2\s+1\s+2/, out);
+  });
+
+  it("says `none` for degraded and drift rather than omitting the line", () => {
+    const out = s1Decisions(ctxOf(log())).join("\n");
+    assert.match(out, /degraded: none/);
+    assert.match(out, /drift: none/);
+  });
+
+  it("a drift record is reported as a classifier alarm, and says routing was not changed", () => {
+    const text = toJsonl([{ ...dec({ id: "d1", t: 0 }), drift: "few_new_turns" }, dec({ id: "d2", t: 1, degraded: "version_unknown" })]);
+    const out = s1Decisions(ctxOf(text)).join("\n");
+    assert.match(out, /degraded: version_unknown 1/);
+    assert.match(out, /drift: few_new_turns 1 - the classifier found far fewer new turns/);
+    assert.match(out, /routing was not changed/, "drift must never read as a routing state");
+  });
+
+  it("an empty log says so instead of printing empty tables", () => {
+    assert.deepEqual(s1Decisions(ctxOf("")), ["  (no records)"]);
+  });
+});
+
+describe("report: 2. mass vs argmax", () => {
+  // The five low-confidence vectors from the first dogfood session (docs/observations.md): torn between sonnet and
+  // haiku with almost no mass on opus, every request asking for opus.
+  const torn = (): string =>
+    toJsonl([
+      dec({ id: "t1", t: 0, probs: [0.45, 0.55, 0.0], confidence: 0.32, pickMass: "sonnet", pickArgmax: "sonnet" }),
+      dec({ id: "t2", t: 1, probs: [0.73, 0.27, 0.0], confidence: 0.4, pickMass: "sonnet", pickArgmax: "haiku" }),
+      dec({ id: "t3", t: 2, probs: [0.62, 0.29, 0.09], confidence: 0.45, pickMass: "sonnet", pickArgmax: "haiku" }),
+      dec({ id: "c1", t: 3, probs: [1, 0, 0], confidence: 1.0, pickMass: "haiku", pickArgmax: "haiku" }),
+    ]);
+
+  it("counts agreement and reports where the two rules disagree, in each direction", () => {
+    const out = s2MassVsArgmax(ctxOf(torn())).join("\n");
+    assert.match(out, /4 new turns reached the backend; 4 log both readings/);
+    assert.match(out, /agree on 2 of 4 \(50\.0%\)/);
+  });
+
+  it("under the confidence floor argmax stays on the requested tier, so mass is the rule that routes lower", () => {
+    // All three torn turns sit under the 0.7 floor, so argmax moves none of them and they stay on the requested
+    // opus; mass takes its sonnet pick on each. This is the observations.md finding, as a test.
+    const out = s2MassVsArgmax(ctxOf(torn())).join("\n");
+    assert.match(out, /they differ on 3: mass routes lower on 3, argmax on 0/, out);
+    assert.match(out, /mass\s+1\s+3\s+0\s+4/, out); // haiku 1, sonnet 3, opus 0, moved down on all 4
+    assert.match(out, /argmax\s+1\s+0\s+3\s+1/, out); // only the confident haiku moves; 3 stay on opus
+  });
+
+  it("records that log only the applied pick are counted but not compared", () => {
+    const one = { ...dec({ id: "o1", t: 0, probs: [1, 0, 0], pickMass: "haiku" }) };
+    (one["decision"] as Record<string, unknown>)["pick_mass"] = undefined;
+    (one["decision"] as Record<string, unknown>)["pick_argmax"] = undefined;
+    const out = s2MassVsArgmax(ctxOf(toJsonl([one]))).join("\n");
+    assert.match(out, /1 new turns reached the backend; 0 log both readings/);
+    assert.doesNotMatch(out, /agreement, mass pick/, "with nothing to compare the matrix is omitted");
+  });
+
+  it("turns that never reached the backend are not counted", () => {
+    assert.deepEqual(s2MassVsArgmax(ctxOf(toJsonl([dec({ id: "u", t: 0 })]))), ["  (no records)"]);
+  });
+});
+
+describe("report: 3. shadow vs actual", () => {
+  it("shares out turns and tokens by requested -> would-route cell, and counts how many really went there", () => {
+    const text = toJsonl([
+      dec({ id: "s1", t: 0, probs: [1, 0, 0], pickMass: "haiku", planTier: "haiku", sent: "opus", usage: [0, 0, 0, 300] }),
+      dec({ id: "s2", t: 1, probs: [1, 0, 0], pickMass: "haiku", planTier: "haiku", sent: "haiku", usage: [0, 0, 0, 100] }),
+      dec({ id: "s3", t: 2, probs: [0, 0, 1], pickMass: "opus", planTier: null, usage: [0, 0, 0, 600] }),
+    ]);
+    const out = s3ShadowVsActual(ctxOf(text)).join("\n");
+    assert.match(out, /new turns that reached the backend \(n=3\)/);
+    // opus -> haiku: 2 turns, 66.7% of turns, 40% of tokens, 1 of them actually sent to haiku.
+    assert.match(out, /opus\s+haiku\s+2\s+66\.7%\s+40\.0%\s+1/, out);
+    assert.match(out, /opus\s+opus\s+1\s+33\.3%\s+60\.0%\s+1/, out);
+  });
+
+  it("a shadow log routes nothing, and says so rather than leaving the reader to infer it", () => {
+    const text = toJsonl([dec({ id: "s1", t: 0, mode: "shadow", probs: [1, 0, 0], pickMass: "haiku", planTier: "haiku", sent: "opus" })]);
+    const out = s3ShadowVsActual(ctxOf(text)).join("\n");
+    assert.match(out, /routed records \(rewritten and accepted; includes pinned continuations\): 0/);
+    assert.doesNotMatch(out, /sent model/, "with nothing routed there is no requested-vs-sent table");
+  });
+
+  it("routed records are listed by requested and sent model, continuations included", () => {
+    const text = toJsonl([
+      dec({ id: "r1", t: 0, probs: [1, 0, 0], pickMass: "haiku", sent: "haiku" }),
+      dec({ id: "r2", t: 1, turn: "continuation", sent: "haiku" }),
+    ]);
+    const out = s3ShadowVsActual(ctxOf(text)).join("\n");
+    assert.match(out, /routed records[^\n]*: 2/);
+    assert.match(out, /claude-opus-5\s+claude-haiku-4-5-20251001\s+2/, out);
+  });
+});
+
+describe("report: 4. guard skips", () => {
+  const g = (id: string, t: number, o: { allowed: boolean; reason: string; penalty: number | null; decided?: boolean }): Rec =>
+    dec({ id, t, guard: { allowed: o.allowed, reason: o.reason, penalty: o.penalty }, ...(o.decided === false ? {} : { probs: [1, 0, 0] as [number, number, number], pickMass: "haiku" as const }) });
+
+  it("distinguishes no guard evaluations from no records at all", () => {
+    assert.deepEqual(s4Guard(ctxOf(toJsonl([dec({ id: "x", t: 0 })]))), ["  (no records with a guard evaluation; the guard runs in route mode only)"]);
+  });
+
+  it("splits each reason into allowed and refused, and totals the refusals", () => {
+    const text = toJsonl([
+      g("a", 0, { allowed: true, reason: "fresh", penalty: null }),
+      g("b", 1, { allowed: true, reason: "within_limit", penalty: 0.004 }),
+      g("c", 2, { allowed: false, reason: "over_limit", penalty: 0.2 }),
+      g("d", 3, { allowed: false, reason: "over_limit", penalty: 0.4 }),
+    ]);
+    const out = s4Guard(ctxOf(text)).join("\n");
+    assert.match(out, /4 guard evaluations, 2 refused/);
+    // p50 is nearest-rank (median = percentile(.., 50)), so two penalties report the lower one, not their mean.
+    assert.match(out, /over_limit\s+2\s+0\s+2\s+\$0\.2000\s+\$0\.4000/, out);
+    assert.match(out, /within_limit\s+1\s+1\s+0\s+\$0\.0040\s+\$0\.0040/, out);
+  });
+
+  it("a reason that carries no priced penalty shows `-`, not $0.0000", () => {
+    const out = s4Guard(ctxOf(toJsonl([g("a", 0, { allowed: true, reason: "fresh", penalty: null })]))).join("\n");
+    assert.match(out, /fresh\s+1\s+1\s+0\s+-\s+-/, out);
+  });
+
+  it("counts only the refusals that skipped the backend, not every refusal", () => {
+    const text = toJsonl([
+      g("skipped", 0, { allowed: false, reason: "over_limit", penalty: 0.2, decided: false }),
+      g("asked", 1, { allowed: false, reason: "over_limit", penalty: 0.3 }),
+    ]);
+    assert.match(s4Guard(ctxOf(text)).join("\n"), /refused before the backend was asked \(backend call skipped\): 1 of 2 refusals/);
+  });
+});
+
+describe("report: 5. fallbacks and breaker", () => {
+  it("counts rewrites the upstream rejected, by status, with the error text", () => {
+    const text = toJsonl([
+      dec({ id: "f1", t: 0, sent: "haiku", fallback: { status: 404, error: "model not found" } }),
+      dec({ id: "f2", t: 1, sent: "haiku", fallback: { status: 404, error: "model not found" } }),
+      dec({ id: "f3", t: 2, sent: "sonnet", fallback: { status: 400, error: "bad request" } }),
+      dec({ id: "ok", t: 3, sent: "haiku" }),
+    ]);
+    const out = s5Fallbacks(ctxOf(text)).join("\n");
+    assert.match(out, /re-sent with the original bytes: 3/);
+    assert.match(out, /404\s+2/, out);
+    assert.match(out, /400\s+1/, out);
+    assert.match(out, /2x model not found/);
+  });
+
+  it("truncates a long upstream error to 100 characters", () => {
+    const text = toJsonl([dec({ id: "f", t: 0, sent: "haiku", fallback: { status: 400, error: "e".repeat(300) } })]);
+    const out = s5Fallbacks(ctxOf(text)).join("\n");
+    assert.match(out, new RegExp(`1x e{100}(?!e)`), "the error is cut at 100 chars");
+  });
+
+  it("names records that predate fallback_error instead of counting them as an empty error", () => {
+    const text = toJsonl([dec({ id: "f", t: 0, sent: "haiku", fallback: { status: 404, error: null } })]);
+    assert.match(s5Fallbacks(ctxOf(text)).join("\n"), /1x \(no error text: recorded before fallback_error existed\)/);
+  });
+
+  it("counts the reason codes that mean a rewrite was abandoned, and the breaker separately from other errors", () => {
+    const text = toJsonl([
+      dec({ id: "r1", t: 0, reasons: ["tier_disabled"] }),
+      dec({ id: "r2", t: 1, reasons: ["rewrite_failed"] }),
+      dec({ id: "r3", t: 2, reasons: ["stay_pinned_backend_error"] }),
+      dec({ id: "e1", t: 3, error: "breaker_open" }),
+      dec({ id: "e2", t: 4, error: "backend:timeout" }),
+    ]);
+    const out = s5Fallbacks(ctxOf(text)).join("\n");
+    assert.match(out, /tier switched off after a rejection \(tier_disabled\): 1/);
+    assert.match(out, /rewrite_failed: 1, stay_pinned_backend_error: 1/);
+    assert.match(out, /breaker_open: 1/);
+    assert.match(out, /backend and pipeline errors: .*backend:timeout 1/);
+  });
+
+  it("a clean log reports zeroes and `none`, not an empty section", () => {
+    const out = s5Fallbacks(ctxOf(toJsonl([dec({ id: "ok", t: 0 })]))).join("\n");
+    assert.match(out, /re-sent with the original bytes: 0/);
+    assert.match(out, /backend and pipeline errors: none/);
+  });
+});
+
+describe("report: 11. unclassified side-call fingerprints", () => {
+  const fp = (o: { tools?: number; messages?: number; roles?: string; chars?: number }): Record<string, unknown> => ({
+    v: 3,
+    unclassified_reason: "no_marker",
+    messages: o.messages ?? 12,
+    roles: o.roles ?? "suaua",
+    tools: o.tools ?? 40,
+    tool_result: true,
+    system: { prompt: "blocks", prompt_blocks: 2, messages: 1 },
+    last: { role: "user", content: "blocks", blocks: ["text"], text_chars: o.chars ?? 100 },
+    max_tokens: 8192,
+    thinking: null,
+    effort: "medium",
+    stream: true,
+    betas: ["claude-code-20250219"],
+    head: null,
+    head_omitted: "typed_prompt",
+  });
+  const un = (id: string, t: number, fingerprint: Record<string, unknown> | null, usage: [number, number, number, number]): Rec => ({
+    ...dec({ id, t, turn: "side", side: "unclassified", usage }),
+    ...(fingerprint === null ? {} : { side_fingerprint: fingerprint }),
+    unclassified_reason: "no_marker",
+  });
+
+  it("says so plainly when there are none", () => {
+    assert.deepEqual(s11Fingerprints(ctxOf(toJsonl([dec({ id: "s", t: 0, turn: "side", side: "suggestion" })]))), ["  (no unclassified side calls)"]);
+  });
+
+  it("groups calls that differ only in length: message count and last-text size are not part of the identity", () => {
+    const d = parse(toJsonl([
+      un("a", 0, fp({ messages: 12, roles: "suaua", chars: 100 }), [0, 0, 0, 1000]),
+      un("b", 1, fp({ messages: 40, roles: "suauaua", chars: 9000 }), [0, 0, 0, 2000]),
+    ])).decisions;
+    const groups = fingerprintGroups(d);
+    assert.equal(groups.length, 1, "messages, roles and last.text_chars are volatile and must not split a group");
+    assert.deepEqual(groups[0]!.message_count, { min: 12, max: 40 });
+    assert.equal(groups[0]!.tokens, 3000);
+    assert.equal(groups[0]!.fingerprint["messages"], 40, "the group keeps the most recent fingerprint, complete");
+  });
+
+  it("a structural difference makes its own group, and the most frequent group is listed first", () => {
+    const d = parse(toJsonl([
+      un("a", 0, fp({ tools: 40 }), [0, 0, 0, 1000]),
+      un("b", 1, fp({ tools: 40 }), [0, 0, 0, 1000]),
+      un("c", 2, fp({ tools: 3 }), [0, 0, 0, 5000]),
+    ])).decisions;
+    const groups = fingerprintGroups(d);
+    assert.deepEqual(groups.map((g) => g.n), [2, 1]);
+    assert.equal(groups[0]!.fingerprint["tools"], 40, "the larger group comes first even though the other holds more tokens");
+  });
+
+  it("counts calls with no fingerprint instead of dropping them, and totals tokens over all of them", () => {
+    const out = s11Fingerprints(ctxOf(toJsonl([
+      un("a", 0, fp({}), [0, 0, 0, 1000]),
+      un("b", 1, null, [0, 0, 0, 2000]),
+    ]))).join("\n");
+    assert.match(out, /2 unclassified side calls, 3,000 tokens; 1 distinct fingerprint; 1 without one/);
+    assert.match(out, /by reason: no_marker 2/);
+  });
+
+  it("singular wording for one call and one fingerprint", () => {
+    const out = s11Fingerprints(ctxOf(toJsonl([un("a", 0, fp({}), [0, 0, 0, 10])]))).join("\n");
+    assert.match(out, /1 unclassified side call, 10 tokens; 1 distinct fingerprint\n/);
+    assert.doesNotMatch(out, /without one/, "nothing is missing, so the clause is omitted");
+  });
+
+  it("the printed group line carries the structure and points at the flag that exports it", () => {
+    const out = s11Fingerprints(ctxOf(toJsonl([un("a", 0, fp({}), [0, 0, 0, 1000])]))).join("\n");
+    assert.match(out, /n=1, 1,000 tokens, kind main, claude 2\.1\.277, messages 12: \{/);
+    assert.match(out, /reflex report --fingerprints/);
+  });
+});
+
+describe("report: 13. escalations", () => {
+  const log = (): string =>
+    toJsonl([
+      dec({ id: "cause", t: 0, conv: "C1", probs: [0.9, 0.1, 0], pickMass: "haiku", sent: "haiku" }),
+      dec({ id: "esc1", t: 2, conv: "C1", probs: [0.9, 0.1, 0], pickMass: "haiku", sent: "sonnet", escalation: { signal: "correction", from: "haiku", to: "sonnet", decisionId: "cause" } }),
+      dec({ id: "plain", t: 4, conv: "C1", probs: [0.9, 0.1, 0], pickMass: "haiku", sent: "haiku" }),
+    ]);
+
+  it("says plainly when there is nothing, rather than printing an empty table", () => {
+    const lines = s13Escalations(ctxOf(toJsonl([dec({ id: "a", t: 0 })]))).join("\n");
+    assert.match(lines, /no escalated turns in this log/);
+    assert.match(lines, /REFLEX_ESCALATE is off by default/);
+  });
+
+  it("lists each escalated turn with its signal, the tiers, and the turn that caused it", () => {
+    const rows = escalationRows(ctxOf(log()));
+    assert.equal(rows.length, 1, "only the escalated turn is listed");
+    assert.equal(rows[0]!.dec.id, "esc1");
+    assert.equal(rows[0]!.signal, "correction");
+    assert.equal(rows[0]!.from, "haiku");
+    assert.equal(rows[0]!.to, "sonnet");
+    assert.equal(rows[0]!.cause?.id, "cause", "joined to the decision whose window produced the signal");
+    const lines = s13Escalations(ctxOf(log())).join("\n");
+    assert.match(lines, /1 escalated turn;/);
+    assert.match(lines, /by signal: correction 1/);
+    assert.match(lines, /insufficient data: n=0 < 20/, "no rate is claimed from one turn");
+  });
+
+  it("refuses a rate below MIN_OUTCOME_N and never implies escalation helped", () => {
+    const lines = s13Escalations(ctxOf(log())).join("\n");
+    assert.doesNotMatch(lines, /correction > 0 after an escalation/);
+    assert.match(lines, /none of this says whether escalation helps/);
+  });
+});
+
+describe("report: grouping by decision-backend version", () => {
+  it("section 2 splits agreement by the version that answered", () => {
+    const text = toJsonl([
+      dec({ id: "a", t: 0, probs: [0.9, 0.1, 0], pickMass: "haiku", pickArgmax: "haiku", backendVersion: "jev-1.13.0" }),
+      dec({ id: "b", t: 1, probs: [0.4, 0.5, 0.1], pickMass: "sonnet", pickArgmax: "haiku", backendVersion: "jev-1.13.0" }),
+      dec({ id: "c", t: 2, probs: [0.9, 0.1, 0], pickMass: "haiku", pickArgmax: "haiku", backendVersion: "jev-1.14.0" }),
+    ]);
+    const lines = s2MassVsArgmax(ctxOf(text)).join("\n");
+    assert.match(lines, /agreement by backend version/);
+    assert.match(lines, /jev-1\.13\.0\s+2\s+1\s+50\.0%/);
+    assert.match(lines, /jev-1\.14\.0\s+1\s+1\s+100\.0%/);
+  });
+
+  it("falls back to the version inside the decision block, so logs written before the field still group", () => {
+    const text = toJsonl([dec({ id: "a", t: 0, probs: [1, 0, 0], pickMass: "haiku", backendVersion: null })]);
+    assert.match(s2MassVsArgmax(ctxOf(text)).join("\n"), /jev-test\s+1\s+1\s+100\.0%/);
+  });
+
+  it("says nothing at all when neither field carries a version", () => {
+    // No backend answer at all: the guard refused before the call, so there is no version to group by.
+    const text = toJsonl([dec({ id: "a", t: 0 }), dec({ id: "b", t: 1 })]);
+    assert.doesNotMatch(s2MassVsArgmax(ctxOf(text)).join("\n"), /agreement by backend version/);
   });
 });

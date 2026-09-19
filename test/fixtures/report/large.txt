@@ -59,6 +59,10 @@ reflex report
     argmax    312     330   314         642
   they differ on 126: mass routes lower on 63, argmax on 63
 
+  agreement by backend version (a rate measured across versions is two measurements added together):
+    backend version  new turns  agree  % agree
+    jev-test               956    830    86.8%
+
 3. Shadow vs actual
   new turns that reached the backend (n=956); tokens = input + output + cache read + cache write of that turn's own request
     requested  would route to  turns  % turns  % tokens  actually sent there
@@ -102,11 +106,13 @@ reflex report
     correction score: 217 scored (51 had no next prompt): 0: 181, 0-0.5: 0, >=0.5: 36
     test failure after an edit: 25 of 179 windows with edits (137 windows ran tests)
     reverted edits: 13 of 179 windows with edits
+    by backend version: jev-test 268
     rates: correction > 0 in 16.6% of scored; test failure 14.0% and revert 7.3% of windows with edits
   main / unchanged: 404 windows
     correction score: 327 scored (77 had no next prompt): 0: 281, 0-0.5: 0, >=0.5: 46
     test failure after an edit: 41 of 275 windows with edits (202 windows ran tests)
     reverted edits: 10 of 275 windows with edits
+    by backend version: jev-test 404
     rates: correction > 0 in 14.1% of scored; test failure 14.9% and revert 3.6% of windows with edits
 
 8. Cost at list prices (estimate)
@@ -849,3 +855,6 @@ reflex report
     cccccccccccccccc:m:00000           yes         0                            -
     cccccccccccccccc:m:00000           yes         0                            -
     cccccccccccccccc:m:00000           yes         0                            -
+
+13. Escalations (REFLEX_ESCALATE)
+  no escalated turns in this log (REFLEX_ESCALATE is off by default; a turn is escalated only after a routed turn's outcome window closes with a signal)

@@ -199,6 +199,25 @@ export function s1Decisions({ rec }: Ctx): string[] {
   return out;
 }
 
+/** Label for a record with no `backend_version` (older logs, or no backend call). */
+export const BACKEND_VERSION_UNKNOWN = "not recorded";
+
+/**
+ * Per decision-backend version, how often mass and argmax agreed. Calibration has to be splittable by version: the
+ * backend's answers are the input to every threshold, so two versions are two populations. Printed only when the
+ * records actually carry a version, so logs written before the field existed read exactly as they did.
+ */
+export function byBackendVersion(decided: readonly Dec[], heading: string): string[] {
+  const versions = countBy(decided, (x) => x.backendVersion ?? BACKEND_VERSION_UNKNOWN);
+  if (versions.length === 0 || (versions.length === 1 && versions[0]![0] === BACKEND_VERSION_UNKNOWN)) return [];
+  const rows = versions.map(([ver, n]) => {
+    const d = decided.filter((x) => (x.backendVersion ?? BACKEND_VERSION_UNKNOWN) === ver);
+    const agree = d.filter((x) => x.pickMass !== null && x.pickArgmax?.value != null && x.pickMass === x.pickArgmax.value).length;
+    return [ver, String(n), String(agree), pct(agree, n)];
+  });
+  return ["", heading, ...table([["backend version", "new turns", "agree", "% agree"], ...rows], "    ")];
+}
+
 /** What a rule would route to, given the requested tier: never above it (upgrades are off by default) and, for argmax, only down with enough confidence. */
 export function wouldRoute(rule: "mass" | "argmax", d: Dec): Tier | null {
   if (d.requestedTier === null) return null;
@@ -228,6 +247,7 @@ export function s2MassVsArgmax({ rec }: Ctx): string[] {
   const massLower = routable.filter((x) => tierRank(wouldRoute("mass", x)!) < tierRank(wouldRoute("argmax", x)!)).length;
   const argmaxLower = routable.filter((x) => tierRank(wouldRoute("argmax", x)!) < tierRank(wouldRoute("mass", x)!)).length;
   out.push(`  they differ on ${massLower + argmaxLower}: mass routes lower on ${massLower}, argmax on ${argmaxLower}`);
+  out.push(...byBackendVersion(both, "  agreement by backend version (a rate measured across versions is two measurements added together):"));
   return out;
 }
 
@@ -396,6 +416,10 @@ export function s7Outcomes(ctx: Ctx): string[] {
     out.push(`    correction score: ${scored.length} scored (${w.length - scored.length} had no next prompt): ${buckets.map(([k, n]) => `${k}: ${n}`).join(", ")}`);
     out.push(`    test failure after an edit: ${w.filter((x) => x.testFailureAfterEdit).length} of ${withEdits.length} windows with edits (${w.filter((x) => x.testRuns > 0).length} windows ran tests)`);
     out.push(`    reverted edits: ${withEdits.filter((x) => g.reverted.has(x)).length} of ${withEdits.length} windows with edits`);
+    const vers = countBy(w, (x) => (x.decisionId === null ? BACKEND_VERSION_UNKNOWN : ctx.byId.get(x.decisionId)?.backendVersion ?? BACKEND_VERSION_UNKNOWN));
+    if (vers.length > 1 || (vers.length === 1 && vers[0]![0] !== BACKEND_VERSION_UNKNOWN)) {
+      out.push(`    by backend version: ${vers.map(([v, n]) => `${v} ${n}`).join(", ")}`);
+    }
     if (w.length < MIN_OUTCOME_N) out.push(`    insufficient data: n=${w.length} < ${MIN_OUTCOME_N}; no rates shown`);
     else {
       out.push(`    rates: correction > 0 in ${pct(scored.filter((x) => x.correctionScore! > 0).length, scored.length)} of scored; test failure ${pct(w.filter((x) => x.testFailureAfterEdit).length, withEdits.length)} and revert ${pct(withEdits.filter((x) => g.reverted.has(x)).length, withEdits.length)} of windows with edits`);
@@ -649,6 +673,7 @@ export const SECTIONS: readonly { readonly id: string; readonly title: string; r
   { id: "10", title: "10. Cache writes by move type", run: s10CacheMoves },
   { id: "11", title: "11. Unclassified side-call fingerprints", run: s11Fingerprints },
   { id: "12", title: "12. Side-call routing estimate", run: s12SideRouting },
+  { id: "13", title: "13. Escalations (REFLEX_ESCALATE)", run: s13Escalations },
 ];
 
 // ---- 12. Side-call routing estimate ---------------------------------------------------------------------------
@@ -952,5 +977,73 @@ export function s12SideRouting({ rec, usd: showUsd }: Ctx): string[] {
         ...convs.map((c) => [c.conv.slice(0, 24), c.pinnedBelow ? "yes" : "no", int(c.upMoves), c.upMoveCacheWrites.map((w) => int(w)).join(", ") || "-"]),
       ], "    "),
     );
+  return out;
+}
+
+// ---- 13. Escalations -------------------------------------------------------------------------------------------
+
+export interface EscalationRow {
+  /** The escalated turn's own decision. */
+  readonly dec: Dec;
+  readonly signal: string;
+  readonly from: Tier | null;
+  readonly to: Tier | null;
+  /** The decision whose outcome window raised it; null when that record is not in this log. */
+  readonly cause: Dec | null;
+  /** The escalated turn's own outcome window, once it closed; null while it is still open or in a later log. */
+  readonly outcome: OutcomeRec | null;
+}
+
+/**
+ * Every turn REFLEX_ESCALATE raised, joined to the turn that caused it and to its own outcome window. Pure; a log with
+ * the setting off produces an empty list, which is what makes this section free to ship.
+ */
+export function escalationRows(ctx: Ctx): EscalationRow[] {
+  const byDecision = new Map<string, OutcomeRec>();
+  for (const o of ctx.rec.outcomes) if (o.decisionId !== null && o.attribution !== "interjection") byDecision.set(o.decisionId, o);
+  return ctx.rec.decisions
+    .filter((d) => d.escalation !== null)
+    .map((d) => ({
+      dec: d,
+      signal: d.escalation!.signal,
+      from: d.escalation!.from,
+      to: d.escalation!.to,
+      cause: d.escalation!.decisionId === null ? null : ctx.byId.get(d.escalation!.decisionId) ?? null,
+      outcome: byDecision.get(d.id) ?? null,
+    }));
+}
+
+/** 13. What escalation did, and whether the turn it raised then went well. */
+export function s13Escalations(ctx: Ctx): string[] {
+  const rows = escalationRows(ctx);
+  if (rows.length === 0) {
+    return ["  no escalated turns in this log (REFLEX_ESCALATE is off by default; a turn is escalated only after a routed turn's outcome window closes with a signal)"];
+  }
+  const out = [`  ${rows.length} escalated turn${rows.length === 1 ? "" : "s"}; "signal" is what the PREVIOUS routed turn on that conversation closed with`];
+  out.push("", `  by signal: ${countBy(rows, (r) => r.signal).map(([k, n]) => `${k} ${n}`).join(", ")}`);
+  out.push(
+    "",
+    "  each escalated turn (tier before -> after is the policy's own pick vs what escalation planned; `sent` is what the guard and the rewrite finally allowed):",
+    ...table([
+      ["turn", "signal", "before", "after", "sent", "outcome window", "correction", "test failure", "revert"],
+      ...rows.map((r) => [
+        r.dec.id.slice(0, 8),
+        r.signal,
+        tl(r.from),
+        tl(r.to),
+        tl(r.dec.sentTier),
+        r.outcome === null ? "still open" : "closed",
+        r.outcome === null ? "-" : r.outcome.correctionScore === null ? "not scored" : String(r.outcome.correctionScore),
+        r.outcome === null ? "-" : r.outcome.testFailureAfterEdit ? "yes" : "no",
+        r.outcome === null ? "-" : r.outcome.revertedInWindow ? "yes" : "no",
+      ]),
+    ], "    "),
+  );
+  const closed = rows.filter((r) => r.outcome !== null);
+  const scored = closed.filter((r) => r.outcome!.correctionScore !== null);
+  const bad = scored.filter((r) => r.outcome!.correctionScore! > 0).length;
+  out.push("", `  of ${rows.length} escalated turns, ${closed.length} window${closed.length === 1 ? "" : "s"} closed and ${scored.length} scored; ${bad} drew a correction`);
+  if (scored.length < MIN_OUTCOME_N) out.push(`  insufficient data: n=${scored.length} < ${MIN_OUTCOME_N}; no rate is shown and none of this says whether escalation helps`);
+  else out.push(`  correction > 0 after an escalation: ${pct(bad, scored.length)} of scored`);
   return out;
 }

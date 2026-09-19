@@ -63,6 +63,10 @@ reflex report
     argmax      4       1     5           5
   they differ on 3: mass routes lower on 3, argmax on 0
 
+  agreement by backend version (a rate measured across versions is two measurements added together):
+    backend version  new turns  agree  % agree
+    jev-test                10      8    80.0%
+
 3. Shadow vs actual
   new turns that reached the backend (n=10); tokens = input + output + cache read + cache write of that turn's own request
     requested  would route to  turns  % turns  % tokens  actually sent there
@@ -115,17 +119,20 @@ reflex report
     correction score: 2 scored (0 had no next prompt): 0: 1, 0-0.5: 0, >=0.5: 1
     test failure after an edit: 1 of 2 windows with edits (2 windows ran tests)
     reverted edits: 0 of 2 windows with edits
+    by backend version: jev-test 2
     insufficient data: n=2 < 20; no rates shown
   main / unchanged: 2 windows
     correction score: 1 scored (1 had no next prompt): 0: 1, 0-0.5: 0, >=0.5: 0
     test failure after an edit: 0 of 1 windows with edits (0 windows ran tests)
     reverted edits: 1 of 1 windows with edits
+    by backend version: jev-test 2
     insufficient data: n=2 < 20; no rates shown
   main / no decision: 1 window (no_wire_turn 1); not attributable to a routing decision
   subagent / routed: 1 window
     correction score: 0 scored (1 had no next prompt): 0: 0, 0-0.5: 0, >=0.5: 0
     test failure after an edit: 0 of 1 windows with edits (0 windows ran tests)
     reverted edits: 0 of 1 windows with edits
+    by backend version: jev-test 1
     insufficient data: n=1 < 20; no rates shown
   main: routed vs unchanged is not comparable yet (each arm needs n >= 20)
   subagent: routed vs unchanged is not comparable yet (each arm needs n >= 20)
@@ -200,3 +207,6 @@ reflex report
     conversation              pinned below  up-moves  cache write on each up-move
     bbbbbbbbbbbbbbbb:m:00000           yes         2                13,400, 5,900
     bbbbbbbbbbbbbbbb:a:00000           yes         0                            -
+
+13. Escalations (REFLEX_ESCALATE)
+  no escalated turns in this log (REFLEX_ESCALATE is off by default; a turn is escalated only after a routed turn's outcome window closes with a signal)

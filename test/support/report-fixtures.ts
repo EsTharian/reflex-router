@@ -42,6 +42,10 @@ export interface DecOpts {
   wait?: number;
   /** Omit the `timing` block, like a record written before it existed. */
   legacyTiming?: boolean;
+  /** Decision-backend version on the record; defaults to `jev-test` on a decided turn, null otherwise. */
+  backendVersion?: string | null;
+  /** Escalation block (REFLEX_ESCALATE), as the router writes it. */
+  escalation?: { signal: "correction" | "test_failure" | "reverted_edit"; from: T; to: T; decisionId: string | null; turnSeq?: number } | null;
 }
 
 /** One `decision` record. */
@@ -72,6 +76,8 @@ export function dec(o: DecOpts): Rec {
     shape: { status: "verified", violations: [] },
     claude_version: "2.1.277",
     backend: "jev",
+    backend_version: o.backendVersion === undefined ? (decided ? "jev-test" : null) : o.backendVersion,
+    escalation: o.escalation ? { signal: o.escalation.signal, from: o.escalation.from, to: o.escalation.to, decision_id: o.escalation.decisionId, turn_seq: o.escalation.turnSeq ?? 1 } : null,
     requested: { model: MODEL[requested], tier: requested, effort: "medium" },
     decision: decided
       ? {
