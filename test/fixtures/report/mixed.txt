@@ -1,0 +1,136 @@
+reflex report
+  files: test.jsonl
+  records in range: 22 decisions, 6 outcomes, 1 outcome updates, 1 harness_injected, 2 sessions
+  span: 2026-09-19T10:00:00.000Z .. 2026-09-19T10:31:40.000Z
+  skipped 1 line(s) that are not valid records
+  1 record(s) of an unknown type ignored
+  Every figure below is computed from these records only; small samples are marked, and none of it is a benchmark (see docs/observations.md).
+
+1. Decisions by kind, turn and tier
+  22 classified requests
+
+  by kind and turn:
+    kind      new  continuation  side
+    main       15             2     3
+    subagent    1             1     0
+
+  side calls by kind: suggestion 2, no_tools 1
+
+  tier, requested (rows) -> sent (columns):
+    requested  haiku  sonnet  opus
+    haiku          0       0     0
+    sonnet         0       0     0
+    opus           2       3    17
+
+  mode requested -> effective: route -> route 14, shadow -> shadow 8
+  degraded: claude_version:major_mismatch 1
+
+2. mass vs argmax
+  10 new turns reached the backend; 10 log both readings (older records log only the applied pick)
+
+  agreement, mass pick (rows) x argmax pick (columns):
+    mass \ argmax  haiku  sonnet  opus
+    haiku              4       0     0
+    sonnet             2       2     0
+    opus               0       0     2
+  agree on 8 of 10 (80.0%)
+
+  what each rule would route to (n=10; ignores guard, veto and context ceiling; argmax moves down only at confidence >= 0.7):
+    rule    haiku  sonnet  opus  moved down
+    mass        4       4     2           8
+    argmax      4       1     5           5
+  they differ on 3: mass routes lower on 3, argmax on 0
+
+3. Shadow vs actual
+  new turns that reached the backend (n=10); tokens = input + output + cache read + cache write of that turn's own request
+    requested  would route to  turns  % turns  % tokens  actually sent there
+    opus                haiku      3    30.0%     34.4%                    1
+    opus               sonnet      4    40.0%     31.2%                    2
+    opus                 opus      3    30.0%     34.5%                    3
+
+  routed records (rewritten and accepted; includes pinned continuations): 5
+    requested model                 sent model  records
+    claude-opus-5              claude-sonnet-5        3
+    claude-opus-5    claude-haiku-4-5-20251001        2
+
+4. Guard skips
+  6 guard evaluations, 2 refused
+    reason        evaluated  allowed  refused  penalty p50  penalty max
+    no_switch             2        2        0            -            -
+    ctx_unknown           1        0        1            -            -
+    fresh                 1        1        0            -            -
+    over_limit            1        0        1      $0.1100      $0.1100
+    within_limit          1        1        0      $0.0040      $0.0040
+  refused before the backend was asked (backend call skipped): 1 of 2 refusals
+
+5. Fallbacks and breaker
+  rewrites rejected by the upstream and re-sent with the original bytes: 1
+    status  records
+    400           1
+    1x invalid_request_error: long context beta is not yet available
+  tier switched off after a rejection (tier_disabled): 1
+  rewrite_failed: 1, stay_pinned_backend_error: 0
+  breaker_open: 1
+  backend and pipeline errors: backend:http:500 1, backend:timeout 1, breaker_open 1, decision_late 1
+
+6. Latency
+  Jev decision latency (nearest-rank percentiles):
+                        n       p50       p95
+    all                10    400 ms  1,100 ms
+    new connection      1  1,100 ms  1,100 ms
+    reused connection   9    400 ms    700 ms
+
+  time to upstream response headers, new turns in route mode, split into the wait for the decision and the upstream's first byte (different models and prompts, so a rough comparison only):
+                                                                 n  headers p50  headers p95  decision wait p50  decision wait p95  upstream first byte p50  upstream first byte p95
+    routed (after a decision)                                    3     1,800 ms     1,900 ms             415 ms             430 ms                 1,370 ms                 1,490 ms
+    unrouted, after a decision                                   3     1,300 ms     2,400 ms             402 ms             405 ms                   898 ms                 1,999 ms
+    unrouted, no decision made (guard refusal, backend failure)  5     1,100 ms     2,600 ms               0 ms           1,740 ms                   600 ms                   950 ms
+    1 of 11 of these records predate the timing block: they count in n and "headers" but not in the two components
+  timed-out decisions in route mode: 2; 2 with timing, longest wait 1,740 ms, deadline 1500 ms + 250 ms grace: all within
+
+7. Outcome rates, routed vs unchanged
+  main / routed: 2 windows
+    correction score: 2 scored (0 had no next prompt): 0: 1, 0-0.5: 0, >=0.5: 1
+    test failure after an edit: 1 of 2 windows with edits (2 windows ran tests)
+    reverted edits: 0 of 2 windows with edits
+    insufficient data: n=2 < 20; no rates shown
+  main / unchanged: 2 windows
+    correction score: 1 scored (1 had no next prompt): 0: 1, 0-0.5: 0, >=0.5: 0
+    test failure after an edit: 0 of 1 windows with edits (0 windows ran tests)
+    reverted edits: 1 of 1 windows with edits
+    insufficient data: n=2 < 20; no rates shown
+  main / no decision: 1 window (no_wire_turn 1); not attributable to a routing decision
+  subagent / routed: 1 window
+    correction score: 0 scored (1 had no next prompt): 0: 0, 0-0.5: 0, >=0.5: 0
+    test failure after an edit: 0 of 1 windows with edits (0 windows ran tests)
+    reverted edits: 0 of 1 windows with edits
+    insufficient data: n=1 < 20; no rates shown
+  main: routed vs unchanged is not comparable yet (each arm needs n >= 20)
+  subagent: routed vs unchanged is not comparable yet (each arm needs n >= 20)
+  harness_injected records: 1
+
+8. Cost at list prices (estimate)
+  ESTIMATE at list prices (src/pricing.ts, last verified 2026-09-19): the same token counts priced at the model sent vs the model requested.
+  Not modelled: tokenizer differences between models, cache TTL (writes priced at the 5-minute rate), discounts, subscription limits.
+  The requested-model figure prices the routed model's cache writes as writes on the requested model too, although its cache was usually already warm from side calls (observations.md, cache cost model), so it overstates what staying would have cost.
+    main chat + subagent requests   n     tokens  usage at sent as % of at requested
+    routed only                     5    251,518                               27.5%
+    all (unrouted count as equal)  18  1,087,320                               77.0%
+  Dollar amounts: rerun with --usd. Without it only relative usage is shown.
+  Side calls are excluded here and shown in section 9.
+
+9. Side-call usage
+  3 side calls (3 with usage). Harness side calls are never rewritten, so they bill the requested model even while the conversation is routed.
+    side kind   calls   tokens
+    suggestion      2  142,844
+    no_tools        1    9,011
+    total           3  151,855
+  side calls sent to a model other than the requested one: 0
+
+10. Cache writes by move type
+  first request after a tier change in a conversation (observations.md: moving up one tier can write more than returning to the requested model)
+    move                              n  cache write p50  cache write mean  cache write max  cache read p50
+    down (to a cheaper tier)          2           20,000            41,500           63,000               0
+    up, short of the requested tier   1           13,400            13,400           13,400          61,000
+    back to the requested tier        1            5,900             5,900            5,900          74,000
+    stayed (new turns, baseline)     11              500            18,536           71,000          40,000

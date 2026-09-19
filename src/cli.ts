@@ -1,5 +1,6 @@
 import { doctorCommand, versionCommand } from "./commands.js";
 import { launch, realLaunchIO } from "./launcher/launch.js";
+import { reportCommand } from "./report/index.js";
 
 /** Subcommands reflex owns. Everything else, including every flag, goes to claude untouched. */
 export const RESERVED_COMMANDS: ReadonlySet<string> = new Set(["doctor", "report", "version"]);
@@ -23,6 +24,8 @@ export async function main(argv: readonly string[]): Promise<number> {
       return versionCommand(io);
     case "doctor":
       return doctorCommand(io);
+    case "report":
+      return reportCommand(r.args, io);
     default:
       io.stderr(`reflex ${r.command}: not implemented yet\n`);
       return 2;

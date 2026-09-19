@@ -35,3 +35,17 @@ export const cacheWriteUsd = (tier: Tier, tokens: number, ttl: CacheTtl): number
 
 /** $ to read `tokens` from the cache of `tier`. */
 export const cacheReadUsd = (tier: Tier, tokens: number): number => tokens * perToken(PRICES[tier].input) * PRICES[tier].cacheReadMult;
+
+/** Token counts of one response, as `usage` in the decision log. */
+export interface UsageTokens {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead: number;
+  readonly cacheCreate: number;
+}
+
+/** $ list-price estimate of one response's usage on `tier` (used by `reflex report`; an estimate, see the caveats at the top of this file). */
+export const usageCostUsd = (tier: Tier, u: UsageTokens, ttl: CacheTtl): number => {
+  const p = PRICES[tier];
+  return (u.input * p.input + u.output * p.output + u.cacheRead * p.input * p.cacheReadMult + u.cacheCreate * p.input * CACHE_WRITE_MULT[ttl]) / 1_000_000;
+};

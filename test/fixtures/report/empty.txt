@@ -1,0 +1,43 @@
+reflex report
+  files: test.jsonl
+  records in range: 0 decisions, 0 outcomes, 0 outcome updates, 0 harness_injected
+  span: no records
+  Every figure below is computed from these records only; small samples are marked, and none of it is a benchmark (see docs/observations.md).
+
+1. Decisions by kind, turn and tier
+  (no records)
+
+2. mass vs argmax
+  (no records)
+
+3. Shadow vs actual
+  (no records)
+
+  routed records (rewritten and accepted; includes pinned continuations): 0
+
+4. Guard skips
+  (no records with a guard evaluation; the guard runs in route mode only)
+
+5. Fallbacks and breaker
+  (no records)
+
+6. Latency
+  Jev decision latency: no decided requests
+
+  time to upstream response headers, new turns in route mode, split into the wait for the decision and the upstream's first byte (different models and prompts, so a rough comparison only):
+    no new turns in route mode
+
+7. Outcome rates, routed vs unchanged
+  (no outcome records; outcome capture runs in shadow and route sessions since M4)
+
+8. Cost at list prices (estimate)
+  ESTIMATE at list prices (src/pricing.ts, last verified 2026-09-19): the same token counts priced at the model sent vs the model requested.
+  Not modelled: tokenizer differences between models, cache TTL (writes priced at the 5-minute rate), discounts, subscription limits.
+  The requested-model figure prices the routed model's cache writes as writes on the requested model too, although its cache was usually already warm from side calls (observations.md, cache cost model), so it overstates what staying would have cost.
+  no records with usage
+
+9. Side-call usage
+  (no records)
+
+10. Cache writes by move type
+  (no records)

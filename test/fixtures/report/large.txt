@@ -1,0 +1,115 @@
+reflex report
+  files: test.jsonl
+  records in range: 6000 decisions, 672 outcomes, 0 outcome updates, 0 harness_injected, 1 session
+  span: 2026-09-19T10:00:00.000Z .. 2026-09-20T19:19:40.000Z
+  Every figure below is computed from these records only; small samples are marked, and none of it is a benchmark (see docs/observations.md).
+
+1. Decisions by kind, turn and tier
+  6000 classified requests
+
+  by kind and turn:
+    kind  new  continuation  side
+    main  956          2671  2373
+
+  side calls by kind: notification 808, suggestion 790, no_tools 775
+
+  tier, requested (rows) -> sent (columns):
+    requested  haiku  sonnet  opus
+    haiku          0       0     0
+    sonnet         0       0     0
+    opus        1204     195  4601
+
+  mode requested -> effective: route -> route 6000
+  degraded: none
+
+2. mass vs argmax
+  956 new turns reached the backend; 956 log both readings (older records log only the applied pick)
+
+  agreement, mass pick (rows) x argmax pick (columns):
+    mass \ argmax  haiku  sonnet  opus
+    haiku            270      20    21
+    sonnet            15     289    22
+    opus              27      21   271
+  agree on 830 of 956 (86.8%)
+
+  what each rule would route to (n=956; ignores guard, veto and context ceiling; argmax moves down only at confidence >= 0.7):
+    rule    haiku  sonnet  opus  moved down
+    mass      311     326   319         637
+    argmax    312     330   314         642
+  they differ on 126: mass routes lower on 63, argmax on 63
+
+3. Shadow vs actual
+  new turns that reached the backend (n=956); tokens = input + output + cache read + cache write of that turn's own request
+    requested  would route to  turns  % turns  % tokens  actually sent there
+    opus                haiku    311    32.5%     32.7%                  182
+    opus               sonnet    326    34.1%     34.2%                  195
+    opus                 opus    319    33.4%     33.1%                  319
+
+  routed records (rewritten and accepted; includes pinned continuations): 1399
+    requested model                 sent model  records
+    claude-opus-5    claude-haiku-4-5-20251001     1204
+    claude-opus-5              claude-sonnet-5      195
+
+4. Guard skips
+  956 guard evaluations, 148 refused
+    reason      evaluated  allowed  refused  penalty p50  penalty max
+    fresh             649      649        0            -            -
+    over_limit        307      159      148      $0.0877      $0.1987
+  refused before the backend was asked (backend call skipped): 0 of 148 refusals
+
+5. Fallbacks and breaker
+  rewrites rejected by the upstream and re-sent with the original bytes: 0
+  tier switched off after a rejection (tier_disabled): 0
+  rewrite_failed: 0, stay_pinned_backend_error: 0
+  breaker_open: 0
+  backend and pipeline errors: none
+
+6. Latency
+  Jev decision latency (nearest-rank percentiles):
+                         n     p50       p95
+    all                956  752 ms  1,159 ms
+    new connection     178  730 ms  1,164 ms
+    reused connection  778  754 ms  1,159 ms
+
+  time to upstream response headers, new turns in route mode, split into the wait for the decision and the upstream's first byte (different models and prompts, so a rough comparison only):
+                                  n  headers p50  headers p95  decision wait p50  decision wait p95  upstream first byte p50  upstream first byte p95
+    routed (after a decision)   377     1,637 ms     2,472 ms               0 ms               0 ms                 1,637 ms                 2,472 ms
+    unrouted, after a decision  579     1,593 ms     2,508 ms               0 ms               0 ms                 1,593 ms                 2,508 ms
+
+7. Outcome rates, routed vs unchanged
+  main / routed: 268 windows
+    correction score: 217 scored (51 had no next prompt): 0: 181, 0-0.5: 0, >=0.5: 36
+    test failure after an edit: 25 of 179 windows with edits (137 windows ran tests)
+    reverted edits: 13 of 179 windows with edits
+    rates: correction > 0 in 16.6% of scored; test failure 14.0% and revert 7.3% of windows with edits
+  main / unchanged: 404 windows
+    correction score: 327 scored (77 had no next prompt): 0: 281, 0-0.5: 0, >=0.5: 46
+    test failure after an edit: 41 of 275 windows with edits (202 windows ran tests)
+    reverted edits: 10 of 275 windows with edits
+    rates: correction > 0 in 14.1% of scored; test failure 14.9% and revert 3.6% of windows with edits
+
+8. Cost at list prices (estimate)
+  ESTIMATE at list prices (src/pricing.ts, last verified 2026-09-19): the same token counts priced at the model sent vs the model requested.
+  Not modelled: tokenizer differences between models, cache TTL (writes priced at the 5-minute rate), discounts, subscription limits.
+  The requested-model figure prices the routed model's cache writes as writes on the requested model too, although its cache was usually already warm from side calls (observations.md, cache cost model), so it overstates what staying would have cost.
+    main chat + subagent requests     n       tokens  usage at sent as % of at requested  $ at requested  $ at sent  $ difference
+    routed only                    1399   62,911,655                               24.1%          $84.53     $20.38        $64.15
+    all (unrouted count as equal)  3627  163,546,625                               70.5%         $217.68    $153.53        $64.15
+  Side calls are excluded here and shown in section 9.
+
+9. Side-call usage
+  2373 side calls (2373 with usage). Harness side calls are never rewritten, so they bill the requested model even while the conversation is routed.
+    side kind     calls      tokens  $ at requested model
+    notification    808  33,637,116                $24.35
+    suggestion      790  32,484,998                $23.61
+    no_tools        775  30,811,499                $22.75
+    total          2373  96,933,613                $70.71
+  side calls sent to a model other than the requested one: 0
+
+10. Cache writes by move type
+  first request after a tier change in a conversation (observations.md: moving up one tier can write more than returning to the requested model)
+    move                                n  cache write p50  cache write mean  cache write max  cache read p50
+    down (to a cheaper tier)         1028            5,315             6,050           19,987          38,260
+    up, short of the requested tier    45           10,887            10,536           19,623          43,484
+    back to the requested tier        679            5,295             5,914           19,885          37,786
+    stayed (new turns, baseline)      465           10,200             9,995           19,906          39,227

@@ -1,0 +1,84 @@
+reflex report
+  files: test.jsonl
+  records in range: 1 decisions, 0 outcomes, 0 outcome updates, 0 harness_injected, 1 session
+  span: 2026-09-19T10:00:00.000Z .. 2026-09-19T10:00:00.000Z
+  Every figure below is computed from these records only; small samples are marked, and none of it is a benchmark (see docs/observations.md).
+
+1. Decisions by kind, turn and tier
+  1 classified requests
+
+  by kind and turn:
+    kind  new
+    main    1
+
+  tier, requested (rows) -> sent (columns):
+    requested  haiku  opus
+    haiku          0     0
+    opus           1     0
+
+  mode requested -> effective: route -> route 1
+  degraded: none
+
+2. mass vs argmax
+  1 new turns reached the backend; 1 log both readings (older records log only the applied pick)
+
+  agreement, mass pick (rows) x argmax pick (columns):
+    mass \ argmax  haiku
+    haiku              1
+  agree on 1 of 1 (100.0%)
+
+  what each rule would route to (n=1; ignores guard, veto and context ceiling; argmax moves down only at confidence >= 0.7):
+    rule    haiku  moved down
+    mass        1           1
+    argmax      1           1
+  they differ on 0: mass routes lower on 0, argmax on 0
+
+3. Shadow vs actual
+  new turns that reached the backend (n=1); tokens = input + output + cache read + cache write of that turn's own request
+    requested  would route to  turns  % turns  % tokens  actually sent there
+    opus                haiku      1   100.0%    100.0%                    1
+
+  routed records (rewritten and accepted; includes pinned continuations): 1
+    requested model                 sent model  records
+    claude-opus-5    claude-haiku-4-5-20251001        1
+
+4. Guard skips
+  (no records with a guard evaluation; the guard runs in route mode only)
+
+5. Fallbacks and breaker
+  rewrites rejected by the upstream and re-sent with the original bytes: 0
+  tier switched off after a rejection (tier_disabled): 0
+  rewrite_failed: 0, stay_pinned_backend_error: 0
+  breaker_open: 0
+  backend and pipeline errors: none
+
+6. Latency
+  Jev decision latency (nearest-rank percentiles):
+                       n     p50     p95
+    all                1  400 ms  400 ms
+    reused connection  1  400 ms  400 ms
+
+  time to upstream response headers, new turns in route mode, split into the wait for the decision and the upstream's first byte (different models and prompts, so a rough comparison only):
+                               n  headers p50  headers p95  decision wait p50  decision wait p95  upstream first byte p50  upstream first byte p95
+    routed (after a decision)  1       900 ms       900 ms               0 ms               0 ms                   900 ms                   900 ms
+
+7. Outcome rates, routed vs unchanged
+  (no outcome records; outcome capture runs in shadow and route sessions since M4)
+
+8. Cost at list prices (estimate)
+  ESTIMATE at list prices (src/pricing.ts, last verified 2026-09-19): the same token counts priced at the model sent vs the model requested.
+  Not modelled: tokenizer differences between models, cache TTL (writes priced at the 5-minute rate), discounts, subscription limits.
+  The requested-model figure prices the routed model's cache writes as writes on the requested model too, although its cache was usually already warm from side calls (observations.md, cache cost model), so it overstates what staying would have cost.
+    main chat + subagent requests  n  tokens  usage at sent as % of at requested
+    routed only                    1  40,705                               20.0%
+    all (unrouted count as equal)  1  40,705                               20.0%
+  Dollar amounts: rerun with --usd. Without it only relative usage is shown.
+  Side calls are excluded here and shown in section 9.
+
+9. Side-call usage
+  (no records)
+
+10. Cache writes by move type
+  first request after a tier change in a conversation (observations.md: moving up one tier can write more than returning to the requested model)
+    move                      n  cache write p50  cache write mean  cache write max  cache read p50
+    down (to a cheaper tier)  1              500               500              500          40,000
