@@ -16,7 +16,7 @@ import { loadFixtures, type Fixture } from "../support/fixtures.js";
 import { waitFor } from "../support/http.js";
 
 type Json = Record<string, unknown>;
-type Answer = Record<string, number> | "timeout";
+type Answer = Record<string, number> | "timeout" | "hang";
 const fixtures = loadFixtures();
 
 /** An interactive fixture as an Opus request in session `sid`, optionally with a prefix on the user's text. */
@@ -36,7 +36,7 @@ function opusRequest(name: string, sid: string, prefix = ""): Fixture {
 
 function harness(): { send(fx: Fixture, answer: Answer | null, cacheCreate?: number): Promise<{ rec: DecisionRecord; sent: Json }>; calls(): number } {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reflex-router-"));
-  const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home });
+  const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "50" });
   assert.ok(loaded.ok);
   const config: Config = loaded.config;
   let answer: Answer | null = null;
@@ -46,6 +46,7 @@ function harness(): { send(fx: Fixture, answer: Answer | null, cacheCreate?: num
     decide: (_s, questions) => {
       calls++;
       if (answer === "timeout") return Promise.reject(new BackendError("timeout", "t"));
+      if (answer === "hang") return new Promise<Decision>(() => undefined); // never settles: the router's own bound fires
       const probs = answer ?? {};
       const choice = Object.entries(probs).sort((a, b) => b[1] - a[1])[0]![0];
       const tierQ = questions["tier"]!;
@@ -139,12 +140,38 @@ describe("router: main-chat pin rules (session B)", () => {
     assert.equal(b2.rec.override, "opus");
   });
 
-  it("B2 when the backend fails: fail-open, the request goes out unchanged (requested model)", async () => {
+  it("B2 when the backend fails: the conversation stays pinned (a pin is a prior decision, not an error path)", async () => {
     const h = harness();
     await h.send(opusRequest("main-new-turn", "B"), SONNETISH);
     const b2 = await h.send(opusRequest("main-new-turn-plain", "B"), "timeout");
     assert.equal(b2.rec.error, "backend:timeout");
+    assert.deepEqual(b2.rec.plan?.reasons, ["stay_pinned_backend_error"]);
+    assert.equal(b2.sent["model"], "claude-sonnet-5");
+    const c = await h.send(opusRequest("main-continuation", "B"), null);
+    assert.equal(c.sent["model"], "claude-sonnet-5", "its tool loop stays pinned too");
+  });
+
+  it("B2 when the decision never arrives (router bound): also stays pinned", async () => {
+    const h = harness();
+    await h.send(opusRequest("main-new-turn", "B"), SONNETISH);
+    const b2 = await h.send(opusRequest("main-new-turn-plain", "B"), "hang");
+    assert.equal(b2.rec.error, "decision_late");
+    assert.deepEqual(b2.rec.plan?.reasons, ["stay_pinned_backend_error"]);
+    assert.equal(b2.sent["model"], "claude-sonnet-5");
+  });
+
+  it("B2 failure with reflex:opus: the override leaves the pin without asking the backend", async () => {
+    const h = harness();
+    await h.send(opusRequest("main-new-turn", "B"), SONNETISH);
+    const b2 = await h.send(opusRequest("main-new-turn-plain", "B", "reflex:opus "), "timeout");
     assert.equal(b2.sent["model"], "claude-opus-5");
+  });
+
+  it("a backend failure on a conversation still on the requested tier forwards unchanged, as before", async () => {
+    const h = harness();
+    const a1 = await h.send(opusRequest("main-new-turn", "F"), "timeout");
+    assert.equal(a1.sent["model"], "claude-opus-5");
+    assert.deepEqual(a1.rec.plan, null);
   });
 
   it("a conversation still on the requested tier is refused before the backend, as before (session A)", async () => {

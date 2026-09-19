@@ -96,6 +96,7 @@ export type ReasonCode =
   | "override"
   | "guard_blocked"
   | "stay_pinned"
+  | "stay_pinned_backend_error"
   | "return_up"
   | "tier_disabled"
   | "rewrite_unverified"

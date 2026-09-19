@@ -178,7 +178,13 @@ export class Router {
     if (v.turn === "new") {
       outcomeP = this.#decide(v, s, conv, routing);
       if (routing) {
-        const outcome = await this.#bounded(outcomeP);
+        let outcome = await this.#bounded(outcomeP);
+        // A decision that never arrived counts as a backend failure: a main-chat pin below the requested tier stays.
+        const pinned = conv?.pin?.target;
+        if (outcome.part.error === "decision_late" && v.kind === "main" && pinned && !this.#tierDisabled(s, pinned.tier)) {
+          const reasons: ReasonCode[] = ["stay_pinned_backend_error"];
+          outcome = { ...outcome, target: pinned, reasons, part: { ...outcome.part, plan: { target: null, would_route_to: null, routed_to: v.requestedModel, reasons, would_upgrade: false } } };
+        }
         if (conv) {
           conv.pin = { target: outcome.target, from: requestedTier };
           pinState = "set";
@@ -340,6 +346,11 @@ export class Router {
     // has none. The guard only ever decides whether to LEAVE that tier for a cheaper one; a refusal keeps it.
     const current: Tier | null = kind === "main" && conv?.pin ? (conv.pin.target?.tier ?? requested) : requested;
     const belowRequested = current !== null && requested !== null && tierRank(current) < tierRank(requested);
+    // A backend failure on a conversation pinned below the requested tier keeps the pin: the pin is a prior
+    // decision, not an error path (tool-loop continuations stay pinned without the backend too). `reflex:<tier>`
+    // leaves it. Everywhere else a failure forwards the request unchanged.
+    const failed = (part: Partial<DecisionPart>): Outcome =>
+      kind === "main" && belowRequested && current !== null ? finalize(null, current, ["stay_pinned_backend_error"], part, null) : none(part);
 
     // Main-chat cost guard, evaluated before the backend in route mode: a conversation still on the requested tier
     // skips the backend when even the cheapest enabled tier cannot pass. A conversation pinned below the requested
@@ -355,8 +366,8 @@ export class Router {
     }
 
     const backend = this.d.backend;
-    if (!backend) return none({ error: "no_backend" });
-    if (!this.d.breaker.closed) return none({ backend: backend.id, error: "breaker_open" });
+    if (!backend) return failed({ error: "no_backend" });
+    if (!this.d.breaker.closed) return failed({ backend: backend.id, error: "breaker_open" });
     let sent: DecisionPart["sent"] = null;
     try {
       const built = buildState({ kind, task: v.task, previousAssistantText: v.previousAssistantText, requestedModel: v.requestedModel }, cfg);
@@ -364,7 +375,7 @@ export class Router {
       const decision = await backend.decide(built.state, buildQuestions(cfg), { signal: new AbortController().signal });
       this.d.breaker.success();
       const j = judge(decision, cfg);
-      if (!j.ok) return none({ backend: backend.id, sent, error: `invalid_answer:${j.error}` });
+      if (!j.ok) return failed({ backend: backend.id, sent, error: `invalid_answer:${j.error}` });
       const p = plan({ kind, requestedModel: v.requestedModel }, j.judgement, cfg);
       const part: Partial<DecisionPart> = {
         backend: backend.id,
@@ -410,10 +421,10 @@ export class Router {
     } catch (e) {
       if (e instanceof BackendError) {
         if (e.kind !== "aborted") this.d.breaker.failure();
-        return none({ backend: backend.id, sent, error: e.status !== undefined ? `backend:${e.kind}:${e.status}` : `backend:${e.kind}` });
+        return failed({ backend: backend.id, sent, error: e.status !== undefined ? `backend:${e.kind}:${e.status}` : `backend:${e.kind}` });
       }
       this.d.logger("error", `router: decision failed: ${e instanceof Error ? e.message : String(e)}`);
-      return none({ backend: backend.id, sent, error: "internal" });
+      return failed({ backend: backend.id, sent, error: "internal" });
     }
   }
 }
