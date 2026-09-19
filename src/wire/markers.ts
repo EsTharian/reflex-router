@@ -29,6 +29,30 @@ export const BILLING_ENTRYPOINT = /cc_entrypoint=([^;\s]+)/;
 export const SYSTEM_REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 /** Claude Code wraps pasted text as `<pasted_content id="…">…</pasted_content id="…">`; the tags go, the text stays. */
 export const PASTED_CONTENT_TAG = /<\/?pasted_content(?:\s+id="[^"]*")?\s*>/g;
+/**
+ * Claude Code's wrapper for a prompt the user typed WHILE a tool loop was running (a "queued command"). It arrives
+ * inside a `<system-reminder>` in the next request of the running turn, alongside the tool results, instead of as a
+ * turn of its own — so every reminder-stripping rule drops it and the user's words vanish from the wire.
+ *
+ * Evidence: session 805b3287 (2026-09-19T21:28:07.672Z), Claude Code 2.1.278. The transcript records the attachment as
+ * `{type: "queued_command", origin: {kind: "human"}, humanTurn: true}` and renders it as, verbatim:
+ *
+ *   <system-reminder>
+ *   The user sent a new message while you were working:
+ *   <pasted_content id="805b">
+ *   Run the test suite and the link check.
+ *   </pasted_content id="805b">
+ *
+ *   This is how Claude Code surfaces messages the user sends mid-turn - within the running turn, often alongside the
+ *   next tool result, rather than as a separate conversation turn. Address the message above as you continue this turn.
+ *   </system-reminder>
+ *
+ * The opening line is the marker; the trailer ends the user's text. Both are matched leniently (the trailer's dash is
+ * an em dash in the observed text and is not relied on).
+ */
+export const QUEUED_MESSAGE_MARKER = "The user sent a new message while you were working:";
+export const QUEUED_MESSAGE_TRAILER = "This is how Claude Code surfaces messages the user sends mid-turn";
+
 export const LOCAL_COMMAND_BLOCK = /<(local-command-caveat|local-command-stdout|local-command-stderr|command-name|command-message|command-args)>[\s\S]*?<\/\1>/g;
 
 /**

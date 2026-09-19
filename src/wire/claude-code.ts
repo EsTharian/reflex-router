@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import {
   BETA_EXTENDED_CACHE_TTL, BETA_MID_CONVERSATION_SYSTEM, BILLING_ENTRYPOINT, HANDBACK_PROMPT_PREFIX, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
-  INJECTED_PROMPT_MARKERS, MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
+  INJECTED_PROMPT_MARKERS, MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, QUEUED_MESSAGE_MARKER, QUEUED_MESSAGE_TRAILER, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
 } from "./markers.js";
 import { matchesTypedPrompt } from "./typed-prompt.js";
 
@@ -107,6 +107,30 @@ const ownText = (blocks: readonly Block[]): string =>
     .filter(Boolean)
     .join("\n\n");
 
+/**
+ * The user's own words inside Claude Code's "queued command" reminder, or null when this text is not one. A prompt
+ * typed during a running tool loop is delivered in that wrapper, inside the tool-loop request, so `ownText` drops it
+ * with every other reminder and the turn reads as an ordinary continuation. Pulling the text back out is what lets the
+ * interjection test see it (and, through the tracker, lets it score as a correction of the turn it interrupted).
+ *
+ * Deliberately narrow: only the text between the marker line and the trailer is returned, so the harness's own
+ * explanation never reaches the match. Returning it is not enough to promote anything - the caller still has to match
+ * it against a prompt the hook stream says the user typed.
+ */
+export function queuedMessageText(text: string): string | null {
+  const at = text.indexOf(QUEUED_MESSAGE_MARKER);
+  if (at === -1) return null;
+  const rest = text.slice(at + QUEUED_MESSAGE_MARKER.length);
+  const end = rest.indexOf(QUEUED_MESSAGE_TRAILER);
+  const inner = (end === -1 ? rest : rest.slice(0, end)).replace("</system-reminder>", "");
+  const own = inner.replace(PASTED_CONTENT_TAG, "").trim();
+  return own === "" ? null : own;
+}
+
+/** Every queued-command message in this message's blocks, newest-first order preserved. */
+const queuedMessages = (blocks: readonly Block[]): string[] =>
+  blocks.filter((b) => b.type === "text" && b.text !== null).map((b) => queuedMessageText(b.text ?? "")).filter((t): t is string => t !== null);
+
 const systemText = (body: Json): string => {
   const s = body["system"];
   if (typeof s === "string") return s;
@@ -168,6 +192,14 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
   for (const m of SIDE_MARKERS) if (texts.some((t) => t.includes(m.text))) return side(m.kind, m.id);
 
   if (blocks.some((b) => b.type === "tool_result")) {
+    // A message the user typed mid-loop arrives inside a `<system-reminder>` (src/wire/markers.ts), so it is invisible
+    // to every rule below: `isReminderOnly` is true for it and `ownText` strips it. Checked FIRST, and only promoted
+    // when the text matches the newest typed prompt no wire turn has claimed - the same positive evidence a
+    // plain-string `new` turn needs. Without the hook stream (tests, spikes) it stays an ordinary continuation, which
+    // is the fail-safe direction.
+    for (const q of queuedMessages(blocks)) {
+      if (matchesTypedPrompt(q, newestTyped === null ? null : [newestTyped])) return continuation(true);
+    }
     // A tool-loop step carries tool results and at most harness reminders.
     const onlyResults = blocks.every((b) => b.type === "tool_result" || (b.type === "text" && isReminderOnly(b.text ?? "")));
     if (onlyResults) return continuation(false);
