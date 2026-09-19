@@ -148,7 +148,7 @@ You can run the same command on your own traffic today. It prices the same measu
 
 ## Status
 
-**v0.1.0: early, and measured numbers are pending.** Shadow and route modes, outcome capture, `reflex report` and `~/.reflex/env` work and are covered by tests that run offline (a guard fails any non-loopback connection); the live Jev tests and a final real session on this build are still to be run. Not published to npm. Release notes for what was and was not exercised: [`docs/acceptance-phase1.md`](docs/acceptance-phase1.md).
+**v0.2.0-alpha: early, and measured numbers are pending.** Phase 2a added the workflow profile, side-call fingerprints and the opt-in delegation hint ([`CHANGELOG.md`](CHANGELOG.md)). Shadow and route modes, outcome capture, `reflex report` and `~/.reflex/env` work and are covered by tests that run offline (a guard fails any non-loopback connection); the live Jev tests and a final real session on this build are still to be run. Not published to npm. Release notes for what was and was not exercised: [`docs/acceptance-phase1.md`](docs/acceptance-phase1.md).
 
 ```sh
 npm ci

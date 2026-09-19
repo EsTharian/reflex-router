@@ -11,7 +11,9 @@ npm run test:live                          # tests needing a real TYPESAFE_API_K
 npm run build                              # tsc -> dist/
 npm run gen:versions                       # regenerate src/wire/tested-versions.generated.ts from test/fixtures/claude-code/*
 node bin/reflex.js doctor                  # run the built CLI (after `npm run build`); shows where each setting came from
-node bin/reflex.js report [--since 2h] [--usd]   # summarise ~/.reflex/decisions.jsonl (reads files only)
+node bin/reflex.js report [--since 2h] [--usd]   # summarise ~/.reflex/decisions.jsonl (reads files only); section 0 = workflow profile
+node bin/reflex.js report --fingerprints   # unclassified side-call fingerprints as JSON lines (what users send back)
+node scripts/report/strip-archive.mjs <in> <out>   # structural copy of an archived log (allow-listed fields) for test/fixtures/report/archives/
 node scripts/acceptance/check-archives.mjs # Phase 1 acceptance checks over ~/.reflex/archive/*.jsonl (docs/acceptance-phase1.md)
 ```
 
@@ -26,10 +28,11 @@ reflex (launcher process)                        src/launcher/
   claude      spawned with stdio inherited; ANTHROPIC_BASE_URL -> front door; one merged --settings file
 worker (child process)                           src/worker/   all routing logic; every failure ends in "forward the original bytes"
 src/outcome/  outcome capture (record only): hook settings, hook payload parsing, heuristics, the tracker that joins hooks to decisions
+src/delegate/ REFLEX_DELEGATE: the hint text + version (hint.ts, the only place it lives) and which UserPromptSubmit gets it (reply.ts)
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
 src/config.ts the ONLY interpreter of settings (and of process.env); src/env-file.ts only reads/permission-checks ~/.reflex/env and merges it under the process env
-src/report/   `reflex report`: tolerant JSONL reader, ten pure sections, no network
-src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, tested versions
+src/report/   `reflex report`: tolerant JSONL reader, pure sections 0-11 (0 = workflow profile, 11 = side-call fingerprints), no network
+src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, tested versions, unclassified side-call fingerprints, typed-vs-injected hook prompts
 ```
 
 Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacted real captures: `test/fixtures/claude-code/<version>/`.
@@ -44,7 +47,9 @@ Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacte
 - **No unmeasured claims** (cost, speed, quality) in README or docs.
 - **Pricing** lives in `src/pricing.ts` with a "last verified" date and must be checked against Anthropic's pricing page before release (not present yet).
 - **Attribution.** Any code adapted from another project is listed in `THIRD_PARTY.md` (tracked, shipped in the npm package) in the same commit.
-- **Outcome capture is record-only.** Hook payload text (prompts, commands, paths, code) stays in the worker's memory; `decisions.jsonl` gets hashes, counts, rule ids and runner kinds only. Nothing about a request or session changes because of an outcome signal. Every outcome record without a `decision_id` says why (`no_decision`).
+- **Hook answers carry nothing but the delegation hint.** Every hook is answered `204` except, with `REFLEX_DELEGATE=1`, a user-typed main-chat `UserPromptSubmit`, answered with `hookSpecificOutput.additionalContext` only (never `decision`, `continue` or anything that can block or change a prompt); any failure is a `204`. Changing the hint text means bumping `HINT_VERSION`.
+- **Fingerprints hold structure, not text.** `side_fingerprint` keeps at most the redacted preamble of harness text and drops it on any user-text heuristic; a new field or heuristic bumps `FINGERPRINT_VERSION` and must keep `test/unit/fingerprint.test.ts` (no user text lands) green.
+- **Outcome capture is record-only.** Hook payload text (prompts, commands, paths, code) stays in the worker's memory; `decisions.jsonl` gets hashes, counts, rule ids and runner kinds only. Nothing about a request or session changes because of an outcome signal (the delegation hint is a fixed text chosen by `REFLEX_DELEGATE`, never by an outcome). Every outcome record without a `decision_id` says why (`no_decision`).
 - **Real-API experiments** run with the user's actual Claude Code settings: no `--model` (or other settings) override in the `claude` invocation, and the experiment's results file records the settings it ran under (model setting, entrypoint, betas seen). State the cost cap before running.
 - Small, well-described commits; run `npm test` first. Phase/plan documents are local working files (`docs/plan-*.md`, gitignored) and are never committed or referenced from tracked files.
 
