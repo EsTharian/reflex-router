@@ -6,6 +6,21 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.2 — 2026-09-20
+
+### Privacy
+
+- **`REFLEX_LOG_PROMPTS` is now off by default.** It was on through the pre-release versions so decisions could be
+  reviewed while the routing rules were being written, with a stated promise to revisit that before a public release
+  — this is that revisit. `REFLEX_LOG_PROMPTS=1` still adds the redacted, 300-character prompt preview to
+  `decisions.jsonl`. `reflex doctor` now prints a `prompt preview:` line saying whether it is on or off. README,
+  `docs/privacy.md`, `docs/reference.md` and `docs/acceptance-phase1.md` updated to match; both defaults are covered
+  by tests (`test/unit/policy.test.ts`, `test/unit/env-file.test.ts`).
+
+### Docs
+
+- **`CLAUDE.md`:** never run `git stash pop` on a stash you did not create in this session.
+
 ## 0.3.1 — 2026-09-20
 
 **The first version published to npm**, under the `alpha` dist-tag. Two wire/tracker bugs found by reading the
