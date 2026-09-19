@@ -7,6 +7,7 @@ import type { Tier } from "../config.js";
 import { head } from "../privacy/budget.js";
 import { redact } from "../privacy/redact.js";
 import type { Effort, ReasonCode } from "../types.js";
+import type { SideFingerprint } from "../wire/fingerprint.js";
 import { JsonlWriter, type JsonlOptions } from "./jsonl.js";
 
 /** Hard cap on the prompt preview, in code points. A constant, deliberately not configurable. */
@@ -99,6 +100,8 @@ export interface DecisionRecord {
   /** Backend or pipeline error category; never a message body. */
   readonly error: string | null;
   readonly sent: { readonly keys: readonly string[]; readonly chars: number } | null;
+  /** `side` / `unclassified` only: the request's structure, so the call can be given a side_kind (src/wire/fingerprint.ts). null: could not be built. */
+  readonly side_fingerprint?: SideFingerprint | null;
   readonly prompt_preview?: string;
 }
 

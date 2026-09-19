@@ -20,6 +20,7 @@ import { estimateTokens, fitsContext, tierOfModel, tierRank } from "../tiers.js"
 import type { ReasonCode } from "../types.js";
 import type { Log } from "../util/log.js";
 import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
+import { sideFingerprint, type SideFingerprint } from "../wire/fingerprint.js";
 import { isVerifiedRetarget, retarget, retargetBetas } from "../wire/rewrite.js";
 import { ShapeTracker } from "../wire/shape.js";
 import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
@@ -45,6 +46,8 @@ export interface RouterDeps {
   readonly newId?: () => string;
   /** Outcome capture: told about every classified request (raw ids stay in memory). */
   readonly onDecision?: (d: DecisionInfo) => void;
+  /** Prompts UserPromptSubmit delivered in a session (memory only); null when none arrived. Keeps them out of fingerprints. */
+  readonly typedPrompts?: (sessionId: string | null) => readonly string[] | null;
 }
 
 /** Handed to server.ts for one request as it is forwarded. */
@@ -279,6 +282,7 @@ export class Router {
               conv.lastCtx = u.usage.input + u.usage.cacheRead + u.usage.cacheCreate;
             }
             const degraded = [this.d.degradedReason, this.#uaDegrade, s.shape.reason].filter(Boolean);
+            const fingerprint = v.turn === "side" && v.sideKind === "unclassified" ? this.#fingerprint(v, headers, body) : undefined;
             const p = outcome.part.plan;
             const record: DecisionRecord = {
               v: 1,
@@ -307,6 +311,7 @@ export class Router {
               timing: { decision_wait_ms: decisionWaitMs, decision_deadline_ms: this.d.config.jevDeadlineMs, upstream_first_byte_ms: upstreamFirstByteMs },
               usage: u.usage ? { input: u.usage.input, output: u.usage.output, cache_read: u.usage.cacheRead, cache_create: u.usage.cacheCreate } : null,
               usage_unknown_reason: u.unknownReason,
+              ...(fingerprint !== undefined ? { side_fingerprint: fingerprint } : {}),
             };
             this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
             return this.d.log.append(record, v.turn === "new" ? v.task : null);
@@ -316,6 +321,16 @@ export class Router {
     };
     forwardStarted = this.#now();
     return { body: sendBody, ...(sendHeaders ? { headers: sendHeaders } : {}), rewritten, obs };
+  }
+
+  /** Built after the response, off the request's path; a failure leaves the record without one. */
+  #fingerprint(v: RequestView, headers: IncomingHttpHeaders, body: Buffer): SideFingerprint | null {
+    try {
+      return sideFingerprint(headers, body, this.d.typedPrompts?.(v.sessionId) ?? null);
+    } catch (e) {
+      this.d.logger("warn", `router: fingerprint failed: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
   }
 
   /** Route mode never waits longer than the backend deadline plus a small grace; a late decision fails open. */

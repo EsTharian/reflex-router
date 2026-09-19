@@ -6,7 +6,7 @@ import { LAST_VERIFIED, usageCostUsd } from "../pricing.js";
 import { DECISION_GRACE_MS } from "../timing.js";
 import { tierRank } from "../tiers.js";
 import { countBy, int, mean, median, ms, pct, percentile, sum, table, usd } from "./format.js";
-import { totalTokens, type Dec, type OutcomeRec, type Records } from "./records.js";
+import { num, totalTokens, type Dec, type OutcomeRec, type Records } from "./records.js";
 
 /** Below this many outcome windows in a group no rate is shown (docs/observations.md: a handful of turns says little). */
 export const MIN_OUTCOME_N = 20;
@@ -457,6 +457,60 @@ export function s10CacheMoves({ rec }: Ctx): string[] {
   ];
 }
 
+/** Fields that vary with the conversation's length, not with the kind of call: left out when grouping fingerprints. */
+const COUNT_FIELD = "messages";
+const VOLATILE = new Set([COUNT_FIELD, "roles"]);
+const canonical = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(canonical) : typeof v === "object" && v !== null ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Record<string, unknown>)[k])])) : v;
+
+export interface FingerprintGroup {
+  readonly n: number;
+  readonly tokens: number;
+  readonly kinds: readonly string[];
+  readonly claude_versions: readonly string[];
+  readonly message_count: { readonly min: number; readonly max: number };
+  /** The most recent fingerprint of the group, complete. */
+  readonly fingerprint: Readonly<Record<string, unknown>>;
+}
+
+/** Unclassified side calls with a fingerprint, grouped by everything but their length; most frequent first. */
+export function fingerprintGroups(d: readonly Dec[]): FingerprintGroup[] {
+  const groups = new Map<string, Dec[]>();
+  for (const x of d) {
+    if (x.fingerprint === null) continue;
+    const k = JSON.stringify(canonical(Object.fromEntries(Object.entries(x.fingerprint).filter(([f]) => !VOLATILE.has(f)).map(([f, v]) => [f, f === "last" && typeof v === "object" && v !== null ? { ...v, text_chars: undefined } : v]))));
+    groups.set(k, [...(groups.get(k) ?? []), x]);
+  }
+  return [...groups.values()]
+    .map((v) => {
+      const sorted = [...v].sort((a, b) => a.atMs - b.atMs);
+      const counts = v.map((x) => num(x.fingerprint![COUNT_FIELD]) ?? 0);
+      return {
+        n: v.length,
+        tokens: sum(v.map(tokens)),
+        kinds: [...new Set(v.map((x) => x.kind))].sort(),
+        claude_versions: [...new Set(v.map((x) => x.claudeVersion ?? "?"))].sort(),
+        message_count: { min: Math.min(...counts), max: Math.max(...counts) },
+        fingerprint: canonical(sorted.at(-1)!.fingerprint) as Record<string, unknown>,
+      };
+    })
+    .sort((a, b) => b.n - a.n || b.tokens - a.tokens);
+}
+
+/** 11. Unclassified side calls: their structural fingerprints, to be sent back and given a side_kind. */
+export function s11Fingerprints({ rec }: Ctx): string[] {
+  const un = rec.decisions.filter((x) => x.turn === "side" && x.sideKind === "unclassified");
+  if (un.length === 0) return ["  (no unclassified side calls)"];
+  const groups = fingerprintGroups(un);
+  const without = un.filter((x) => x.fingerprint === null).length;
+  const out = [
+    `  ${un.length} unclassified side call${un.length === 1 ? "" : "s"}, ${int(sum(un.map(tokens)))} tokens; ${groups.length} distinct fingerprint${groups.length === 1 ? "" : "s"}${without > 0 ? `; ${without} without one (recorded before fingerprints existed, or not buildable)` : ""}`,
+    "  Structure only (docs/privacy.md). `reflex report --fingerprints` prints them as JSON lines to send back.",
+  ];
+  for (const g of groups) out.push(`    n=${g.n}, ${int(g.tokens)} tokens, kind ${g.kinds.join("/")}, claude ${g.claude_versions.join("/")}, messages ${g.message_count.min === g.message_count.max ? g.message_count.min : `${g.message_count.min}-${g.message_count.max}`}: ${JSON.stringify(g.fingerprint)}`);
+  return out;
+}
+
 export const SECTIONS: readonly { readonly title: string; readonly run: (c: Ctx) => string[] }[] = [
   { title: "0. Workflow profile", run: s0Workflow },
   { title: "1. Decisions by kind, turn and tier", run: s1Decisions },
@@ -469,4 +523,5 @@ export const SECTIONS: readonly { readonly title: string; readonly run: (c: Ctx)
   { title: "8. Cost at list prices (estimate)", run: s8Cost },
   { title: "9. Side-call usage", run: s9SideCalls },
   { title: "10. Cache writes by move type", run: s10CacheMoves },
+  { title: "11. Unclassified side-call fingerprints", run: s11Fingerprints },
 ];

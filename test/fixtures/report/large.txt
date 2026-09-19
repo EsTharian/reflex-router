@@ -129,3 +129,6 @@ reflex report
     up, short of the requested tier    45           10,887            10,536           19,623          43,484
     back to the requested tier        679            5,295             5,914           19,885          37,786
     stayed (new turns, baseline)      465           10,200             9,995           19,906          39,227
+
+11. Unclassified side-call fingerprints
+  (no unclassified side calls)

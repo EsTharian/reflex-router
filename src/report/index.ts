@@ -1,6 +1,6 @@
 // `reflex report`: reads the decision log (JSONL files only, no network) and prints its sections.
 import { defaultHome } from "../config.js";
-import { SECTIONS, type Ctx } from "./sections.js";
+import { fingerprintGroups, SECTIONS, type Ctx } from "./sections.js";
 import { defaultLogFiles, parseDuration, parseRecords, readLogFiles, sinceView, type Records } from "./records.js";
 
 export interface ReportOptions {
@@ -35,6 +35,12 @@ export function buildReport(all: Records, opts: ReportOptions): string {
   return lines.join("\n") + "\n";
 }
 
+/** `--fingerprints`: one JSON object per distinct unclassified side-call fingerprint, and nothing else. */
+export function buildFingerprints(all: Records, opts: Pick<ReportOptions, "fromMs">): string {
+  const rec = opts.fromMs === undefined ? all : sinceView(all, opts.fromMs);
+  return fingerprintGroups(rec.decisions.filter((d) => d.turn === "side" && d.sideKind === "unclassified")).map((g) => JSON.stringify(g) + "\n").join("");
+}
+
 export interface ReportIO {
   readonly env: NodeJS.ProcessEnv;
   readonly stdout: (t: string) => void;
@@ -42,16 +48,18 @@ export interface ReportIO {
   readonly now?: () => number;
 }
 
-const USAGE = "usage: reflex report [--since <2h|30m|7d>] [--usd] [<decisions.jsonl> ...]\n";
+const USAGE = "usage: reflex report [--since <2h|30m|7d>] [--usd | --fingerprints] [<decisions.jsonl> ...]\n";
 
 /** Exit code: 0 ok, 2 bad arguments, 1 unreadable input. */
 export function reportCommand(args: readonly string[], io: ReportIO): number {
   let usd = false;
+  let fingerprints = false;
   let sinceText: string | undefined;
   const files: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--usd") usd = true;
+    else if (a === "--fingerprints") fingerprints = true;
     else if (a === "--since" || a.startsWith("--since=")) {
       const v = a === "--since" ? args[++i] : a.slice("--since=".length);
       if (v === undefined || parseDuration(v) === null) {
@@ -78,6 +86,10 @@ export function reportCommand(args: readonly string[], io: ReportIO): number {
   }
   if (files.length === 0 && sources.length === 0) io.stderr(`reflex report: no decision log at ${home}/decisions.jsonl yet (run reflex in shadow or route mode first)\n`);
   const fromMs = sinceText === undefined ? undefined : (io.now ?? Date.now)() - parseDuration(sinceText)!;
+  if (fingerprints) {
+    io.stdout(buildFingerprints(parseRecords(texts), fromMs !== undefined ? { fromMs } : {}));
+    return 0;
+  }
   io.stdout(buildReport(parseRecords(texts), { usd, ...(fromMs !== undefined ? { fromMs } : {}), ...(sinceText !== undefined ? { sinceText } : {}) }));
   return 0;
 }

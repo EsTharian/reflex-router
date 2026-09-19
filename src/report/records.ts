@@ -59,6 +59,9 @@ export interface Dec {
   readonly decisionWaitMs: number | null;
   readonly decisionDeadlineMs: number | null;
   readonly upstreamFirstByteMs: number | null;
+  readonly claudeVersion: string | null;
+  /** `side_fingerprint` of an unclassified side call, as logged (src/wire/fingerprint.ts); null when absent. */
+  readonly fingerprint: J | null;
 }
 
 export interface OutcomeRec {
@@ -146,6 +149,8 @@ function toDec(o: J): Dec | null {
     decisionWaitMs: num(at(o, "timing", "decision_wait_ms")),
     decisionDeadlineMs: num(at(o, "timing", "decision_deadline_ms")),
     upstreamFirstByteMs: num(at(o, "timing", "upstream_first_byte_ms")),
+    claudeVersion: str(o["claude_version"]),
+    fingerprint: isObj(o["side_fingerprint"]) ? o["side_fingerprint"] : null,
   };
 }
 

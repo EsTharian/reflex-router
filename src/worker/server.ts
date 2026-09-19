@@ -16,6 +16,7 @@ import { Router, type Observation } from "./router.js";
 import { HOOK_PATH } from "../outcome/hooks-config.js";
 import { parseHookEvent } from "../outcome/hooks.js";
 import { OutcomeTracker, type DecisionInfo } from "../outcome/tracker.js";
+import { RecentPrompts } from "./recent-prompts.js";
 
 export interface WorkerOptions {
   readonly config: Config;
@@ -80,6 +81,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const tracker = Router.active(opts.effectiveMode)
     ? new OutcomeTracker({ emit: (r) => void decisionLog.appendRecord(r) })
     : null;
+  const prompts = new RecentPrompts();
   if (Router.active(opts.effectiveMode)) void backend?.warm?.();
   const router = Router.active(opts.effectiveMode)
     ? new Router({
@@ -92,6 +94,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         log: decisionLog,
         logger: opts.log,
         ...(tracker ? { onDecision: (d: DecisionInfo) => tracker.onDecision(d) } : {}),
+        typedPrompts: (sessionId) => prompts.get(sessionId),
       })
     : null;
 
@@ -118,6 +121,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     if (url === HOOK_PATH) {
       res.writeHead(204).end(); // answer first: a hook must never wait on outcome capture
       const event = tracker ? parseHookEvent(body) : null;
+      if (event?.type === "UserPromptSubmit") prompts.add(event.base.sessionId, event.prompt);
       if (event) tracker?.ingest(event);
       return;
     }

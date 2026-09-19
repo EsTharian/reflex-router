@@ -44,3 +44,6 @@ reflex report
 
 10. Cache writes by move type
   (no records)
+
+11. Unclassified side-call fingerprints
+  (no unclassified side calls)

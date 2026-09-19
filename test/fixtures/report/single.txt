@@ -98,3 +98,6 @@ reflex report
   first request after a tier change in a conversation (observations.md: moving up one tier can write more than returning to the requested model)
     move                      n  cache write p50  cache write mean  cache write max  cache read p50
     down (to a cheaper tier)  1              500               500              500          40,000
+
+11. Unclassified side-call fingerprints
+  (no unclassified side calls)
