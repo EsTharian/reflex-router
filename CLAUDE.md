@@ -10,7 +10,9 @@ node scripts/run-tests.mjs <substring>     # run only test files whose path cont
 npm run test:live                          # tests needing a real TYPESAFE_API_KEY; skip themselves without one
 npm run build                              # tsc -> dist/
 npm run gen:versions                       # regenerate src/wire/tested-versions.generated.ts from test/fixtures/claude-code/*
-node bin/reflex.js doctor                  # run the built CLI (after `npm run build`)
+node bin/reflex.js doctor                  # run the built CLI (after `npm run build`); shows where each setting came from
+node bin/reflex.js report [--since 2h] [--usd]   # summarise ~/.reflex/decisions.jsonl (reads files only)
+node scripts/acceptance/check-archives.mjs # Phase 1 acceptance checks over ~/.reflex/archive/*.jsonl (docs/acceptance-phase1.md)
 ```
 
 Tests run with `--import tsx` and a preloaded guard (`test/support/no-network.ts`) that throws on any non-loopback connection or DNS lookup, including in forked workers. Never weaken it; use the fake upstream and fake backend in `test/support/`.
@@ -25,7 +27,8 @@ reflex (launcher process)                        src/launcher/
 worker (child process)                           src/worker/   all routing logic; every failure ends in "forward the original bytes"
 src/outcome/  outcome capture (record only): hook settings, hook payload parsing, heuristics, the tracker that joins hooks to decisions
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
-src/config.ts the ONLY reader of process.env for configuration
+src/config.ts the ONLY interpreter of settings (and of process.env); src/env-file.ts only reads/permission-checks ~/.reflex/env and merges it under the process env
+src/report/   `reflex report`: tolerant JSONL reader, ten pure sections, no network
 src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, tested versions
 ```
 
