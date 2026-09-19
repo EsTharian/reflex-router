@@ -42,6 +42,8 @@ export interface DecOpts {
   wait?: number;
   /** Omit the `timing` block, like a record written before it existed. */
   legacyTiming?: boolean;
+  /** REFLEX_AB arm tag. */
+  ab?: "control" | "routed" | null;
   /** `prompt_encoding` on a new turn. */
   promptEncoding?: "string" | "blocks" | "other";
   /** Delegation hint version on the record (`delegate_hint`). */
@@ -83,6 +85,7 @@ export function dec(o: DecOpts): Rec {
     claude_version: "2.1.277",
     backend: "jev",
     ...(o.promptEncoding ? { prompt_encoding: o.promptEncoding } : {}),
+    ab: o.ab ?? null,
     ...(o.hint !== undefined ? { delegate_hint: o.hint } : {}),
     backend_version: o.backendVersion === undefined ? (decided ? "jev-test" : null) : o.backendVersion,
     escalation: o.escalation ? { signal: o.escalation.signal, from: o.escalation.from, to: o.escalation.to, decision_id: o.escalation.decisionId, turn_seq: o.escalation.turnSeq ?? 1 } : null,

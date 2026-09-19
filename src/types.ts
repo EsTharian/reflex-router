@@ -108,7 +108,12 @@ export type ReasonCode =
    */
   | "escalated:correction"
   | "escalated:test_failure"
-  | "escalated:reverted_edit";
+  | "escalated:reverted_edit"
+  /**
+   * REFLEX_AB: the backend wanted this turn below the requested tier and the randomisation held it on the requested
+   * model instead, as the control arm of the experiment. Not a refusal and not a failure.
+   */
+  | "ab_control";
 
 export interface RoutePlan {
   /** Where the request would go; null = leave it on the requested model. */

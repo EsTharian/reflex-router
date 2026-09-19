@@ -141,6 +141,13 @@ export interface DecisionRecord {
    * `escalated:` entry. It is what lets a log price escalation before anyone turns it on.
    */
   readonly would_escalate: EscalationBlock | null;
+  /**
+   * REFLEX_AB only. This turn entered the randomised experiment because the backend wanted to route it below the
+   * requested tier: `control` means the draw left it on the requested model, `routed` means it was routed as planned.
+   * null means the turn never entered the randomisation, and such turns must be kept out of any comparison of the two
+   * arms - that is the whole point of the tag.
+   */
+  readonly ab: "control" | "routed" | null;
   readonly prompt_preview?: string;
 }
 

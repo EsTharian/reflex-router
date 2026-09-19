@@ -35,6 +35,8 @@ export interface Dec {
   readonly unclassifiedReason: string | null;
   /** `new` turns: how the prompt arrived (`string`/`blocks`); null on older records and on non-new turns. */
   readonly promptEncoding: string | null;
+  /** REFLEX_AB arm (`control`/`routed`); null when the turn never entered the randomisation. */
+  readonly ab: string | null;
   /** The wire-format cross-check fired on this request (src/wire/drift.ts); null otherwise. */
   readonly drift: string | null;
   readonly modeRequested: string | null;
@@ -163,6 +165,7 @@ function toDec(o: J): Dec | null {
     sideMarker: str(o["side_marker"]),
     unclassifiedReason: str(o["unclassified_reason"]),
     promptEncoding: str(o["prompt_encoding"]),
+    ab: str(o["ab"]),
     drift: str(o["drift"]),
     modeRequested: str(o["mode_requested"]),
     modeEffective: str(o["mode_effective"]),

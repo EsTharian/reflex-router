@@ -411,6 +411,68 @@ export function outcomeGroups(ctx: Ctx): OutcomeGroup[] {
     .sort((a, b) => a.scope.localeCompare(b.scope) || ARM_ORDER.indexOf(a.arm) - ARM_ORDER.indexOf(b.arm));
 }
 
+export interface AbArm {
+  readonly arm: "routed" | "control";
+  readonly windows: readonly OutcomeRec[];
+  readonly scored: number;
+  readonly corrected: number;
+  readonly withEdits: number;
+  readonly testFailures: number;
+  readonly reverts: number;
+}
+
+/**
+ * The randomised arms of REFLEX_AB. Only turns the router actually randomised carry an `ab` tag, and only those may
+ * be compared: every other routed turn was routed BECAUSE the backend judged it easy, so comparing it with an
+ * unrouted turn compares the difficulty of the work, not the effect of routing. This is the one comparison in the
+ * report that can support a causal reading, and only once both arms are large enough.
+ */
+export function abArms(ctx: Ctx): AbArm[] {
+  const revertedIds = new Set(ctx.rec.updates.filter((u) => u.signal === "reverted_edit").map((u) => u.decisionId));
+  return (["routed", "control"] as const).map((arm) => {
+    const windows = ctx.rec.outcomes.filter((o) => {
+      if (o.scope !== "main" || o.attribution === "interjection" || o.decisionId === null) return false;
+      return ctx.byId.get(o.decisionId)?.ab === arm;
+    });
+    const withEdits = windows.filter((w) => w.edits > 0);
+    return {
+      arm,
+      windows,
+      scored: windows.filter((w) => w.correctionScore !== null).length,
+      corrected: windows.filter((w) => (w.correctionScore ?? 0) > 0).length,
+      withEdits: withEdits.length,
+      testFailures: withEdits.filter((w) => w.testFailureAfterEdit).length,
+      reverts: withEdits.filter((w) => w.revertedInWindow || (w.decisionId !== null && revertedIds.has(w.decisionId))).length,
+    };
+  });
+}
+
+/** The randomised block inside section 7. Empty when no turn was ever randomised. */
+export function abComparison(ctx: Ctx): string[] {
+  const arms = abArms(ctx);
+  if (arms.every((a) => a.windows.length === 0)) return [];
+  const out = [
+    "",
+    "  randomised comparison (REFLEX_AB): of the turns the backend wanted to route below the requested tier, a random",
+    "  fraction was held on the requested model instead. Only these turns are comparable with each other - every other",
+    "  routed turn was routed BECAUSE the backend judged it easy, so the arms above differ in difficulty, not treatment.",
+    ...table([
+      ["arm", "windows", "scored", "correction > 0", "windows with edits", "test failure", "revert"],
+      ...arms.map((a) => [a.arm, String(a.windows.length), String(a.scored), String(a.corrected), String(a.withEdits), String(a.testFailures), String(a.reverts)]),
+    ], "    "),
+  ];
+  const small = arms.filter((a) => a.windows.length < MIN_OUTCOME_N);
+  if (small.length > 0) {
+    out.push(`    insufficient data: ${small.map((a) => `${a.arm} n=${a.windows.length}`).join(", ")} < ${MIN_OUTCOME_N}; no rates shown and no comparison is made`);
+    return out;
+  }
+  for (const a of arms) {
+    out.push(`    ${a.arm}: correction > 0 in ${pct(a.corrected, a.scored)} of scored; test failure ${pct(a.testFailures, a.withEdits)} and revert ${pct(a.reverts, a.withEdits)} of windows with edits`);
+  }
+  out.push("    this is a difference between randomly assigned arms; it is still one log, and the report states no interval for it.");
+  return out;
+}
+
 /** 7. Outcome rates for routed vs unchanged turns. */
 export function s7Outcomes(ctx: Ctx): string[] {
   const groups = outcomeGroups(ctx);
@@ -445,6 +507,7 @@ export function s7Outcomes(ctx: Ctx): string[] {
       out.push(`    rates: correction > 0 in ${pct(scored.filter((x) => x.correctionScore! > 0).length, scored.length)} of scored; test failure ${pct(w.filter((x) => x.testFailureAfterEdit).length, withEdits.length)} and revert ${pct(withEdits.filter((x) => g.reverted.has(x)).length, withEdits.length)} of windows with edits`);
     }
   }
+  out.push(...abComparison(ctx));
   const arms = new Set(groups.filter((g) => g.arm !== "no decision" && g.windows.length >= MIN_OUTCOME_N).map((g) => `${g.scope}/${g.arm}`));
   const scopes = new Set(groups.map((g) => g.scope));
   for (const s of scopes) if (!(arms.has(`${s}/routed`) && arms.has(`${s}/unchanged`))) out.push(`  ${s}: routed vs unchanged is not comparable yet (each arm needs n >= ${MIN_OUTCOME_N})`);

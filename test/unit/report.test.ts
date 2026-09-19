@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, buildReportJson, reportCommand, type ReportJson } from "../../src/report/index.js";
 import { parseDuration, parseRecords, sinceView } from "../../src/report/records.js";
-import { classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, escalationRows, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, escalationRows, abArms, abComparison, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
@@ -995,5 +995,50 @@ describe("report: prompt encoding by delegation hint", () => {
   it("says nothing when no record carries the field, so older logs read as before", () => {
     const out = s1Decisions(ctxOf(toJsonl([dec({ id: "a", t: 0, turn: "new" })]))).join("\n");
     assert.doesNotMatch(out, /prompt encoding/);
+  });
+});
+
+describe("report: the randomised REFLEX_AB comparison", () => {
+  const log = (routed: number, control: number): string => {
+    const recs: Rec[] = [];
+    let t = 0;
+    for (let i = 0; i < routed; i++) {
+      recs.push(dec({ id: `r${i}`, t: t++, turn: "new", sent: "haiku", ab: "routed" }));
+      recs.push(outcome({ id: `or${i}`, t: t++, decision: `r${i}`, scope: "main", score: i % 5 === 0 ? 1 : 0, edits: 1 }));
+    }
+    for (let i = 0; i < control; i++) {
+      recs.push(dec({ id: `c${i}`, t: t++, turn: "new", sent: "opus", ab: "control" }));
+      recs.push(outcome({ id: `oc${i}`, t: t++, decision: `c${i}`, scope: "main", score: 0, edits: 1 }));
+    }
+    // A turn that never entered the randomisation must stay out of both arms.
+    recs.push(dec({ id: "plain", t: t++, turn: "new", sent: "haiku" }));
+    recs.push(outcome({ id: "oplain", t: t++, decision: "plain", scope: "main", score: 3, edits: 1 }));
+    return toJsonl(recs);
+  };
+
+  it("counts only the randomised turns, in their assigned arms", () => {
+    const arms = abArms(ctxOf(log(3, 2)));
+    assert.deepEqual(arms.map((a) => [a.arm, a.windows.length]), [["routed", 3], ["control", 2]]);
+    assert.equal(arms[0]!.corrected, 1, "the untagged turn's correction is not counted");
+    assert.equal(arms[1]!.corrected, 0);
+  });
+
+  it("says nothing at all when nothing was randomised", () => {
+    assert.deepEqual(abComparison(ctxOf(toJsonl([dec({ id: "a", t: 0, turn: "new" })]))), []);
+  });
+
+  it("refuses a comparison until BOTH arms pass MIN_OUTCOME_N", () => {
+    const lines = abComparison(ctxOf(log(MIN_OUTCOME_N + 1, 3))).join("\n");
+    assert.match(lines, /insufficient data: control n=3 < 20/);
+    assert.doesNotMatch(lines, /correction > 0 in .* of scored/);
+  });
+
+  it("compares once both arms are large enough, and says what the comparison is worth", () => {
+    const lines = abComparison(ctxOf(log(MIN_OUTCOME_N, MIN_OUTCOME_N))).join("\n");
+    assert.doesNotMatch(lines, /insufficient data/);
+    assert.match(lines, /routed: correction > 0 in/);
+    assert.match(lines, /control: correction > 0 in/);
+    assert.match(lines, /randomly assigned arms/);
+    assert.match(lines, /the arms above differ in difficulty, not treatment/);
   });
 });

@@ -49,6 +49,8 @@ export interface RouterDeps {
   readonly newId?: () => string;
   /** Outcome capture: told about every classified request (raw ids stay in memory). */
   readonly onDecision?: (d: DecisionInfo) => void;
+  /** Uniform [0,1) source for REFLEX_AB's randomisation. Injected so the experiment is testable. */
+  readonly random?: () => number;
   /** How many prompts the user typed in a session, for the wire-drift cross-check only (src/wire/drift.ts). */
   readonly typedPromptCount?: (sessionId: string | null) => number;
   /** The newest typed prompt no wire turn has claimed; the only one that may promote a plain-string message. */
@@ -100,7 +102,7 @@ interface SessionState {
   readonly convs: Map<string, ConvState>;
 }
 
-type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override" | "escalation" | "would_escalate">;
+type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override" | "escalation" | "would_escalate" | "ab">;
 interface Outcome {
   readonly part: DecisionPart;
   /** Where route mode sends this turn; null = the requested model. */
@@ -109,7 +111,7 @@ interface Outcome {
 }
 
 const SEVERITY: Readonly<Record<VersionLevel, number>> = { ok: 0, warn: 1, degrade: 2 };
-const NONE: DecisionPart = { decision: null, plan: null, error: null, sent: null, backend: null, guard: null, override: null, escalation: null, would_escalate: null };
+const NONE: DecisionPart = { decision: null, plan: null, error: null, sent: null, backend: null, guard: null, override: null, escalation: null, would_escalate: null, ab: null };
 const guardRecord = (g: GuardResult | null): DecisionPart["guard"] => (g ? { allowed: g.allowed, reason: g.reason, ctx: g.ctx, penalty_usd: g.penaltyUsd } : null);
 
 export class Router {
@@ -514,6 +516,7 @@ export class Router {
       const reasons = [...p.reasons];
       let escalation: DecisionPart["escalation"] = null;
       let wouldEscalate: DecisionPart["would_escalate"] = null;
+      let ab: DecisionPart["ab"] = null;
       let g: GuardResult | null = null;
       if (kind === "main" && requested !== null && current !== null) {
         // Where the policy would put this turn; "no target" means "stay on the requested tier".
@@ -534,7 +537,19 @@ export class Router {
             policyTarget = esc.tier;
           }
         }
-        if (tierRank(desired) > tierRank(current)) {
+        // REFLEX_AB, before the tier arithmetic: this turn is eligible for the randomised experiment only when the
+        // conversation is ON the requested tier now and the policy wants to take it below. A conversation already
+        // pinned below is not a control candidate - leaving it where it is would not put it on the requested model,
+        // so it would be a control in name only. An escalated turn is already a treatment and is never randomised.
+        // Both arms are tagged, because only turns that entered the randomisation may be compared with each other.
+        const eligible = cfg.abFraction > 0 && escalation === null && current === requested && tierRank(desired) < tierRank(requested);
+        if (eligible) ab = (this.d.random ?? Math.random)() < cfg.abFraction ? "control" : "routed";
+
+        if (ab === "control") {
+          // Held back on the requested model on purpose. No guard call: nothing is being moved.
+          reasons.push("ab_control");
+          candidate = null;
+        } else if (tierRank(desired) > tierRank(current)) {
           // Moving up is never guarded: quality first, and the backend asked for more than the current tier.
           candidate = desired === requested ? null : desired;
           if (belowRequested) reasons.push("return_up");
@@ -551,7 +566,7 @@ export class Router {
           }
         }
       }
-      return finalize(policyTarget, candidate, reasons, { ...part, escalation, would_escalate: wouldEscalate }, g);
+      return finalize(policyTarget, candidate, reasons, { ...part, escalation, would_escalate: wouldEscalate, ab }, g);
     } catch (e) {
       if (e instanceof BackendError) {
         if (e.kind !== "aborted") this.d.breaker.failure();
