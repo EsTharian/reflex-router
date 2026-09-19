@@ -356,6 +356,7 @@ export class Router {
               turn: v.turn,
               side_kind: v.sideKind,
               side_marker: v.sideMarker,
+              ...(v.promptEncoding !== null ? { prompt_encoding: v.promptEncoding } : {}),
               // The backend names its own version in the answer (`decision.backendModel`); lifting it to the top level
               // is what lets the report group by it without reaching into the decision sub-object.
               backend_version: outcome.part.decision?.backendModel ?? null,

@@ -56,6 +56,12 @@ export interface RequestView {
   readonly unclassifiedReason: UnclassifiedReason | null;
   /** `continuation` only: the tool results arrived with a message the user typed mid-loop. */
   readonly interjection: boolean;
+  /**
+   * `new` turns only (null otherwise): how the prompt's own message carried its content. The two known Claude Code
+   * versions disagree — 2.1.277 sent every typed prompt as an array of blocks, 2.1.278 sends plain strings too — and
+   * once a turn is recognised the two leave identical records, so this is the only way to tell them apart in a log.
+   */
+  readonly promptEncoding: PromptEncoding | null;
   readonly entrypoint: string | null;
   /** claude-cli/<version> from the user-agent, the version of the client that actually talks to us. */
   readonly clientVersion: string | null;
@@ -130,6 +136,11 @@ export function queuedMessageText(text: string): string | null {
 /** Every queued-command message in this message's blocks, newest-first order preserved. */
 const queuedMessages = (blocks: readonly Block[]): string[] =>
   blocks.filter((b) => b.type === "text" && b.text !== null).map((b) => queuedMessageText(b.text ?? "")).filter((t): t is string => t !== null);
+
+/** How a message carried its `content`: a plain string, an array of blocks, or neither. */
+export type PromptEncoding = "string" | "blocks" | "other";
+const contentEncoding = (m: Json | undefined): PromptEncoding =>
+  m === undefined ? "other" : typeof m["content"] === "string" ? "string" : Array.isArray(m["content"]) ? "blocks" : "other";
 
 const systemText = (body: Json): string => {
   const s = body["system"];
@@ -307,6 +318,11 @@ export function parseRequest(
   const sessionId = headerSessionId ?? mdSessionId;
 
   const t = classifyTurn(nonSystem, toolCount, kind, typedPrompts?.(sessionId) ?? null, newestTypedPrompt?.(sessionId) ?? null);
+  // How the last non-system message carried its content. Only meaningful for a `new` turn, where it says which
+  // encoding the prompt arrived in: 2.1.277 sent every typed prompt as an array of blocks, 2.1.278 sends plain
+  // strings too, and the two are otherwise indistinguishable once a turn is recognised (docs/wire-format.md 4.3).
+  // Recorded so that question can be answered from a log instead of inferred from the Claude Code version.
+  const promptEncoding = t.turn === "new" ? contentEncoding(nonSystem.at(-1)) : null;
 
   let convKey: string | null = null;
   if (sessionId !== null && kind !== "unknown") {
@@ -333,6 +349,7 @@ export function parseRequest(
       sideMarker: t.sideMarker,
       unclassifiedReason: t.unclassifiedReason,
       interjection: t.interjection,
+      promptEncoding,
       entrypoint: BILLING_ENTRYPOINT.exec(sys)?.[1] ?? null,
       clientVersion: USER_AGENT_VERSION.exec(ua)?.[1] ?? null,
       requestedModel: str(b["model"]),

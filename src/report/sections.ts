@@ -185,6 +185,26 @@ export function s1Decisions({ rec }: Ctx): string[] {
   const turns = ["new", "continuation", "side", "unknown"].filter((t) => d.some((x) => x.turn === t));
   const kinds = [...new Set(d.map((x) => x.kind))].sort();
   out.push("", "  by kind and turn:", ...table([["kind", ...turns], ...kinds.map((k) => [k, ...turns.map((t) => String(d.filter((x) => x.kind === k && x.turn === t).length))])], "    "));
+  // How typed prompts arrived on the wire, split by the delegation hint. The hint is appended to the trailing
+  // role:"system" message, not to the user's own message, so it should not move these counts at all - and that is
+  // exactly the claim worth being able to check from a log rather than argue about.
+  const newTurnsMain = d.filter((x) => x.kind === "main" && x.turn === "new");
+  const encoded = newTurnsMain.filter((x) => x.promptEncoding !== null);
+  if (encoded.length > 0) {
+    const hints = [...new Set(newTurnsMain.map((x) => x.hint ?? HINT_OFF))].sort();
+    const encs = [...new Set(encoded.map((x) => x.promptEncoding!))].sort();
+    out.push(
+      "",
+      "  main-chat new turns by prompt encoding (2.1.277 sent every typed prompt as blocks; 2.1.278 sends plain strings too):",
+      ...table([
+        ["delegation hint", ...encs, "not recorded"],
+        ...hints.map((h) => {
+          const rows = newTurnsMain.filter((x) => (x.hint ?? HINT_OFF) === h);
+          return [h, ...encs.map((e) => String(rows.filter((x) => x.promptEncoding === e).length)), String(rows.filter((x) => x.promptEncoding === null).length)];
+        }),
+      ], "    "),
+    );
+  }
   const sides = countBy(d.filter((x) => x.turn === "side"), (x) => x.sideKind ?? "unknown");
   if (sides.length > 0) out.push("", `  side calls by kind: ${sides.map(([k, n]) => `${k} ${n}`).join(", ")}`);
   const used = new Set(d.flatMap((x) => [tl(x.requestedTier), tl(x.sentTier)]));

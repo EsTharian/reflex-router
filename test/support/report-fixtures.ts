@@ -42,6 +42,10 @@ export interface DecOpts {
   wait?: number;
   /** Omit the `timing` block, like a record written before it existed. */
   legacyTiming?: boolean;
+  /** `prompt_encoding` on a new turn. */
+  promptEncoding?: "string" | "blocks" | "other";
+  /** Delegation hint version on the record (`delegate_hint`). */
+  hint?: string | null;
   /** Decision-backend version on the record; defaults to `jev-test` on a decided turn, null otherwise. */
   backendVersion?: string | null;
   /** Escalation block (REFLEX_ESCALATE), as the router writes it. */
@@ -78,6 +82,8 @@ export function dec(o: DecOpts): Rec {
     shape: { status: "verified", violations: [] },
     claude_version: "2.1.277",
     backend: "jev",
+    ...(o.promptEncoding ? { prompt_encoding: o.promptEncoding } : {}),
+    ...(o.hint !== undefined ? { delegate_hint: o.hint } : {}),
     backend_version: o.backendVersion === undefined ? (decided ? "jev-test" : null) : o.backendVersion,
     escalation: o.escalation ? { signal: o.escalation.signal, from: o.escalation.from, to: o.escalation.to, decision_id: o.escalation.decisionId, turn_seq: o.escalation.turnSeq ?? 1 } : null,
     would_escalate: o.wouldEscalate ? { signal: o.wouldEscalate.signal, from: o.wouldEscalate.from, to: o.wouldEscalate.to, decision_id: o.wouldEscalate.decisionId, turn_seq: o.wouldEscalate.turnSeq ?? 1 } : null,

@@ -103,3 +103,21 @@ describe("805b3287 seq 6 replayed: a mid-loop message is an interjection, not a 
     assert.equal(v.interjection, true);
   });
 });
+
+describe("prompt_encoding: which shape the prompt actually arrived in", () => {
+  const PROMPT = "summarise the report sections";
+  it("a plain-string new turn records `string`", () => {
+    const v = view([{ role: "user", content: PROMPT }], [PROMPT]);
+    assert.equal(v.turn, "new");
+    assert.equal(v.promptEncoding, "string");
+  });
+  it("a block-array new turn records `blocks`", () => {
+    const v = view([{ role: "user", content: [{ type: "text", text: PROMPT }] }], [PROMPT]);
+    assert.equal(v.turn, "new");
+    assert.equal(v.promptEncoding, "blocks");
+  });
+  it("is null on anything that is not a new turn, so it can never be read as one", () => {
+    assert.equal(view(loopStep(), [PROMPT]).promptEncoding, null);
+    assert.equal(view(loopStep([{ type: "text", text: wrapper(TYPED) }]), [TYPED]).promptEncoding, null);
+  });
+});

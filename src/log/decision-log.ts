@@ -36,6 +36,12 @@ export interface DecisionRecord {
   /** Which harness marker named this side call (src/wire/markers.ts). Two features can share a side kind, so the
    * marker id is what tells them apart; null when the kind came from shape alone. */
   readonly side_marker: string | null;
+  /**
+   * `turn: "new"` only: how the prompt's message carried its content, `string` or `blocks` (`other` for anything
+   * else). 2.1.277 sent every typed prompt as blocks; 2.1.278 sends plain strings too, and once a turn is recognised
+   * the two are indistinguishable, so without this a log cannot say which encoding its turns arrived in.
+   */
+  readonly prompt_encoding?: "string" | "blocks" | "other";
   /** Present only on `side_kind: "unclassified"`: which shape test produced the residual (src/wire/claude-code.ts). */
   readonly unclassified_reason?: string;
   /** Present only when the wire-format cross-check fired for this session (src/wire/drift.ts). An alarm; it changes nothing. */

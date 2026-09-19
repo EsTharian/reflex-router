@@ -976,3 +976,24 @@ describe("report: grouping by decision-backend version", () => {
     assert.doesNotMatch(s2MassVsArgmax(ctxOf(text)).join("\n"), /agreement by backend version/);
   });
 });
+
+describe("report: prompt encoding by delegation hint", () => {
+  it("counts main new turns by how the prompt arrived, split by hint", () => {
+    const text = toJsonl([
+      dec({ id: "a", t: 0, turn: "new", promptEncoding: "string", hint: null }),
+      dec({ id: "b", t: 1, turn: "new", promptEncoding: "blocks", hint: null }),
+      dec({ id: "c", t: 2, turn: "new", promptEncoding: "string", hint: "delegate-1" }),
+      dec({ id: "d", t: 3, turn: "new", hint: "delegate-1" }), // older record, field absent
+      dec({ id: "e", t: 4, turn: "continuation" }),
+    ]);
+    const out = s1Decisions(ctxOf(text)).join("\n");
+    assert.match(out, /main-chat new turns by prompt encoding/);
+    assert.match(out, /off\s+1\s+1\s+0/, out); // blocks 1, string 1, not recorded 0
+    assert.match(out, /delegate-1\s+0\s+1\s+1/, out); // blocks 0, string 1, not recorded 1
+  });
+
+  it("says nothing when no record carries the field, so older logs read as before", () => {
+    const out = s1Decisions(ctxOf(toJsonl([dec({ id: "a", t: 0, turn: "new" })]))).join("\n");
+    assert.doesNotMatch(out, /prompt encoding/);
+  });
+});
