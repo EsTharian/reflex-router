@@ -158,3 +158,71 @@ requests were `unclassified`.
 compared against these. No archived log on this machine carries a `side_fingerprint` field at all — fingerprints landed
 in v0.2.0-alpha, after every archived session — and the company log stays on that machine. The only two `unclassified`
 side calls present locally are 38k and 71k tokens from this repository's own acceptance sessions.
+
+## 2026-09-19 — side-call routing: priced, and parked (no-go)
+
+**Setup.** `reflex report --usd` over `~/.reflex/decisions.jsonl` as of that evening: 615+ decisions, 7 sessions,
+~108M tokens, one day of real route-mode work on Claude Code 2.1.278 with Opus 5 requested, from Turkey. Every figure
+is that one log at list prices (`src/pricing.ts`, verified 2026-09-19). One day, one machine, mostly one codebase.
+
+**The question.** Side calls are 17.7% of the log's tokens, $17.88 at the requested model, and none of them is routed.
+That is several times routing's whole measured saving ($3.33, section 8), so it looked like the largest remaining
+lever. Section 12 of `reflex report` now computes the answer from a log instead of arguing it.
+
+**A cold model swap loses, 2–4×.** A side call is almost entirely a cache hit on a prefix the conversation already paid
+to write: `notification` is **99.5% cache read** (8,953,099 read against 13,743 write), `suggestion` 98.2%. Sending the
+same request to another model turns that hit into a miss, and no tier wins the resulting rate comparison — Opus cache
+read is $0.50/Mtok, while the cheapest possible cold write (Haiku, 5-minute) is $1.25/Mtok. A target would need
+`input < $0.40/M` to break even cold; none is close. Priced on the measured tokens, every call cold: `notification`
+2.12× on Haiku and 4.24× on Sonnet, `suggestion` 1.88× and 3.77×.
+
+**What pays is a warm target, and it needs the calls to cluster.** In the steady state Haiku reads at $0.10/Mtok
+against Opus's $0.50 and outputs at $5/M against $25/M. One cold write must then be amortised over later warm calls:
+**break-even is 5.0 warm calls per cold write at the 1-hour write rate and 3.1 at 5 minutes** (Haiku), 8.3 for Sonnet.
+The calls do cluster — p50 gap 20 s between consecutive `notification` calls, 3–52 s depending on kind.
+
+**But the cheap tier cannot hold them.** Haiku's context ceiling is 150,000 tokens (`src/tiers.ts`) and the side calls
+are far larger: **32 of 32 `notification` calls over the ceiling (max 420,574 tokens), 33 of 41 `suggestion` (max
+501,695), 0 of 25 `no_tools` (max 47,204)**. This is what decided the question, and it is not a cache argument at all.
+Removing the unroutable calls also breaks up the warm clusters that made the rest pay.
+
+| tier | ceiling | writes | routable | over ceiling | $ saved gross | $ saved net |
+| --- | --- | --- | --- | --- | --- | --- |
+| haiku | 150,000 | 5m | 36 | 65 | $1.69 | $0.4912 |
+| haiku | 150,000 | 1h | 36 | 65 | $1.79 | $0.1986 |
+| sonnet | none | 5m | 101 | — | $1.06 | $0.1853 |
+| **sonnet** | none | **1h** | 101 | — | **$4.62** | **$3.39** |
+
+"Net" carves out conversations ever pinned below the requested tier — the only ones that can lose the free warm cache
+their side calls provide today (observations above: a return to the requested model cost 52 tokens *because* side calls
+kept it warm). That exposure is small here: **3 of 29 conversations**, with the cost guard refusing 11 `over_limit`
+moves against 3 it allowed.
+
+**An 18× spread on a fact nobody has recorded.** Sonnet is worth $3.39 net at 1-hour cache writes and $0.19 at
+5-minute — the whole case rests on which TTL is in force, and **no record in this log says**. The wire computed
+`betaExtendedCacheTtl` and discarded it; it is logged as `cache_ttl_beta` only from v0.2.3-alpha, so section 12
+currently states that it assumed the shorter window. Per kind on Sonnet at the TTL each record implies, `suggestion`
+**costs $1.66** (2.8 warm per cold, under its 8.3 break-even) while `notification` **saves $1.72** (15.0 warm per cold).
+
+**Decision: no-go on `REFLEX_ROUTE_SIDE`, parked.** The only candidate that survives is **`notification` → Sonnet**,
+worth $1.72 of the $3.39, and only if `cache_ttl_beta` reads 1h after a day of logging. `suggestion` loses money on
+Sonnet and barely reaches break-even on Haiku, where most of its calls do not fit. `no_tools` is 43.6% cache read on
+this log and saves $1.30, but 96.3% and **costs $0.0029** on the archived logs — not a stable pilot.
+
+**The larger number, which needs no routing at all.** Two of these side kinds are optional Claude Code features with
+user-facing switches. Section 9 now prints what they cost and the switch that turns each off:
+
+| feature | side kind | calls | tokens | $ at requested model | switch |
+| --- | --- | --- | --- | --- | --- |
+| Session recap | `notification` | 32 | 9,420,418 | **$5.60** | `/config` → Session recap (`awaySummaryEnabled`) |
+| Prompt suggestions | `suggestion` | 46 | 10,668,174 | **$6.22** | `/config` → Prompt suggestions (`promptSuggestionEnabled`, env `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION`) |
+
+**$11.82 in one day against routing's $3.33 and side-routing's best case of $3.39.** Switch names and defaults are from
+the Claude Code docs (interactive-mode, settings-reference), read 2026-09-19; Session recap is documented on by default.
+
+**Limits.** Both rows above are attributed by side kind, which merges Claude Code's AFK recap with background task
+notifications under `notification`; only the recap has that switch, so the $5.60 is an **upper bound**. From
+v0.2.3-alpha the matched marker is recorded (`side_marker`, `session_recap` vs `task_notification`) and the row becomes
+exact — on a log written by that build, which this one is not. The estimate also prices recorded token counts, where
+the router sizes requests from bytes, so a call near a ceiling could be classified differently in practice. And it is
+one day of one person's work: `no_tools` alone swings from saving to costing between this log and the archives.

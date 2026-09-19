@@ -33,6 +33,9 @@ export interface DecisionRecord {
   readonly signals: { readonly header: boolean; readonly s1: boolean; readonly s2: boolean; readonly s3: boolean };
   readonly turn: "new" | "continuation" | "side";
   readonly side_kind: string | null;
+  /** Which harness marker named this side call (src/wire/markers.ts). Two features can share a side kind, so the
+   * marker id is what tells them apart; null when the kind came from shape alone. */
+  readonly side_marker: string | null;
   /** Present only when true: a `continuation` whose tool results arrived with a message the user typed mid-loop. */
   readonly interjection?: true;
   readonly entrypoint: string | null;

@@ -16,6 +16,8 @@ export interface DecOpts {
   kind?: "main" | "subagent" | "unknown";
   turn?: "new" | "continuation" | "side";
   side?: string | null;
+  /** Marker id; defaults from `side` where unambiguous. `notification` has two (session_recap, task_notification). */
+  sideMarker?: string | null;
   mode?: "shadow" | "route";
   degraded?: string | null;
   requested?: T;
@@ -62,6 +64,7 @@ export function dec(o: DecOpts): Rec {
     signals: { header: false, s1: false, s2: false, s3: true },
     turn,
     side_kind: turn === "side" ? (o.side ?? "suggestion") : null,
+    side_marker: turn === "side" ? (o.sideMarker ?? MARKER_OF[o.side ?? "suggestion"] ?? null) : null,
     entrypoint: "cli",
     mode_requested: mode,
     mode_effective: mode,
@@ -243,6 +246,9 @@ export function singleTurnLongLoop(): string {
  * cluster inside the 5-minute TTL (warm) with one long gap that goes cold, a second conversation routed DOWN and then
  * back up (the exposure case), and one non-routable kind that must be ignored.
  */
+/** Default marker id per side kind, so a fixture need not spell it out; `notification` is ambiguous and must be given. */
+const MARKER_OF: Readonly<Record<string, string | undefined>> = { suggestion: "suggestion", agent_summary: "agent_summary", compaction: "compaction", cross_session: "cross_session" };
+
 export function sideCallLog(): string {
   const A = "conv-side-a";
   const B = "conv-exposed-b";
@@ -253,9 +259,9 @@ export function sideCallLog(): string {
     dec({ id: "a-s2", t: 120, conv: A, turn: "side", side: "suggestion", usage: [5, 40, 61_000, 600] }),
     dec({ id: "a-s3", t: 180, conv: A, turn: "side", side: "suggestion", usage: [5, 40, 62_000, 600] }),
     // a notification 20 s later: warm, and it shares the conversation prefix with the suggestions
-    dec({ id: "a-n1", t: 200, conv: A, turn: "side", side: "notification", usage: [2, 90, 63_000, 400] }),
+    dec({ id: "a-n1", t: 200, conv: A, turn: "side", side: "notification", sideMarker: "session_recap", usage: [2, 90, 63_000, 400] }),
     // 40 minutes later: past the 5-minute TTL, so this one is cold again
-    dec({ id: "a-n2", t: 2600, conv: A, turn: "side", side: "notification", usage: [2, 90, 70_000, 500] }),
+    dec({ id: "a-n2", t: 2600, conv: A, turn: "side", side: "notification", sideMarker: "task_notification", usage: [2, 90, 70_000, 500] }),
     // a small no_tools call: little prefix, the amortisation rule does not apply to it
     dec({ id: "a-t1", t: 2610, conv: A, turn: "side", side: "no_tools", usage: [4_000, 30, 2_000, 100] }),
     // never routable: must not appear in the estimate at all

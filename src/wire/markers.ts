@@ -44,18 +44,20 @@ export type MarkedSideKind = Exclude<SideKind, "no_tools" | "tool_result_text" |
  * Harness-generated requests that carry the full tool list and look like turns. Matched ONLY against the last
  * non-system message (these texts stay in the history and reappear in later requests).
  */
-export const SIDE_MARKERS: readonly { readonly kind: MarkedSideKind; readonly text: string; readonly evidence: string }[] = [
-  { kind: "suggestion", text: "[SUGGESTION MODE:", evidence: "interactive.main-suggestion" },
-  { kind: "agent_summary", text: "Describe your most recent action", evidence: "interactive.subagent-summary" },
-  { kind: "compaction", text: "CRITICAL: Respond with TEXT ONLY", evidence: "interactive.main-compaction" },
-  { kind: "cross_session", text: "Another Claude session sent a message:", evidence: "interactive.main-cross-session" },
-  { kind: "notification", text: "[SYSTEM NOTIFICATION - NOT USER INPUT]", evidence: "interactive.main-notification" },
+export const SIDE_MARKERS: readonly { readonly id: string; readonly kind: MarkedSideKind; readonly text: string; readonly evidence: string }[] = [
+  { id: "suggestion", kind: "suggestion", text: "[SUGGESTION MODE:", evidence: "interactive.main-suggestion" },
+  { id: "agent_summary", kind: "agent_summary", text: "Describe your most recent action", evidence: "interactive.subagent-summary" },
+  { id: "compaction", kind: "compaction", text: "CRITICAL: Respond with TEXT ONLY", evidence: "interactive.main-compaction" },
+  { id: "cross_session", kind: "cross_session", text: "Another Claude session sent a message:", evidence: "interactive.main-cross-session" },
+  // Two different features share the `notification` kind; only the recap has a user-facing switch, so they are told
+  // apart by marker id, not by kind.
+  { id: "task_notification", kind: "notification", text: "[SYSTEM NOTIFICATION - NOT USER INPUT]", evidence: "interactive.main-notification" },
   // Claude Code's AFK "session recap": the user stepped away, the harness asks for a <=40-word catch-up. Arrives as a
   // plain-string content, so it reaches the marker scan through blocksOf. NOT CAPTURED: no fixture has this body. The
   // text is the redacted 80-code-point fingerprint head of two such calls in the maintainer's 2.1.278 route-mode log
   // of 2026-09-19 (side_fingerprint.head, both `messages` 78 and 242, last content a 253-character string); the
   // marker is the part of that head before the template fills in. See 2.1.278 manifest `gaps`.
-  { kind: "notification", text: "The user stepped away and is coming back.", evidence: "2.1.278 route-mode log 2026-09-19 (fingerprint head); uncaptured, see 2.1.278 manifest gaps" },
+  { id: "session_recap", kind: "notification", text: "The user stepped away and is coming back.", evidence: "2.1.278 route-mode log 2026-09-19 (fingerprint head); uncaptured, see 2.1.278 manifest gaps" },
 ];
 
 /**
@@ -68,7 +70,7 @@ export const HANDBACK_PROMPT_PREFIX = { text: "<agent-message ", evidence: "inte
  * Texts that start a `UserPromptSubmit.prompt` Claude Code injected itself (hooks fire for these too): the wire's side
  * markers, plus the hook-side form of a background task notification.
  */
-export const INJECTED_PROMPT_MARKERS: readonly { readonly kind: MarkedSideKind; readonly text: string; readonly evidence: string }[] = [
+export const INJECTED_PROMPT_MARKERS: readonly { readonly id: string; readonly kind: MarkedSideKind; readonly text: string; readonly evidence: string }[] = [
   ...SIDE_MARKERS,
-  { kind: "notification", text: "<task-notification>", evidence: "M4 acceptance session 2, seq 6: hook prompt; transcript origin task_notification; wire side/notification" },
+  { id: "task_notification", kind: "notification", text: "<task-notification>", evidence: "M4 acceptance session 2, seq 6: hook prompt; transcript origin task_notification; wire side/notification" },
 ];

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { IncomingHttpHeaders } from "node:http";
 import { describe, it } from "node:test";
 import { injectedPromptKind, isMessagesRequest, parseRequest, type RequestView } from "../../src/wire/claude-code.js";
+import { SIDE_MARKERS } from "../../src/wire/markers.js";
 import { assertShape, ShapeTracker } from "../../src/wire/shape.js";
 import { loadFixtures, viewOf, type Fixture } from "../support/fixtures.js";
 
@@ -138,6 +139,25 @@ describe("turn classification: only positively identified user turns are `new`",
       ["The user stepped away and is coming back. Recap in under 40 words, 1-2 plain sentences.", "notification"],
     ];
     for (const [content, kind] of cases) assert.equal(view([{ role: "user", content }]).sideKind, kind);
+  });
+
+  it("the matched marker is recorded, so two features sharing a side kind stay apart", () => {
+    // Both are `notification`, but only the session recap has a user-facing switch (/config -> Session recap).
+    const recap = view([{ role: "user", content: "The user stepped away and is coming back. Recap in under 40 words." }]);
+    const task = view([{ role: "user", content: [reminder("[SYSTEM NOTIFICATION - NOT USER INPUT] task done")] }]);
+    assert.deepEqual([recap.sideKind, recap.sideMarker], ["notification", "session_recap"]);
+    assert.deepEqual([task.sideKind, task.sideMarker], ["notification", "task_notification"]);
+  });
+
+  it("a side kind recognised by shape alone carries no marker", () => {
+    assert.equal(view([{ role: "user", content: [text("hi")] }], { tools: [] }).sideMarker, null, "no_tools");
+    assert.equal(view([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, text("Summarise.")] }]).sideMarker, null, "tool_result_text");
+    assert.equal(view([{ role: "user", content: [reminder("only a reminder")] }]).sideMarker, null, "unclassified");
+  });
+
+  it("every marker id is unique, so a feature cannot be attributed to two of them", () => {
+    const ids = SIDE_MARKERS.map((m) => m.id);
+    assert.equal(new Set(ids).size, ids.length, ids.join(","));
   });
 
   it("pasted-content tags are unwrapped, with or without an id, and the pasted text is kept", () => {

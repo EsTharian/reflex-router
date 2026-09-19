@@ -477,32 +477,37 @@ function delegationLine(arms: readonly HintArm[], showUsd: boolean): string[] {
  * `caveat` records where a row is an upper bound because the side kind carries more than that one feature; without it
  * the figure would overstate what the switch controls.
  */
-export const HARNESS_FEATURES: readonly { readonly feature: string; readonly sideKind: string; readonly switch: string; readonly caveat?: string }[] = [
-  { feature: "Session recap", sideKind: "notification", switch: "/config -> Session recap (settings: awaySummaryEnabled)",
-    caveat: "the notification side kind also carries background task notifications, which this switch does not control" },
-  { feature: "Prompt suggestions", sideKind: "suggestion", switch: "/config -> Prompt suggestions (settings: promptSuggestionEnabled, env CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)" },
+export const HARNESS_FEATURES: readonly { readonly feature: string; readonly marker: string; readonly switch: string }[] = [
+  { feature: "Session recap", marker: "session_recap", switch: "/config -> Session recap (settings: awaySummaryEnabled)" },
+  { feature: "Prompt suggestions", marker: "suggestion", switch: "/config -> Prompt suggestions (settings: promptSuggestionEnabled, env CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)" },
 ];
 
 /** What the optional harness features cost on this log, at the model they were actually billed to. */
 export function harnessFeatureCost(decisions: readonly Dec[], showUsd: boolean): string[] {
   const rows: string[][] = [];
   const notes: string[] = [];
+  // Records written before `side_marker` existed cannot be attributed to a feature; say how many rather than guess.
+  const unmarked = decisions.filter((x) => x.turn === "side" && x.sideMarker === null && (x.sideKind === "notification" || x.sideKind === "suggestion")).length;
+
   for (const f of HARNESS_FEATURES) {
-    const calls = decisions.filter((x) => x.turn === "side" && x.sideKind === f.sideKind);
+    const calls = decisions.filter((x) => x.turn === "side" && x.sideMarker === f.marker);
     if (calls.length === 0) continue;
     const withUsage = calls.filter((x) => x.usage !== null);
-    rows.push([f.feature, f.sideKind, int(calls.length), int(sum(withUsage.map(tokens))), ...(showUsd ? [usd(costOf(withUsage).atRequestedUsd)] : [])]);
+    rows.push([f.feature, int(calls.length), int(sum(withUsage.map(tokens))), ...(showUsd ? [usd(costOf(withUsage).atRequestedUsd)] : [])]);
     notes.push(`    ${f.feature}: ${f.switch}`);
-    if (f.caveat !== undefined) notes.push(`      upper bound - ${f.caveat}.`);
   }
-  if (rows.length === 0) return [];
+  const unmarkedNote = unmarked > 0 ? [`    ${int(unmarked)} side call(s) of these kinds carry no marker id (recorded before it was logged), so no feature above counts them.`] : [];
+  // Still say something when nothing could be attributed: silence would read as "these features cost nothing".
+  if (rows.length === 0) return unmarked === 0 ? [] : ["", "  optional Claude Code features: none attributable in range.", ...unmarkedNote];
   return [
     "",
     "  optional Claude Code features, and what they cost here (each makes its own model call, billed to the requested model):",
-    ...table([["feature", "side kind", "calls", "tokens", ...(showUsd ? ["$ at requested model"] : [])], ...rows], "    "),
+    ...table([["feature", "calls", "tokens", ...(showUsd ? ["$ at requested model"] : [])], ...rows], "    "),
+    ...(showUsd ? [] : ["    (rerun with --usd for what each one cost)"]),
     "",
     "    switches:",
     ...notes,
+    ...(unmarked > 0 ? ["", ...unmarkedNote] : []),
   ];
 }
 

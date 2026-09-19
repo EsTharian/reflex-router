@@ -297,6 +297,7 @@ export class Router {
               signals: v.signals,
               turn: v.turn,
               side_kind: v.sideKind,
+              side_marker: v.sideMarker,
               ...(v.interjection ? { interjection: true as const } : {}),
               entrypoint: v.entrypoint,
               mode_requested: this.d.config.mode,

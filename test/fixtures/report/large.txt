@@ -128,14 +128,13 @@ reflex report
   side calls sent to a model other than the requested one: 0
 
   optional Claude Code features, and what they cost here (each makes its own model call, billed to the requested model):
-    feature                side kind  calls      tokens  $ at requested model
-    Session recap       notification    808  33,637,116                $24.35
-    Prompt suggestions    suggestion    790  32,484,998                $23.61
+    feature             calls      tokens  $ at requested model
+    Prompt suggestions    790  32,484,998                $23.61
 
     switches:
-    Session recap: /config -> Session recap (settings: awaySummaryEnabled)
-      upper bound - the notification side kind also carries background task notifications, which this switch does not control.
     Prompt suggestions: /config -> Prompt suggestions (settings: promptSuggestionEnabled, env CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)
+
+    808 side call(s) of these kinds carry no marker id (recorded before it was logged), so no feature above counts them.
 
 10. Cache writes by move type
   first request after a tier change in a conversation (observations.md: moving up one tier can write more than returning to the requested model)

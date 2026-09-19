@@ -29,6 +29,8 @@ export interface Dec {
   readonly kind: string;
   readonly turn: string;
   readonly sideKind: string | null;
+  /** Marker id that named this side call; null on older records and on kinds recognised by shape. */
+  readonly sideMarker: string | null;
   readonly modeRequested: string | null;
   readonly modeEffective: string | null;
   readonly degradedReason: string | null;
@@ -132,6 +134,7 @@ function toDec(o: J): Dec | null {
     kind: str(o["kind"]) ?? "unknown",
     turn: str(o["turn"]) ?? "unknown",
     sideKind: str(o["side_kind"]),
+    sideMarker: str(o["side_marker"]),
     modeRequested: str(o["mode_requested"]),
     modeEffective: str(o["mode_effective"]),
     degradedReason: str(o["degraded_reason"]),

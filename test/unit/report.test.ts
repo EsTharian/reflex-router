@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, reportCommand } from "../../src/report/index.js";
 import { parseDuration, parseRecords } from "../../src/report/records.js";
-import { classifyMoves, costOf, hintArms, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, s12SideRouting, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { classifyMoves, costOf, hintArms, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s8Cost, s12SideRouting, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
@@ -47,6 +47,34 @@ describe("report: golden files", () => {
     const out = buildReport(parse(text), { usd: true });
     assert.ok(Date.now() - started < 5000, "report over 6000 records takes under 5 s");
     golden("large", out);
+  });
+});
+
+describe("report: optional harness features", () => {
+  it("splits the two features sharing the notification side kind, by marker", () => {
+    const lines = harnessFeatureCost(parse(sideCallLog()).decisions, true).join("\n");
+    // The synthetic log has one session_recap and one task_notification, both side_kind `notification`.
+    assert.match(lines, /Session recap\s+1\s/, lines);
+    assert.doesNotMatch(lines, /upper bound/, "the row is exact now, not an upper bound");
+    assert.match(lines, /awaySummaryEnabled/);
+    assert.match(lines, /promptSuggestionEnabled/);
+  });
+
+  it("says what each cost, and without --usd points at the flag rather than silently omitting it", () => {
+    const withUsd = harnessFeatureCost(parse(sideCallLog()).decisions, true).join("\n");
+    assert.match(withUsd, /\$ at requested model/);
+    const without = harnessFeatureCost(parse(sideCallLog()).decisions, false).join("\n");
+    assert.doesNotMatch(without, /\$ at requested model/);
+    assert.match(without, /rerun with --usd/, "the block promises a cost, so it must say how to see it");
+  });
+
+  it("counts side calls that predate the marker separately instead of attributing them", () => {
+    const old = toJsonl([
+      dec({ id: "o1", t: 0, conv: "o", turn: "new" }),
+      { ...dec({ id: "o2", t: 10, conv: "o", turn: "side", side: "notification" }), side_marker: null },
+    ]);
+    const lines = harnessFeatureCost(parse(old).decisions, true).join("\n");
+    assert.match(lines, /1 side call\(s\) of these kinds carry no marker id/, lines);
   });
 });
 

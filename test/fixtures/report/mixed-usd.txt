@@ -149,8 +149,8 @@ reflex report
   side calls sent to a model other than the requested one: 0
 
   optional Claude Code features, and what they cost here (each makes its own model call, billed to the requested model):
-    feature              side kind  calls   tokens  $ at requested model
-    Prompt suggestions  suggestion      2  142,844               $0.1403
+    feature             calls   tokens  $ at requested model
+    Prompt suggestions      2  142,844               $0.1403
 
     switches:
     Prompt suggestions: /config -> Prompt suggestions (settings: promptSuggestionEnabled, env CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION)

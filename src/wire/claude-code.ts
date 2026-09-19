@@ -50,6 +50,8 @@ export interface RequestView {
   readonly signals: Signals;
   readonly turn: Turn;
   readonly sideKind: SideKind | null;
+  /** Which harness marker named this side call, when one did; null when the kind came from shape alone. */
+  readonly sideMarker: string | null;
   /** `continuation` only: the tool results arrived with a message the user typed mid-loop. */
   readonly interjection: boolean;
   readonly entrypoint: string | null;
@@ -127,12 +129,14 @@ const sha = (s: string): string => crypto.createHash("sha256").update(s).digest(
 interface TurnResult {
   readonly turn: Turn;
   readonly sideKind: SideKind | null;
+  /** Which SIDE_MARKERS entry matched, when one did: two features can share a side kind (src/wire/markers.ts). */
+  readonly sideMarker: string | null;
   readonly task: string | null;
   /** A continuation whose tool results arrived with a message the user typed mid-loop. Never true off a continuation. */
   readonly interjection: boolean;
 }
-const side = (k: SideKind): TurnResult => ({ turn: "side", sideKind: k, task: null, interjection: false });
-const continuation = (interjection: boolean): TurnResult => ({ turn: "continuation", sideKind: null, task: null, interjection });
+const side = (k: SideKind, marker: string | null = null): TurnResult => ({ turn: "side", sideKind: k, sideMarker: marker, task: null, interjection: false });
+const continuation = (interjection: boolean): TurnResult => ({ turn: "continuation", sideKind: null, sideMarker: null, task: null, interjection });
 
 /**
  * Pure. Anything not positively identified as a user turn or a tool-loop step is `side`.
@@ -144,7 +148,7 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
   if (!last || last["role"] !== "user") return side("unclassified");
   const blocks = blocksOf(last);
   const texts = blocks.filter((b) => b.type === "text").map((b) => b.text ?? "");
-  for (const m of SIDE_MARKERS) if (texts.some((t) => t.includes(m.text))) return side(m.kind);
+  for (const m of SIDE_MARKERS) if (texts.some((t) => t.includes(m.text))) return side(m.kind, m.id);
 
   if (blocks.some((b) => b.type === "tool_result")) {
     // A tool-loop step carries tool results and at most harness reminders.
@@ -164,7 +168,7 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
   if (task === "") return side("unclassified");
   // A subagent's work starts with its first request; a later text message inside its run is not a new task.
   if (kind === "subagent" && nonSystem.length !== 1) return side("unclassified");
-  return { turn: "new", sideKind: null, task, interjection: false };
+  return { turn: "new", sideKind: null, sideMarker: null, task, interjection: false };
 }
 
 /** The assistant text right before the last message (thinking and tool_use blocks excluded). */
@@ -266,6 +270,7 @@ export function parseRequest(
       signals,
       turn: t.turn,
       sideKind: t.sideKind,
+      sideMarker: t.sideMarker,
       interjection: t.interjection,
       entrypoint: BILLING_ENTRYPOINT.exec(sys)?.[1] ?? null,
       clientVersion: USER_AGENT_VERSION.exec(ua)?.[1] ?? null,
