@@ -13,12 +13,14 @@
   "files": [
     "bin",
     "dist",
+    "!dist/**/*.map",
     "LICENSE",
     "THIRD_PARTY.md",
     "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && npm run build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "gen:versions": "node scripts/gen-tested-versions.mjs",
