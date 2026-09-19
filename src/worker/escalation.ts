@@ -9,7 +9,7 @@
 //
 // The lever is weaker than "the failed turn is retried on a better model": that turn is over and billed. It is "the
 // turn in which the user says it went wrong is itself routed up".
-import { TIERS, type Config, type Tier } from "../config.js";
+import { TIERS, type Config, type EscalateTarget, type Tier } from "../config.js";
 import { clampUp } from "../policy.js";
 import { tierRank } from "../tiers.js";
 
@@ -48,15 +48,21 @@ export function raise(prev: EscalationState | null, e: EscalationEvent, windowTu
 }
 
 /**
- * One tier above `pick`, never above `requested`, never below `pick`, and only among the tiers this config enables and
- * whose context ceiling fits `ctx`. Returns null when there is nowhere to go (pick is already at or above requested,
- * or no enabled tier sits between them) — the caller then routes exactly as it would have.
+ * Where an escalation sends the turn. Never below `pick`, never above `requested`, and only among the tiers this
+ * config enables and whose context ceiling fits `ctx`. Returns null when there is nowhere to go — the caller then
+ * routes exactly as it would have.
+ *
+ * `requested` (the default) goes straight back to the tier the client asked for. `next` goes up one tier. The
+ * intuitive choice is `next` and the measurement says it is the expensive one: on the session B rerun
+ * (docs/observations.md) moving a Haiku pin up one tier to Sonnet paid 13,385 tokens of cache write, while moving all
+ * the way to the requested Opus paid 5,924 — because the harness's own side calls keep the requested model's cache
+ * warm for free and nothing keeps the middle tier's warm. `next` can also need a second escalation to get there.
  */
-export function escalatedTier(pick: Tier, requested: Tier, cfg: Pick<Config, "tiers" | "allowFable">, ctx: number | null): Tier | null {
+export function escalatedTier(pick: Tier, requested: Tier, target: EscalateTarget, cfg: Pick<Config, "tiers" | "allowFable">, ctx: number | null): Tier | null {
   if (tierRank(pick) >= tierRank(requested)) return null;
-  const next = TIERS[tierRank(pick) + 1];
-  if (next === undefined) return null;
-  const up = clampUp(next, cfg, undefined, ctx);
+  const from = target === "requested" ? requested : TIERS[tierRank(pick) + 1];
+  if (from === undefined) return null;
+  const up = clampUp(from, cfg, undefined, ctx);
   if (up === null) return null;
   // Never past the requested tier: the worst case stays "the model the client asked for", which is every other
   // fail-open path's worst case too.

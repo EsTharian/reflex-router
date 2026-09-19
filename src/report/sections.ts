@@ -985,6 +985,8 @@ export function s12SideRouting({ rec, usd: showUsd }: Ctx): string[] {
 export interface EscalationRow {
   /** The escalated turn's own decision. */
   readonly dec: Dec;
+  /** `shadow`: REFLEX_ESCALATE=shadow recorded what it would have done and changed nothing. */
+  readonly mode: "applied" | "shadow";
   readonly signal: string;
   readonly from: Tier | null;
   readonly to: Tier | null;
@@ -1002,15 +1004,19 @@ export function escalationRows(ctx: Ctx): EscalationRow[] {
   const byDecision = new Map<string, OutcomeRec>();
   for (const o of ctx.rec.outcomes) if (o.decisionId !== null && o.attribution !== "interjection") byDecision.set(o.decisionId, o);
   return ctx.rec.decisions
-    .filter((d) => d.escalation !== null)
-    .map((d) => ({
-      dec: d,
-      signal: d.escalation!.signal,
-      from: d.escalation!.from,
-      to: d.escalation!.to,
-      cause: d.escalation!.decisionId === null ? null : ctx.byId.get(d.escalation!.decisionId) ?? null,
-      outcome: byDecision.get(d.id) ?? null,
-    }));
+    .filter((d) => d.escalation !== null || d.wouldEscalate !== null)
+    .map((d) => {
+      const e = d.escalation ?? d.wouldEscalate!;
+      return {
+        dec: d,
+        mode: d.escalation !== null ? "applied" : "shadow",
+        signal: e.signal,
+        from: e.from,
+        to: e.to,
+        cause: e.decisionId === null ? null : ctx.byId.get(e.decisionId) ?? null,
+        outcome: byDecision.get(d.id) ?? null,
+      };
+    });
 }
 
 /** 13. What escalation did, and whether the turn it raised then went well. */
@@ -1019,15 +1025,19 @@ export function s13Escalations(ctx: Ctx): string[] {
   if (rows.length === 0) {
     return ["  no escalated turns in this log (REFLEX_ESCALATE is off by default; a turn is escalated only after a routed turn's outcome window closes with a signal)"];
   }
-  const out = [`  ${rows.length} escalated turn${rows.length === 1 ? "" : "s"}; "signal" is what the PREVIOUS routed turn on that conversation closed with`];
+  const applied = rows.filter((r) => r.mode === "applied");
+  const shadow = rows.filter((r) => r.mode === "shadow");
+  const out = [`  ${rows.length} escalated turn${rows.length === 1 ? "" : "s"} (${applied.length} applied, ${shadow.length} shadow); "signal" is what the PREVIOUS routed turn on that conversation closed with`];
+  if (shadow.length > 0) out.push("  shadow rows are REFLEX_ESCALATE=shadow: the tier was NOT changed, only what it would have been is recorded");
   out.push("", `  by signal: ${countBy(rows, (r) => r.signal).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   out.push(
     "",
     "  each escalated turn (tier before -> after is the policy's own pick vs what escalation planned; `sent` is what the guard and the rewrite finally allowed):",
     ...table([
-      ["turn", "signal", "before", "after", "sent", "outcome window", "correction", "test failure", "revert"],
+      ["turn", "mode", "signal", "before", "after", "sent", "outcome window", "correction", "test failure", "revert"],
       ...rows.map((r) => [
         r.dec.id.slice(0, 8),
+        r.mode,
         r.signal,
         tl(r.from),
         tl(r.to),
@@ -1039,10 +1049,10 @@ export function s13Escalations(ctx: Ctx): string[] {
       ]),
     ], "    "),
   );
-  const closed = rows.filter((r) => r.outcome !== null);
+  const closed = applied.filter((r) => r.outcome !== null);
   const scored = closed.filter((r) => r.outcome!.correctionScore !== null);
   const bad = scored.filter((r) => r.outcome!.correctionScore! > 0).length;
-  out.push("", `  of ${rows.length} escalated turns, ${closed.length} window${closed.length === 1 ? "" : "s"} closed and ${scored.length} scored; ${bad} drew a correction`);
+  out.push("", `  of ${applied.length} APPLIED escalations, ${closed.length} window${closed.length === 1 ? "" : "s"} closed and ${scored.length} scored; ${bad} drew a correction`);
   if (scored.length < MIN_OUTCOME_N) out.push(`  insufficient data: n=${scored.length} < ${MIN_OUTCOME_N}; no rate is shown and none of this says whether escalation helps`);
   else out.push(`  correction > 0 after an escalation: ${pct(bad, scored.length)} of scored`);
   return out;

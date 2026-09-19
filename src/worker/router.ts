@@ -100,7 +100,7 @@ interface SessionState {
   readonly convs: Map<string, ConvState>;
 }
 
-type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override" | "escalation">;
+type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override" | "escalation" | "would_escalate">;
 interface Outcome {
   readonly part: DecisionPart;
   /** Where route mode sends this turn; null = the requested model. */
@@ -109,7 +109,7 @@ interface Outcome {
 }
 
 const SEVERITY: Readonly<Record<VersionLevel, number>> = { ok: 0, warn: 1, degrade: 2 };
-const NONE: DecisionPart = { decision: null, plan: null, error: null, sent: null, backend: null, guard: null, override: null, escalation: null };
+const NONE: DecisionPart = { decision: null, plan: null, error: null, sent: null, backend: null, guard: null, override: null, escalation: null, would_escalate: null };
 const guardRecord = (g: GuardResult | null): DecisionPart["guard"] => (g ? { allowed: g.allowed, reason: g.reason, ctx: g.ctx, penalty_usd: g.penaltyUsd } : null);
 
 export class Router {
@@ -143,7 +143,7 @@ export class Router {
   onEscalationSignal(e: EscalationEvent): void {
     try {
       const cfg = this.d.config;
-      if (!cfg.escalate) return;
+      if (cfg.escalate === "off") return;
       if (e.signal === "correction" && (e.score === null || e.score < cfg.escalateThreshold)) return;
       this.#escalations.set(e.conv, raise(this.#escalations.get(e.conv) ?? null, e, cfg.escalateWindowTurns));
     } catch {
@@ -165,7 +165,7 @@ export class Router {
     const next = decay(state);
     if (next === null) this.#escalations.delete(v.convKey);
     else this.#escalations.set(v.convKey, next);
-    const tier = escalatedTier(pick, requested, this.d.config, ctx);
+    const tier = escalatedTier(pick, requested, this.d.config.escalateTarget, this.d.config, ctx);
     return tier === null ? null : { tier, state };
   }
 
@@ -512,6 +512,7 @@ export class Router {
       let candidate = policyTarget;
       const reasons = [...p.reasons];
       let escalation: DecisionPart["escalation"] = null;
+      let wouldEscalate: DecisionPart["would_escalate"] = null;
       let g: GuardResult | null = null;
       if (kind === "main" && requested !== null && current !== null) {
         // Where the policy would put this turn; "no target" means "stay on the requested tier".
@@ -520,10 +521,17 @@ export class Router {
         // evaluates against and never overrules the guard's own answer. It only ever moves `desired` up.
         const esc = this.#escalate(v, kind, desired, requested, ctx);
         if (esc !== null) {
-          escalation = { signal: esc.state.signal, from: desired, to: esc.tier, decision_id: esc.state.decisionId, turn_seq: esc.state.turnSeq };
-          reasons.push(`escalated:${esc.state.signal}`);
-          desired = esc.tier;
-          policyTarget = esc.tier;
+          const block = { signal: esc.state.signal, from: desired, to: esc.tier, decision_id: esc.state.decisionId, turn_seq: esc.state.turnSeq };
+          if (cfg.escalate === "shadow") {
+            // Shadow: the same arithmetic, recorded and not applied. Section 13 can then price what escalation would
+            // have cost before anyone turns it on, which is the only honest way to leave shadow.
+            wouldEscalate = block;
+          } else {
+            escalation = block;
+            reasons.push(`escalated:${esc.state.signal}`);
+            desired = esc.tier;
+            policyTarget = esc.tier;
+          }
         }
         if (tierRank(desired) > tierRank(current)) {
           // Moving up is never guarded: quality first, and the backend asked for more than the current tier.
@@ -542,7 +550,7 @@ export class Router {
           }
         }
       }
-      return finalize(policyTarget, candidate, reasons, { ...part, escalation }, g);
+      return finalize(policyTarget, candidate, reasons, { ...part, escalation, would_escalate: wouldEscalate }, g);
     } catch (e) {
       if (e instanceof BackendError) {
         if (e.kind !== "aborted") this.d.breaker.failure();

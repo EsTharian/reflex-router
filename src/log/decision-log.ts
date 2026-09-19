@@ -128,14 +128,25 @@ export interface DecisionRecord {
    * turn closed with `signal`. `decision_id` is that turn's decision, so the report can join cause to effect and price
    * what escalation cost. null on every other record (src/worker/escalation.ts).
    */
-  readonly escalation: {
-    readonly signal: "correction" | "test_failure" | "reverted_edit";
-    readonly from: Tier;
-    readonly to: Tier;
-    readonly decision_id: string | null;
-    readonly turn_seq: number;
-  } | null;
+  readonly escalation: EscalationBlock | null;
+  /**
+   * `REFLEX_ESCALATE=shadow`: what escalation WOULD have done to this turn. Nothing was changed - the turn routed
+   * exactly as the policy decided - so this never appears alongside `escalation`, and `plan.reasons` carries no
+   * `escalated:` entry. It is what lets a log price escalation before anyone turns it on.
+   */
+  readonly would_escalate: EscalationBlock | null;
   readonly prompt_preview?: string;
+}
+
+/** An escalation, applied (`escalation`) or recorded in shadow (`would_escalate`). */
+export interface EscalationBlock {
+  readonly signal: "correction" | "test_failure" | "reverted_edit";
+  /** The tier the policy itself picked, i.e. what this turn would have routed to without the signal. */
+  readonly from: Tier;
+  readonly to: Tier;
+  /** The decision whose outcome window produced the signal, so cause can be joined to effect. */
+  readonly decision_id: string | null;
+  readonly turn_seq: number;
 }
 
 /** One per delegation hint actually returned to Claude Code (a UserPromptSubmit answered with the hint). */

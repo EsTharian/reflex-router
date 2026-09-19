@@ -46,6 +46,8 @@ export interface DecOpts {
   backendVersion?: string | null;
   /** Escalation block (REFLEX_ESCALATE), as the router writes it. */
   escalation?: { signal: "correction" | "test_failure" | "reverted_edit"; from: T; to: T; decisionId: string | null; turnSeq?: number } | null;
+  /** REFLEX_ESCALATE=shadow: recorded, not applied. */
+  wouldEscalate?: { signal: "correction" | "test_failure" | "reverted_edit"; from: T; to: T; decisionId: string | null; turnSeq?: number } | null;
 }
 
 /** One `decision` record. */
@@ -78,6 +80,7 @@ export function dec(o: DecOpts): Rec {
     backend: "jev",
     backend_version: o.backendVersion === undefined ? (decided ? "jev-test" : null) : o.backendVersion,
     escalation: o.escalation ? { signal: o.escalation.signal, from: o.escalation.from, to: o.escalation.to, decision_id: o.escalation.decisionId, turn_seq: o.escalation.turnSeq ?? 1 } : null,
+    would_escalate: o.wouldEscalate ? { signal: o.wouldEscalate.signal, from: o.wouldEscalate.from, to: o.wouldEscalate.to, decision_id: o.wouldEscalate.decisionId, turn_seq: o.wouldEscalate.turnSeq ?? 1 } : null,
     requested: { model: MODEL[requested], tier: requested, effort: "medium" },
     decision: decided
       ? {

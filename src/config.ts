@@ -18,6 +18,13 @@ export type BackendId = (typeof BACKENDS)[number];
 export const DEFAULT_ESCALATE_THRESHOLD = 1;
 export const DEFAULT_ESCALATE_WINDOW_TURNS = 3;
 
+/** REFLEX_ESCALATE. `shadow` records what it would have done and changes nothing. */
+export const ESCALATE_MODES = ["off", "on", "shadow"] as const;
+export type EscalateMode = (typeof ESCALATE_MODES)[number];
+/** REFLEX_ESCALATE_TARGET: where an escalation sends the turn (src/worker/escalation.ts explains the measurement). */
+export const ESCALATE_TARGETS = ["requested", "next"] as const;
+export type EscalateTarget = (typeof ESCALATE_TARGETS)[number];
+
 export const TIERS = ["haiku", "sonnet", "opus", "fable"] as const;
 export type Tier = (typeof TIERS)[number];
 
@@ -86,7 +93,9 @@ export interface Config {
    * Off by default, and the only setting that lets a past event change a future request. It may only raise, never
    * above the tier the client asked for, and never for pinned continuations or side calls.
    */
-  readonly escalate: boolean;
+  readonly escalate: EscalateMode;
+  /** Where an escalation sends the turn: `requested` (the measured cheaper move, default) or `next` (one tier up). */
+  readonly escalateTarget: EscalateTarget;
   /** Correction score (0..CORRECTION_SCORE_CAP) at or above which a closed window escalates the conversation. */
   readonly escalateThreshold: number;
   /** How many of the conversation's later new turns one escalation signal covers before it decays. */
@@ -126,7 +135,7 @@ export const SETTING_NAMES: readonly string[] = [
   "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_DEADLINE_MS", "REFLEX_WARM_INTERVAL_MS",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
-  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_DELEGATE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
+  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_DELEGATE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
 ];
 
@@ -156,6 +165,20 @@ function parseEnum<T extends string>(raw: string | undefined, allowed: readonly 
 }
 
 const falsy = (v: string | undefined): boolean => v !== undefined && ["0", "false", "no", "off"].includes(v.trim().toLowerCase());
+
+/**
+ * REFLEX_ESCALATE accepts the boolean spellings (`1`, `true`, `yes`, `on`) as `on`, plus `shadow` and `off`. A value
+ * that is neither a boolean spelling nor a mode is a configuration error rather than a silent `off`: escalation being
+ * quietly not on is exactly the failure this setting must not have.
+ */
+const parseEscalateMode = (raw: string | undefined, errors: string[]): EscalateMode => {
+  if (raw === undefined || falsy(raw)) return "off";
+  if (truthy(raw)) return "on";
+  const v = raw.trim().toLowerCase();
+  if ((ESCALATE_MODES as readonly string[]).includes(v)) return v as EscalateMode;
+  errors.push(`REFLEX_ESCALATE must be one of ${ESCALATE_MODES.join(", ")} (or 1/true/yes/on for "on"), got ${JSON.stringify(raw)}`);
+  return "off";
+};
 
 function parseBoundedInt(raw: string | undefined, fallback: number, min: number, max: number, name: string, errors: string[]): number {
   if (raw === undefined || raw.trim() === "") return fallback;
@@ -254,12 +277,13 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     massEps: parseBoundedNumber(setting(env, "REFLEX_MASS_EPS"), 0.1, 0, 0.5, "REFLEX_MASS_EPS", errors),
     maxSwitchPenaltyUsd: parseBoundedNumber(setting(env, "REFLEX_MAX_SWITCH_PENALTY_USD"), 0.01, 0, 100, "REFLEX_MAX_SWITCH_PENALTY_USD", errors),
     delegate: truthy(setting(env, "REFLEX_DELEGATE")),
-    escalate: truthy(setting(env, "REFLEX_ESCALATE")),
+    escalate: parseEscalateMode(setting(env, "REFLEX_ESCALATE"), errors),
+    escalateTarget: parseEnum(setting(env, "REFLEX_ESCALATE_TARGET"), ESCALATE_TARGETS, "requested", "REFLEX_ESCALATE_TARGET", errors),
     escalateThreshold: parseBoundedNumber(setting(env, "REFLEX_ESCALATE_THRESHOLD"), DEFAULT_ESCALATE_THRESHOLD, 0, CORRECTION_SCORE_CAP, "REFLEX_ESCALATE_THRESHOLD", errors),
     escalateWindowTurns: parseBoundedInt(setting(env, "REFLEX_ESCALATE_WINDOW_TURNS"), DEFAULT_ESCALATE_WINDOW_TURNS, 1, 20, "REFLEX_ESCALATE_WINDOW_TURNS", errors),
   };
   if (errors.length > 0) return { ok: false, errors };
-  if (config.escalate && mode !== "route") warnings.push(`REFLEX_ESCALATE has no effect with REFLEX_MODE=${mode} (escalation only changes a request in route mode)`);
+  if (config.escalate === "on" && mode !== "route") warnings.push(`REFLEX_ESCALATE=on has no effect with REFLEX_MODE=${mode} (escalation only changes a request in route mode)`);
   if (config.delegate && mode === "off") warnings.push("REFLEX_DELEGATE has no effect with REFLEX_MODE=off (the hint travels through reflex's hooks)");
   return { ok: true, config, warnings };
 }

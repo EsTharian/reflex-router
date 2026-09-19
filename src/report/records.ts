@@ -75,13 +75,17 @@ export interface Dec {
   /** Decision-backend version that answered (`backend_version`, e.g. `jev-1.13.0`); null: no backend call, or an older record. */
   readonly backendVersion: string | null;
   /** Set only on a turn REFLEX_ESCALATE raised (`escalation`); null everywhere else. */
-  readonly escalation: {
-    readonly signal: string;
-    readonly from: Tier | null;
-    readonly to: Tier | null;
-    readonly decisionId: string | null;
-    readonly turnSeq: number | null;
-  } | null;
+  readonly escalation: EscalationRec | null;
+  /** `REFLEX_ESCALATE=shadow`: what escalation would have done. Never set alongside `escalation`. */
+  readonly wouldEscalate: EscalationRec | null;
+}
+
+export interface EscalationRec {
+  readonly signal: string;
+  readonly from: Tier | null;
+  readonly to: Tier | null;
+  readonly decisionId: string | null;
+  readonly turnSeq: number | null;
 }
 
 export interface OutcomeRec {
@@ -122,6 +126,12 @@ export interface Records {
   readonly unterminatedLines: number;
   readonly sources: readonly string[];
 }
+
+const toEscalation = (e: unknown): EscalationRec | null => {
+  if (!isObj(e)) return null;
+  const signal = str(e["signal"]);
+  return signal === null ? null : { signal, from: tierOf(e["from"]), to: tierOf(e["to"]), decisionId: str(e["decision_id"]), turnSeq: num(e["turn_seq"]) };
+};
 
 function toDec(o: J): Dec | null {
   const id = str(o["id"]);
@@ -182,12 +192,8 @@ function toDec(o: J): Dec | null {
     fingerprint: isObj(o["side_fingerprint"]) ? o["side_fingerprint"] : null,
     hint: str(o["delegate_hint"]),
     backendVersion: str(o["backend_version"]) ?? str(at(o, "decision", "backendModel")),
-    escalation: (() => {
-      const e = at(o, "escalation");
-      if (!isObj(e)) return null;
-      const signal = str(e["signal"]);
-      return signal === null ? null : { signal, from: tierOf(e["from"]), to: tierOf(e["to"]), decisionId: str(e["decision_id"]), turnSeq: num(e["turn_seq"]) };
-    })(),
+    escalation: toEscalation(at(o, "escalation")),
+    wouldEscalate: toEscalation(at(o, "would_escalate")),
   };
 }
 

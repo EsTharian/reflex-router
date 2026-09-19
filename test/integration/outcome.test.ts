@@ -62,7 +62,7 @@ describe("escalation through the front door", () => {
     jev = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.95, reasoning: 0.2 });
     stack = await startStack({
       effectiveMode: "route",
-      config: { jevBaseUrl: jev.url, escalate: true, escalateThreshold: 1, escalateWindowTurns: 2 },
+      config: { jevBaseUrl: jev.url, escalate: "on", escalateTarget: "next", escalateThreshold: 1, escalateWindowTurns: 2 },
     });
     stack.upstream.setHandler(sseHandler);
   });
@@ -85,7 +85,9 @@ describe("escalation through the front door", () => {
     assert.ok(esc, "the second turn carries an escalation record");
     assert.equal(esc.signal, "correction");
     assert.equal(esc.from, "haiku", "what the policy would have picked");
-    assert.equal(esc.to, "sonnet", "one tier up, still below the requested opus");
+    // The fixture requests claude-sonnet-5, so sonnet is both "one tier up from haiku" and the cap. E1 vs E2 is
+    // distinguished in test/unit/escalation.test.ts, where the tiers can be chosen freely.
+    assert.equal(esc.to, "sonnet", "one tier up, and never past the requested tier");
     assert.equal(esc.decision_id, first["id"], "joined to the turn whose window produced the signal");
     assert.equal((second["forwarded"] as Record<string, unknown>)["model"], "claude-sonnet-5");
     const reasons = (second["plan"] as { reasons: string[] }).reasons;
@@ -130,5 +132,39 @@ describe("escalation is off unless REFLEX_ESCALATE is set", () => {
     const { rec: second } = await replay(stack, fixture);
     assert.equal(second["escalation"], null);
     assert.equal((second["forwarded"] as Record<string, unknown>)["model"], "claude-haiku-4-5-20251001");
+  });
+});
+
+describe("REFLEX_ESCALATE=shadow records what it would have done and changes nothing", () => {
+  let jev: FakeJev;
+  let stack: Stack;
+  before(async () => {
+    jev = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.95, reasoning: 0.2 });
+    stack = await startStack({ effectiveMode: "route", config: { jevBaseUrl: jev.url, escalate: "shadow", escalateThreshold: 1, escalateWindowTurns: 2 } });
+    stack.upstream.setHandler(sseHandler);
+  });
+  after(async () => {
+    await stack.close();
+    await jev.close();
+  });
+
+  it("writes would_escalate, leaves the tier alone, and adds no escalated: reason", async () => {
+    const hook = async (event: Record<string, unknown>): Promise<number> =>
+      (await request(`${stack.url}/__reflex/hook`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: SESSION, ...event }) })).status;
+    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "S1", prompt: "rename the helper" });
+    await replay(stack, fixture);
+    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "S2", prompt: "no, that's wrong" });
+    await waitFor(() => allRecords(stack).find((r) => r["record"] === "outcome"), { what: "the first window to close" });
+
+    const { rec: second } = await replay(stack, fixture);
+    const would = second["would_escalate"] as { signal: string; from: string; to: string } | null;
+    assert.ok(would, "shadow still records the arithmetic");
+    assert.equal(would.signal, "correction");
+    assert.equal(would.from, "haiku");
+    assert.equal(would.to, "sonnet", "straight back to the requested tier (the fixture requests sonnet)");
+    assert.equal(second["escalation"], null, "never both");
+    assert.equal((second["forwarded"] as Record<string, unknown>)["model"], "claude-haiku-4-5-20251001", "nothing moved");
+    const reasons = (second["plan"] as { reasons: string[] }).reasons;
+    assert.ok(!reasons.some((r) => r.startsWith("escalated:")), reasons.join(","));
   });
 });

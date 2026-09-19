@@ -11,28 +11,44 @@ const ALL = { tiers: ["haiku", "sonnet", "opus"] as readonly Tier[], allowFable:
 
 describe("escalatedTier: one tier up, never above the requested tier", () => {
   it("moves the pick up exactly one enabled tier", () => {
-    assert.equal(escalatedTier("haiku", "opus", ALL, null), "sonnet");
-    assert.equal(escalatedTier("sonnet", "opus", ALL, null), "opus");
+    assert.equal(escalatedTier("haiku", "opus", "next", ALL, null), "sonnet");
+    assert.equal(escalatedTier("sonnet", "opus", "next", ALL, null), "opus");
   });
   it("never goes above the requested tier: at or over it there is nowhere to escalate to", () => {
-    assert.equal(escalatedTier("opus", "opus", ALL, null), null);
-    assert.equal(escalatedTier("sonnet", "sonnet", ALL, null), null);
+    assert.equal(escalatedTier("opus", "opus", "next", ALL, null), null);
+    assert.equal(escalatedTier("sonnet", "sonnet", "next", ALL, null), null);
     // One up from haiku is sonnet, which is already the ceiling here: it is allowed, but no further.
-    assert.equal(escalatedTier("haiku", "sonnet", ALL, null), "sonnet");
+    assert.equal(escalatedTier("haiku", "sonnet", "next", ALL, null), "sonnet");
   });
   it("skips a disabled tier rather than routing to one that is off", () => {
     const noSonnet = { tiers: ["haiku", "opus"] as readonly Tier[], allowFable: false };
-    assert.equal(escalatedTier("haiku", "opus", noSonnet, null), "opus");
+    assert.equal(escalatedTier("haiku", "opus", "next", noSonnet, null), "opus");
   });
   it("respects the context ceiling: a tier that cannot hold the request is skipped", () => {
     // haiku's ceiling is 150k; sonnet has none, so a huge context still escalates haiku -> sonnet.
-    assert.equal(escalatedTier("haiku", "opus", ALL, 400_000), "sonnet");
+    assert.equal(escalatedTier("haiku", "opus", "next", ALL, 400_000), "sonnet");
   });
   it("is never a downgrade and never a no-op dressed as a move", () => {
     for (const pick of ["haiku", "sonnet", "opus"] as const) {
-      const to = escalatedTier(pick, "opus", ALL, null);
+      const to = escalatedTier(pick, "opus", "next", ALL, null);
       if (to !== null) assert.notEqual(to, pick, `${pick} -> ${to} must be a real move`);
     }
+  });
+});
+
+describe("escalatedTier: the default target is straight back to requested (E1)", () => {
+  it("goes all the way, not one step", () => {
+    // The measured move: side calls keep the requested model's cache warm for free, so returning to it paid 5,924
+    // tokens of cache write where one tier up paid 13,385 (docs/observations.md, session B rerun).
+    assert.equal(escalatedTier("haiku", "opus", "requested", ALL, null), "opus");
+    assert.equal(escalatedTier("sonnet", "opus", "requested", ALL, null), "opus");
+  });
+  it("still never moves when the pick is already at or above the requested tier", () => {
+    assert.equal(escalatedTier("opus", "opus", "requested", ALL, null), null);
+  });
+  it("respects a disabled requested tier by clamping to the nearest enabled one at or above it", () => {
+    const onlyHaikuOpus = { tiers: ["haiku", "opus"] as readonly Tier[], allowFable: false };
+    assert.equal(escalatedTier("haiku", "opus", "requested", onlyHaikuOpus, null), "opus");
   });
 });
 
@@ -58,18 +74,33 @@ describe("REFLEX_ESCALATE settings", () => {
   it("is off by default, with the plan's starting values", () => {
     const r = cfg({});
     assert.ok(r.ok);
-    assert.equal(r.config.escalate, false);
+    assert.equal(r.config.escalate, "off");
+    assert.equal(r.config.escalateTarget, "requested");
     assert.equal(r.config.escalateThreshold, DEFAULT_ESCALATE_THRESHOLD);
     assert.equal(r.config.escalateWindowTurns, DEFAULT_ESCALATE_WINDOW_TURNS);
   });
   it("reads the three settings and refuses values outside their bounds", () => {
     const r = cfg({ REFLEX_ESCALATE: "1", REFLEX_ESCALATE_THRESHOLD: "0.5", REFLEX_ESCALATE_WINDOW_TURNS: "2", REFLEX_MODE: "route" });
     assert.ok(r.ok);
-    assert.equal(r.config.escalate, true);
+    assert.equal(r.config.escalate, "on");
     assert.equal(r.config.escalateThreshold, 0.5);
     assert.equal(r.config.escalateWindowTurns, 2);
     assert.equal(cfg({ REFLEX_ESCALATE_THRESHOLD: "9" }).ok, false, "above CORRECTION_SCORE_CAP");
     assert.equal(cfg({ REFLEX_ESCALATE_WINDOW_TURNS: "0" }).ok, false);
+  });
+  it("accepts shadow, and rejects a value that is neither a mode nor a boolean", () => {
+    const r = cfg({ REFLEX_ESCALATE: "shadow", REFLEX_MODE: "route" });
+    assert.ok(r.ok);
+    assert.equal(r.config.escalate, "shadow");
+    // A typo must not read as "off": escalation being quietly not on is the failure this setting must not have.
+    assert.equal(cfg({ REFLEX_ESCALATE: "shdaow" }).ok, false);
+    assert.equal(cfg({ REFLEX_ESCALATE: "0" }).ok, true);
+    assert.equal(cfg({ REFLEX_ESCALATE_TARGET: "sideways" }).ok, false);
+  });
+  it("shadow does not warn about the mode: it changes nothing anywhere", () => {
+    const r = cfg({ REFLEX_ESCALATE: "shadow", REFLEX_MODE: "shadow" });
+    assert.ok(r.ok);
+    assert.equal(r.warnings.filter((w) => w.includes("REFLEX_ESCALATE")).length, 0, r.warnings.join("; "));
   });
   it("warns when it can have no effect", () => {
     const r = cfg({ REFLEX_ESCALATE: "1", REFLEX_MODE: "shadow" });

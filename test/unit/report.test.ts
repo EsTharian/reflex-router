@@ -924,9 +924,25 @@ describe("report: 13. escalations", () => {
     assert.equal(rows[0]!.to, "sonnet");
     assert.equal(rows[0]!.cause?.id, "cause", "joined to the decision whose window produced the signal");
     const lines = s13Escalations(ctxOf(log())).join("\n");
-    assert.match(lines, /1 escalated turn;/);
+    assert.match(lines, /1 escalated turn \(1 applied, 0 shadow\);/);
     assert.match(lines, /by signal: correction 1/);
     assert.match(lines, /insufficient data: n=0 < 20/, "no rate is claimed from one turn");
+  });
+
+  it("a shadow escalation is listed as shadow and never counted as applied", () => {
+    const text = toJsonl([
+      dec({ id: "cause", t: 0, conv: "C1", probs: [0.9, 0.1, 0], pickMass: "haiku", sent: "haiku" }),
+      dec({ id: "sh1", t: 2, conv: "C1", probs: [0.9, 0.1, 0], pickMass: "haiku", sent: "haiku", wouldEscalate: { signal: "correction", from: "haiku", to: "opus", decisionId: "cause" } }),
+    ]);
+    const rows = escalationRows(ctxOf(text));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.mode, "shadow");
+    assert.equal(rows[0]!.to, "opus");
+    assert.equal(rows[0]!.dec.sentTier, "haiku", "the tier was not changed");
+    const lines = s13Escalations(ctxOf(text)).join("\n");
+    assert.match(lines, /\(0 applied, 1 shadow\)/);
+    assert.match(lines, /the tier was NOT changed/);
+    assert.match(lines, /of 0 APPLIED escalations/);
   });
 
   it("refuses a rate below MIN_OUTCOME_N and never implies escalation helped", () => {
