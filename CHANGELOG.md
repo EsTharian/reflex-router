@@ -6,6 +6,25 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.5 — 2026-09-22
+
+### Added
+
+- **Every retarget among Haiku, Sonnet, Opus and Fable is verified and applied.** New since 0.3.4: Fable 5.1 in both
+  directions (Fable still needs `REFLEX_ALLOW_FABLE=1`), a Sonnet main chat to Opus, and Opus ↔ Sonnet at every
+  effort from `low` to `max`. Eight real sessions; six used `--model`/`--effort`, an approved exception to the
+  no-override rule, recorded in each results file. Table and cost: `docs/wire-format.md` §5.6.
+
+### Fixed
+
+- **Fable → Sonnet was rejected on every request.** A Fable 5.1 request puts a per-turn `output_config` on its
+  `role:"system"` message, which Sonnet 5 does not accept. The rewrite now drops that field for Sonnet
+  (`messages.output_config_dropped:<n>`).
+- **A "prompt is too long" rejection no longer disables the tier.** The size estimate (bytes ÷ 2.5) can let dense text
+  through that exceeds Haiku's window (measured: 244k–265k real tokens at an estimated 150k). The retry with the
+  original bytes already kept the session working; it no longer also switches Haiku off for 30 minutes. The retry's
+  measured context keeps that conversation's next turns off a tier it does not fit.
+
 ## 0.3.4 — 2026-09-22
 
 ### Added
