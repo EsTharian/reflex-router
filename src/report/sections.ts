@@ -4,7 +4,7 @@ import { TIERS, type Tier } from "../config.js";
 import { DOWNGRADE_MIN_CONFIDENCE } from "../policy.js";
 import { cacheReadRate, cacheWriteRate, LAST_VERIFIED, usageCostUsd, type CacheTtl } from "../pricing.js";
 import { DECISION_GRACE_MS } from "../timing.js";
-import { CONTEXT_CEILING, fitsContext, tierRank } from "../tiers.js";
+import { CONTEXT_CEILING, fitsContext, tierOfModel, tierRank } from "../tiers.js";
 import { countBy, int, mean, median, ms, pct, percentile, sum, table, usd } from "./format.js";
 import { num, totalTokens, type Dec, type OutcomeRec, type Records, type Usage } from "./records.js";
 
@@ -534,8 +534,8 @@ export function costOf(d: readonly Dec[]): CostRow {
     if (x.usage === null || x.sentTier === null || x.requestedTier === null) continue;
     n++;
     tok += totalTokens(x.usage);
-    sent += usageCostUsd(x.sentTier, x.usage, PRICED_TTL);
-    requested += usageCostUsd(x.requestedTier, x.usage, PRICED_TTL);
+    sent += usageCostUsd(x.sentTier, x.usage, PRICED_TTL, x.sentModel);
+    requested += usageCostUsd(x.requestedTier, x.usage, PRICED_TTL, x.requestedModel);
   }
   return { n, tokens: tok, atSentUsd: sent, atRequestedUsd: requested };
 }
@@ -913,7 +913,7 @@ export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRouting
       const read = isWarm ? Math.min(cached, ctx) : 0;
       const write = ctx - read;
       // The TTL is a property of the request, so both sides of the comparison are priced at the same one.
-      const atReq = usageCostUsd(d.requestedTier!, u, ttl);
+      const atReq = usageCostUsd(d.requestedTier!, u, ttl, d.requestedModel);
       // Same formula as usageCostUsd, with the request's own token counts replaced by this conversation's
       // modelled read/write split on the side tier (no separate uncached-input term: read+write cover it all).
       const atSide = usageCostUsd(tier, { input: 0, output: u.output, cacheRead: read, cacheCreate: write }, ttl);
@@ -938,6 +938,8 @@ export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRouting
 
   const dominant: CacheTtl = opts.ttl !== undefined ? opts.ttl : ttlsSeen.filter((t) => t === "1h").length * 2 > ttlsSeen.length ? "1h" : ASSUMED_TTL;
   const readRate = cacheReadRate(tier);
+  // Break-even against the cache-read rate of the model these calls asked for (the most common one; Opus when unknown).
+  const reqModel = countBy(routable.filter((d) => d.requestedModel !== null), (d) => d.requestedModel!)[0]?.[0] ?? null;
   const perKind = [...perKindAcc.entries()]
     .map(([kind, v]) => ({
       kind,
@@ -965,7 +967,7 @@ export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRouting
     usdAtRequested,
     usdAtSide,
     tier,
-    breakEven: cacheWriteRate(tier, dominant) / Math.max(1e-9, cacheReadRate("opus") - readRate),
+    breakEven: cacheWriteRate(tier, dominant) / Math.max(1e-9, cacheReadRate(tierOfModel(reqModel) ?? "opus", reqModel) - readRate),
     observedWarmPerCold: cold === 0 ? null : warm / cold,
     ttlAssumed: opts.ttl === undefined && decisions.every((d) => d.cacheTtlBeta === null),
     convs: convExposure(decisions),

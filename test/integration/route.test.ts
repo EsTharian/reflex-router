@@ -272,7 +272,7 @@ describe("route mode", () => {
       const f = inSession(fx("main-new-turn"), "s-ovr2", prefixTask("reflex:opus "));
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, f);
-      assert.equal(sentBody(stack, n)["model"], "claude-opus-5");
+      assert.equal(sentBody(stack, n)["model"], "claude-opus-5-5");
       assert.deepEqual(rec.plan?.reasons, ["override"]);
       assert.deepEqual(rec.forwarded.fields, ["model"]);
     });
@@ -384,11 +384,11 @@ describe("route mode: upgrades (REFLEX_UPGRADES=on, verified Haiku -> Opus)", ()
     const n = stack.upstream.seen.length;
     const { rec } = await replay(stack, f);
     const b = sentBody(stack, n);
-    assert.equal(b["model"], "claude-opus-5");
+    assert.equal(b["model"], "claude-opus-5-5");
     assert.equal((b["thinking"] as Json)["type"], "adaptive");
     assert.deepEqual(rec.plan?.reasons, ["upgrade"]);
     assert.equal(rec.forwarded.rewritten, true);
     const r = await request(`${stack.url}/__reflex/hook`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: "s-up", hook_event_name: "Stop" }) });
-    assert.deepEqual(JSON.parse(r.body.toString()), { systemMessage: "reflex upgraded the model: claude-haiku-4-5-20251001 → claude-opus-5" });
+    assert.deepEqual(JSON.parse(r.body.toString()), { systemMessage: "reflex upgraded the model: claude-haiku-4-5-20251001 → claude-opus-5-5" });
   });
 });

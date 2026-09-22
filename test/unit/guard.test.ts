@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { guard, type GuardInput } from "../../src/guard.js";
 import { parseOverride } from "../../src/overrides.js";
-import { cacheReadUsd, cacheWriteUsd, LAST_VERIFIED, PRICES } from "../../src/pricing.js";
+import { cacheReadUsd, cacheWriteUsd, LAST_VERIFIED, priceOf, PRICES } from "../../src/pricing.js";
 import { isVerifiedRetarget } from "../../src/wire/rewrite.js";
 
 const base: GuardInput = { cacheTier: "sonnet", to: "haiku", ctxTokens: 40_000, ttl: "1h", fresh: false, maxPenaltyUsd: 0.01 };
@@ -11,9 +11,17 @@ describe("pricing", () => {
   it("matches the pricing page as verified (per MTok) and carries the verification date", () => {
     assert.deepEqual(PRICES.haiku, { input: 1, output: 5, cacheReadMult: 0.1 });
     assert.deepEqual(PRICES.sonnet, { input: 2, output: 10, cacheReadMult: 0.1 });
-    assert.deepEqual(PRICES.opus, { input: 5, output: 25, cacheReadMult: 0.1 });
+    assert.deepEqual(PRICES.opus, { input: 4, output: 20, cacheReadMult: 0.05 });
     assert.deepEqual(PRICES.fable, { input: 10, output: 50, cacheReadMult: 0.025 });
     assert.match(LAST_VERIFIED, /^\d{4}-\d{2}-\d{2}$/);
+  });
+  it("prices an older Opus at its own rate, Opus 5.5 and unknown models at the tier default", () => {
+    const opus5 = { input: 5, output: 25, cacheReadMult: 0.1 };
+    assert.deepEqual(priceOf("opus", "claude-opus-5[1m]"), opus5);
+    assert.deepEqual(priceOf("opus", "claude-opus-4-8"), opus5);
+    assert.deepEqual(priceOf("opus", "claude-opus-5-5[1m]"), PRICES.opus);
+    assert.deepEqual(priceOf("opus", null), PRICES.opus);
+    assert.deepEqual(priceOf("sonnet", "claude-sonnet-5"), PRICES.sonnet);
   });
   it("cache write is 1.25x (5m) / 2x (1h) of input, read 0.1x (0.025x on Fable)", () => {
     assert.equal(cacheWriteUsd("haiku", 1_000_000, "5m"), 1.25);
