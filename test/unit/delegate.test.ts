@@ -57,7 +57,7 @@ describe("delegation hint: when", () => {
 
 describe("delegation hint: what", () => {
   it("the answer holds additionalContext only: nothing that could block or rewrite the prompt", () => {
-    const body = JSON.parse(hintReply(prompt("fix it"))!.toString()) as Record<string, unknown>;
+    const body = JSON.parse(JSON.stringify(hintReply(prompt("fix it")))) as Record<string, unknown>;
     assert.deepEqual(body, { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: HINT_TEXT } });
   });
   it("is short (about three lines), fixed and versioned", () => {

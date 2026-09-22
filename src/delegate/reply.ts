@@ -6,11 +6,11 @@ import type { HookEvent } from "../outcome/hooks.js";
 import { isTypedPrompt } from "../wire/claude-code.js";
 import { HINT_TEXT } from "./hint.js";
 
-/** The JSON body to answer this hook event with, or null for "no output". Never throws. */
-export function hintReply(event: HookEvent | null): Buffer | null {
+/** The hook output that carries the hint for this event, or null for "no hint". Never throws. */
+export function hintReply(event: HookEvent | null): { hookSpecificOutput: { hookEventName: "UserPromptSubmit"; additionalContext: string } } | null {
   try {
     if (event?.type !== "UserPromptSubmit" || event.base.agentId !== null || !isTypedPrompt(event.prompt)) return null;
-    return Buffer.from(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: HINT_TEXT } }));
+    return { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: HINT_TEXT } };
   } catch {
     return null;
   }

@@ -20,6 +20,7 @@ import { HOOK_PATH } from "../outcome/hooks-config.js";
 import { parseHookEvent, type HookEvent } from "../outcome/hooks.js";
 import { OutcomeTracker, type DecisionInfo } from "../outcome/tracker.js";
 import { RecentPrompts } from "./recent-prompts.js";
+import { ModelNotices } from "./model-notice.js";
 
 export interface WorkerOptions {
   readonly config: Config;
@@ -88,6 +89,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     ? new OutcomeTracker({ emit: (r) => void decisionLog.appendRecord(r), onSignal: (e) => routerRef?.onEscalationSignal(e) })
     : null;
   const prompts = new RecentPrompts();
+  const notices = new ModelNotices();
   // Keep the backend's keep-alive connection open while nothing is being decided: the first decision after an idle gap
   // otherwise pays a fresh TCP+TLS handshake (observations.md: p50 823 ms new vs 382 ms reused). Best effort and
   // fire-and-forget, exactly like the start-up warm; `connection` on each decision record measures whether it worked.
@@ -109,7 +111,10 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         breaker: new Breaker(),
         log: decisionLog,
         logger: opts.log,
-        ...(tracker ? { onDecision: (d: DecisionInfo) => tracker.onDecision(d) } : {}),
+        onDecision: (d: DecisionInfo) => {
+          tracker?.onDecision(d);
+          notices.observe(d);
+        },
         typedPrompts: (sessionId) => prompts.get(sessionId),
         typedPromptCount: (sessionId) => prompts.typedCount(sessionId),
         newestTypedPrompt: (sessionId) => prompts.newestUnclaimed(sessionId),
@@ -139,19 +144,23 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     }
 
     if (url === HOOK_PATH) {
-      // Answer first: a hook must never wait on outcome capture. The only body ever sent is the delegation hint
-      // (REFLEX_DELEGATE=1, user-typed prompts); anything else, or any failure, is a 204 ("no hook output").
+      // Answer first: a hook must never wait on outcome capture. A body carries only the delegation hint
+      // (REFLEX_DELEGATE=1, user-typed prompts) and/or a main-chat model-change notice for the user (`systemMessage`);
+      // anything else, or any failure, is a 204 ("no hook output").
       let event: HookEvent | null = null;
+      let hint: ReturnType<typeof hintReply> = null;
       let reply: Buffer | null = null;
       try {
         event = tracker ? parseHookEvent(body) : null;
-        reply = opts.config.delegate ? hintReply(event) : null;
+        hint = opts.config.delegate ? hintReply(event) : null;
+        const notice = event && event.base.agentId === null ? notices.take(event.base.sessionId) : null;
+        if (hint || notice) reply = Buffer.from(JSON.stringify({ ...hint, ...(notice ? { systemMessage: notice } : {}) }));
       } catch {
         reply = null;
       }
       if (reply) res.writeHead(200, { "content-type": "application/json", "content-length": reply.length }).end(reply);
       else res.writeHead(204).end();
-      if (reply && event) {
+      if (hint && reply && event) {
         const rec: DelegateHintRecord = { v: 1, record: "delegate_hint", id: crypto.randomUUID(), at: new Date().toISOString(), session: hashId(event.base.sessionId), version: HINT_VERSION };
         void decisionLog.appendRecord(rec);
       }
