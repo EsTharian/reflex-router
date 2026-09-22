@@ -472,11 +472,12 @@ export class Router {
 
     // Main-chat cost guard, evaluated before the backend in route mode: a conversation still on the requested tier
     // skips the backend when even the cheapest enabled tier cannot pass. A conversation pinned below the requested
-    // tier always asks (the answer may move it back up).
+    // tier always asks (the answer may move it back up), and so does every conversation when upgrades are on (the
+    // answer may move it above the requested tier; a downgrade still meets the guard after the decision).
     const fresh = v.facts.nonSystemMessages === 1;
     const guardFor = (to: Tier): GuardResult =>
       guard({ cacheTier: conv?.cacheTier ?? null, to, ctxTokens: conv?.lastCtx ?? null, ttl: v.facts.betaExtendedCacheTtl ? "1h" : "5m", fresh, maxPenaltyUsd: cfg.maxSwitchPenaltyUsd });
-    if (kind === "main" && routing && requested !== null && !belowRequested) {
+    if (kind === "main" && routing && requested !== null && !belowRequested && cfg.upgrades === "off") {
       const cheapest = cfg.tiers.find((t) => tierRank(t) < tierRank(requested));
       if (cheapest === undefined) return none({ plan: planRecord(null, ["no_enabled_tier"]) });
       const pre = guardFor(cheapest);
