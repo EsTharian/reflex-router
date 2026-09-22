@@ -19,6 +19,7 @@ import { buildState } from "../privacy/state.js";
 import { estimateTokens, fitsContext, tierOfModel, tierRank } from "../tiers.js";
 import type { ReasonCode } from "../types.js";
 import type { Log } from "../util/log.js";
+import { isPromptTooLong } from "../wire/anthropic.js";
 import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
 import { sideFingerprint, type SideFingerprint } from "../wire/fingerprint.js";
 import { isVerifiedRetarget, retarget, retargetBetas } from "../wire/rewrite.js";
@@ -329,7 +330,10 @@ export class Router {
         fallbackStatus = st;
         fallbackError = err;
         sentModel = v.requestedModel;
-        if (routedTier) s.disabledUntil.set(routedTier, this.#now() + TIER_DISABLE_MS);
+        // A request too large for the target says nothing about the tier: the size estimate let it through (dense text
+        // has fewer bytes per token than the estimate assumes). Only this loop leaves the tier; its measured context,
+        // recorded from the retry's usage, keeps the next turn off a tier it does not fit.
+        if (routedTier && !isPromptTooLong(err)) s.disabledUntil.set(routedTier, this.#now() + TIER_DISABLE_MS);
         if (conv) conv.pin = { target: null, from: requestedTier }; // the rest of this loop stays on the requested model
       },
       finish: (complete) => {

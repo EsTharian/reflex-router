@@ -306,6 +306,28 @@ describe("route mode", () => {
       assert.equal(again.rec.forwarded.rewritten, false);
     });
 
+    it("a rewrite rejected as too long for the target is retried with the original, and the tier stays enabled", async () => {
+      stack.upstream.setHandler((req, res, body) => {
+        if (body.toString().includes(HAIKU)) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "prompt is too long: 244258 tokens > 200000 maximum" } }));
+          return;
+        }
+        sseHandler(req, res, body);
+      });
+      const f = inSession(fx("subagent-new-turn"), "s-long");
+      const n = stack.upstream.seen.length;
+      const { status, rec } = await replay(stack, f);
+      assert.equal(status, 200);
+      assert.ok(stack.upstream.seen[n + 1]!.body.equals(f.body), "the retry is the original bytes");
+      assert.equal(rec.forwarded.fallback_status, 400);
+
+      stack.upstream.setHandler(sseHandler);
+      const again = await replay(stack, inSession(fx("subagent-new-turn"), "s-long", (b) => ((b["messages"] as Json[]).length = 1)));
+      assert.ok(!again.rec.plan?.reasons.includes("tier_disabled"), "a size rejection does not disable Haiku for the session");
+      assert.equal(again.rec.forwarded.model, HAIKU);
+    });
+
     it("a hanging backend fails open within the deadline: unchanged bytes, and the loop stays on the requested model", async () => {
       jev.set({ kind: "hang" });
       const f = inSession(fx("subagent-new-turn"), "s-hang");

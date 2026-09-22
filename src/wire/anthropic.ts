@@ -112,6 +112,14 @@ export function usageFormat(contentType: string | undefined): "sse" | "json" | n
 export const ERROR_SUMMARY_MAX = 500;
 
 /**
+ * True when a rejection summary (errorSummary) says the request is larger than the model's context window, e.g.
+ * "invalid_request_error: prompt is too long: 244258 tokens > 200000 maximum" (2.1.278
+ * experiment.route-haiku-to-fable-and-ceiling). That is about this request's size, not about the target model
+ * rejecting the rewrite.
+ */
+export const isPromptTooLong = (summary: string | null): boolean => summary !== null && /prompt is too long/i.test(summary);
+
+/**
  * `<error.type>: <error.message>` from an Anthropic error body (`{type:"error", error:{type, message}}`), decoded
  * per content-encoding; the first characters of the raw text when it is not that shape; null when unreadable.
  * The caller redacts it before storing.
