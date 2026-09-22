@@ -6,6 +6,29 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.4 — 2026-09-22
+
+### Added
+
+- **Upgrades are applied: Haiku → Sonnet, Haiku → Opus, Sonnet → Opus.** With `REFLEX_UPGRADES=on` (or `confident`),
+  or a `reflex:<tier>` override, route mode now rewrites a request to a stronger model than the one asked for, for
+  these three pairs. They were verified in real sessions under the user's own settings (model setting `haiku`, no
+  `--model`), including an interactive session, the `context-1m` beta on Sonnet and Opus, and the retry-with-original
+  case: the client's own bytes, holding thinking blocks signed by the stronger model, sent back to the weaker one. Every
+  probe was accepted. Table, cost and what is still untested: `docs/wire-format.md` §5.5; results in
+  `test/fixtures/claude-code/2.1.278/experiment.route-*.results.json`. `REFLEX_UPGRADES` stays off by default.
+
+### Fixed
+
+- **A Haiku main chat never asked the decision backend**, so `REFLEX_UPGRADES` could not apply to it: the main-chat
+  pre-guard gave up with `no_enabled_tier` because no tier below Haiku exists. With upgrades on it now asks; a
+  downgrade still meets the cost guard after the decision.
+
+### Tests
+
+- The model-change notice end to end through the front door, and a Haiku main-chat turn upgraded to Opus with the
+  "upgraded" notice.
+
 ## 0.3.3 — 2026-09-22
 
 ### Added
