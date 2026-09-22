@@ -6,6 +6,7 @@ import zlib from "node:zlib";
 import { DECISION_GRACE_MS } from "../../src/timing.js";
 import { startFakeJev, type FakeJev } from "../support/fake-jev.js";
 import { loadFixtures, type Fixture } from "../support/fixtures.js";
+import { request } from "../support/http.js";
 import { replay, requestHeaders, sseHandler } from "../support/replay.js";
 import { startStack, type Stack } from "../support/stack.js";
 
@@ -163,6 +164,22 @@ describe("route mode", () => {
       assert.equal(rec.guard?.reason, "over_limit");
       assert.equal(rec.guard?.ctx, 200005);
       assert.ok((rec.guard?.penalty_usd ?? 0) > 0.3);
+    });
+  });
+
+  describe("model-change notice", () => {
+    const hook = (sid: string, event: Json) =>
+      request(`${stack.url}/__reflex/hook`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sid, ...event }) });
+
+    it("the next main-chat hook after a rewrite carries a systemMessage, once; subagent hooks never do", async () => {
+      await replay(stack, inSession(fx("main-new-turn"), "s-notice"));
+      assert.equal((await hook("s-notice", { hook_event_name: "Stop", agent_id: "A1" })).status, 204, "a subagent's hook");
+      const r = await hook("s-notice", { hook_event_name: "Stop" });
+      assert.equal(r.status, 200);
+      assert.deepEqual(JSON.parse(r.body.toString()), { systemMessage: `reflex downgraded the model: claude-sonnet-5 → ${HAIKU}` });
+      assert.equal((await hook("s-notice", { hook_event_name: "Stop" })).status, 204, "delivered once");
+      await replay(stack, inSession(fx("main-continuation"), "s-notice"));
+      assert.equal((await hook("s-notice", { hook_event_name: "Stop" })).status, 204, "still on Haiku: nothing new");
     });
   });
 
