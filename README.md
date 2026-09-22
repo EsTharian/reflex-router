@@ -36,7 +36,7 @@ What this alpha does **not** do, so you don't have to find out: it decides the m
 ## Quick start
 
 ```sh
-npm install -g https://github.com/ziyacivan/reflex-router/releases/download/v0.3.2/reflex-router-0.3.2.tgz
+npm install -g https://github.com/ziyacivan/reflex-router/releases/download/v0.3.3/reflex-router-0.3.3.tgz
 ```
 
 That puts `reflex` on your PATH (Node.js 20+; alpha, see [Status](#status)). The tarball is attached to each

@@ -6,6 +6,22 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.3 — 2026-09-22
+
+### Added
+
+- **Model-change notice in the chat.** When reflex moves the main chat to a different model (a downgrade, an upgrade,
+  or back to the model you asked for), the next main-chat hook answer carries a `systemMessage` such as
+  `reflex downgraded the model: claude-opus-4-7 → claude-haiku-4-5`. Claude Code shows it to you and does not send it
+  to the model. It arrives with the next main-chat hook (an Edit/Write/Bash tool result or the end of the turn), not
+  at the moment of the decision. Side calls, subagents and your own `/model` switch are not announced. Route mode only
+  (shadow never changes the model). Covered by `test/unit/model-notice.test.ts`.
+
+### Docs
+
+- `CLAUDE.md`, `docs/reference.md`, `docs/privacy.md`: hook answers may now carry this notice besides the delegation
+  hint.
+
 ## 0.3.2 — 2026-09-20
 
 ### Privacy
