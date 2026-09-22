@@ -17,11 +17,11 @@ export const HAIKU_THINKING_BUDGET = 31999;
 const MIN_THINKING_BUDGET = 1024;
 
 /**
- * Source -> target pairs whose rewrite the API accepted in real sessions (docs/wire-format.md §5.1-5.2,
- * test/fixtures/claude-code/2.1.277/experiment.*). Route mode only rewrites these; anything else is logged as
- * `rewrite_unverified` and forwarded unchanged.
+ * Source -> target pairs whose rewrite the API accepted in real sessions (docs/wire-format.md §5.1-5.5,
+ * test/fixtures/claude-code/2.1.277/experiment.*, 2.1.278/experiment.route-haiku-*). Route mode only rewrites these;
+ * anything else is logged as `rewrite_unverified` and forwarded unchanged.
  */
-const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>sonnet", "opus>haiku"]);
+const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>sonnet", "opus>haiku", "haiku>sonnet", "haiku>opus", "sonnet>opus"]);
 export const isVerifiedRetarget = (from: Tier, to: Tier): boolean => VERIFIED_RETARGETS.has(`${from}>${to}`);
 
 /**

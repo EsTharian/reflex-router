@@ -268,13 +268,13 @@ describe("route mode", () => {
       assert.equal(sentBody(stack, n)["model"], HAIKU);
     });
 
-    it("an override to an unverified pair (Sonnet -> Opus) is recorded and not applied", async () => {
+    it("an override up to a verified pair (Sonnet -> Opus) is applied: only the model changes", async () => {
       const f = inSession(fx("main-new-turn"), "s-ovr2", prefixTask("reflex:opus "));
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, f);
-      assert.ok(stack.upstream.seen[n]!.body.equals(f.body));
-      assert.deepEqual(rec.plan?.reasons, ["override", "rewrite_unverified"]);
-      assert.equal(rec.plan?.target?.tier, "opus");
+      assert.equal(sentBody(stack, n)["model"], "claude-opus-5");
+      assert.deepEqual(rec.plan?.reasons, ["override"]);
+      assert.deepEqual(rec.forwarded.fields, ["model"]);
     });
   });
 
@@ -341,5 +341,32 @@ describe("route mode", () => {
       for (const s of stack.upstream.seen) assert.doesNotMatch(JSON.stringify(s.headers) + s.body.toString(), /apikey_test/);
       assert.ok(stack.upstream.seen.every((s) => s.headers["authorization"] === requestHeaders(fx("main-new-turn"))["authorization"] || s.headers["authorization"] === undefined));
     });
+  });
+});
+
+describe("route mode: upgrades (REFLEX_UPGRADES=on, verified Haiku -> Opus)", () => {
+  let jev: FakeJev;
+  let stack: Stack;
+  before(async () => {
+    jev = await startFakeJev({ kind: "answer", tier: "opus", confidence: 0.9, reasoning: 4 });
+    stack = await startStack({ effectiveMode: "route", config: { mode: "route", upgrades: "on", jevBaseUrl: jev.url, jevDeadlineMs: 500 } });
+    stack.upstream.setHandler(sseHandler);
+  });
+  after(async () => {
+    await stack.close();
+    await jev.close();
+  });
+
+  it("a Haiku main-chat turn the backend wants on Opus is rewritten, and the chat is told", async () => {
+    const f = inSession(fixtures.find((x) => x.file === "haiku-mcp-draft4.main-new-turn.request.json")!, "s-up");
+    const n = stack.upstream.seen.length;
+    const { rec } = await replay(stack, f);
+    const b = sentBody(stack, n);
+    assert.equal(b["model"], "claude-opus-5");
+    assert.equal((b["thinking"] as Json)["type"], "adaptive");
+    assert.deepEqual(rec.plan?.reasons, ["upgrade"]);
+    assert.equal(rec.forwarded.rewritten, true);
+    const r = await request(`${stack.url}/__reflex/hook`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: "s-up", hook_event_name: "Stop" }) });
+    assert.deepEqual(JSON.parse(r.body.toString()), { systemMessage: "reflex upgraded the model: claude-haiku-4-5-20251001 → claude-opus-5" });
   });
 });

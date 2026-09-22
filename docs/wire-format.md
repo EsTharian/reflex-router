@@ -251,7 +251,29 @@ Route-mode acceptance session A saw one Opus → Haiku main-chat first turn reje
 
 **Resolved: the long-context beta.** The rejected requests came from the model setting `opus[1m]`, which sends `model: "claude-opus-5"` **plus the `context-1m-2025-08-07` beta**; the reproductions above had used `--model opus`, without it. With the fallback error now recorded, acceptance session B1 reported `invalid_request_error: The long context beta is not yet available for this subscription.` A second interactive probe with `opus[1m]` (fixture `interactive-opus1m.main-new-turn`, results `experiment.interactive-opus1m-first-turn-to-haiku.results.json`, est. $0.03) confirmed it: the body rewrite with the headers untouched → **400 with that message**; the product rewrite, which also removes that beta from `anthropic-beta` when the target is Haiku → **200**. Sonnet and Opus accept the beta and keep it. Which beta values are removed per target lives in one table, `STRIP_BETAS` in `src/wire/rewrite.ts`, each row naming its evidence; a routed record lists every removed value in `forwarded.fields` (`anthropic-beta:-<value>`), and the retry-with-original re-sends the original headers. Note: Haiku 4.5's context window is 200k tokens, so a Haiku-pinned conversation that grows past it will be rejected and fall back to the requested model (tier then disabled for 30 minutes).
 
-Route mode applies exactly the verified pairs: **Sonnet → Haiku, Opus → Sonnet, Opus → Haiku**. Everything else is logged as `rewrite_unverified` and forwarded unchanged.
+### 5.5 Upgrades: Haiku 4.5 → Sonnet / Opus, Sonnet → Opus (experiment, 2.1.278)
+
+`scripts/spike/route-experiment.mjs --from haiku --to sonnet,opus` ran five real `claude -p` sessions under the user's own settings (model setting `haiku`, no `--model`, entrypoint `sdk-cli`); each results file records those settings. Three are kept as results (`test/fixtures/claude-code/2.1.278/experiment.route-haiku-*.results.json`); the other two were attempts at run 3 in which Sonnet produced no thinking block, so their un-pin probe did not test what it was for. Estimated cost of these five runs about $2.56, at list prices over the recorded usage. Run 1 was capped at $0.50 and overshot to $1.05: the cap is checked before a probe, not against the probe's own cost, and one Opus probe wrote 58k tokens to the 1-hour cache.
+
+| Case | Haiku → Sonnet | Haiku → Opus |
+| --- | --- | --- |
+| main chat's first request (no history) | 200 | 200 |
+| subagent's first request | 200 (×4) | 200 (×3) |
+| subagent continuation, pinned | 200 (×2) | 200 |
+| main continuation with a **signed Haiku thinking block** in the history (kept / dropped / no `display` / + redact-thinking beta) | 200 ×4 (2 runs) | 200 ×4 |
+| later main continuations, pinned | 200 | 200 |
+| history made by Haiku and Opus, sent to Sonnet (pin changed mid-loop) | 200 | — |
+| **un-pin**: original bytes back to Haiku with a **Sonnet-signed** / **Opus-signed** thinking block in the history | 200 | 200 |
+
+The rewrite is the model swap plus `thinking` `enabled` (budget) → `adaptive`; the Haiku request carries no `effort` and no `role:"system"` messages, and `max_tokens` 32000 is accepted as is. The un-pin row is the one that matters for fail-open: after an upgrade the client's own bytes hold thinking blocks signed by the stronger model, and the retry-with-original sends exactly those to Haiku. The subagent un-pin probes held no thinking blocks, so the Sonnet-signed case rests on run 3's main chat and the Opus-signed case on run 2's.
+
+**Interactive, and `context-1m`** (`experiment.route-haiku-up-interactive.results.json`, est. $2.42). The same script with `--interactive` runs the TUI in a pseudo-terminal (`pty-run.py`; `cc_entrypoint=cli`, 1-hour cache TTL, the `redact-thinking-2026-02-12` beta, `thinking` without `display`). Every probe was accepted: the first request to Sonnet and to Opus, each also with `context-1m-2025-08-07` added to `anthropic-beta`; a subagent's first request to both and its pinned continuation to Sonnet; the main continuation holding a Haiku thinking block to both targets in all four variants; un-pin to Haiku and cross-target to Opus with three thinking blocks (Haiku- and Sonnet-made) in the history. So the long-context beta needs no `STRIP_BETAS` row for Sonnet or Opus. A `haiku` model setting never sends it; the probe covers a request that does.
+
+**Sonnet → Opus** (`experiment.route-sonnet-to-opus-subagent.results.json`, est. $0.61 over two runs, one kept). The model setting is `haiku` and `--model` is not used, so the Sonnet source was a native Sonnet **subagent** (the main chat set the Agent tool's `model` parameter). Its first request (no history), its second request (a signed Sonnet thinking block, `role:"system"` messages mid-list and trailing, `effort: "medium"`, the `effort-*` and `mid-conversation-system-*` betas), the pinned Opus continuations and un-pin back to Sonnet with Opus-made thinking were all accepted, with only `model` changed. A Sonnet **main chat** was not run; its request carries the same fields as that subagent request plus the interactive ones covered above. Efforts other than `medium` are untested, as for Opus → Sonnet (§5.3).
+
+**Not tested:** Fable in either direction, and histories near a context limit.
+
+Route mode applies exactly the verified pairs: **Sonnet → Haiku, Opus → Sonnet, Opus → Haiku, Haiku → Sonnet, Haiku → Opus, Sonnet → Opus**. Upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 

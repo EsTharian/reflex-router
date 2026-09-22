@@ -2,8 +2,9 @@
 // Spike (not product code): does the API accept Claude Code requests retargeted by src/wire/rewrite.ts in the shapes
 // route mode will actually produce? One real `claude -p` session (source model: --from, sonnet or opus) is routed
 // through this proxy the way route mode would route it, and at each interesting point extra PROBES are sent to every
-// cheaper target tier:
+// cheaper target tier (or to the tiers named by --to, e.g. `--from haiku --to sonnet,opus` for upgrades):
 //
+//   main-new:<t>          the main chat's first request (no history), rewritten to <t>; not routed, only probed
 //   subagent-first:<t>    each subagent's first request, rewritten to <t>; subagent #1 is then pinned to the
 //                         cheapest target, subagent #2 to the next one (so each target gets a pinned continuation)
 //   subagent-pinned:<t>   later subagent requests, rewritten (target-made history, client still asks for --from)
@@ -22,7 +23,8 @@
 import http from "node:http";
 import https from "node:https";
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseRequest } from "../../src/wire/claude-code.ts";
 import { retarget } from "../../src/wire/rewrite.ts";
@@ -32,21 +34,36 @@ let out = join("_dumps", "route-exp-" + Date.now());
 let capUsd = 0.45;
 let cwd = process.cwd();
 let from = "sonnet";
+let to = null;
+let mainTarget = null;
+let noMainNew = false;
+/** Also probe each main-new target with the long-context beta added (a `<model>[1m]` setting sends it). */
+let probe1m = false;
+/** Let each subagent's first request through unchanged, so its second request holds a source-model turn; decide there. */
+let delayPin = false;
+/** Run the TUI in a pseudo-terminal (scripts/spike/pty-run.py), type the -p prompt, and /exit after this many seconds. */
+let interactiveExitS = null;
 const claudeArgs = [];
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--out") out = argv[++i];
   else if (argv[i] === "--cap-usd") capUsd = Number(argv[++i]);
   else if (argv[i] === "--cwd") cwd = argv[++i];
   else if (argv[i] === "--from") from = argv[++i];
+  else if (argv[i] === "--to") to = argv[++i].split(",");
+  else if (argv[i] === "--main") mainTarget = argv[++i];
+  else if (argv[i] === "--no-main-new") noMainNew = true;
+  else if (argv[i] === "--probe-1m") probe1m = true;
+  else if (argv[i] === "--delay-pin") delayPin = true;
+  else if (argv[i] === "--interactive") interactiveExitS = Number(argv[++i]);
   else if (argv[i] === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
 }
 mkdirSync(out, { recursive: true, mode: 0o700 });
 
 const MODELS = { haiku: "claude-haiku-4-5-20251001", sonnet: "claude-sonnet-5", opus: "claude-opus-5" };
 const ORDER = ["haiku", "sonnet", "opus"];
-/** Cheaper tiers than the source, cheapest first. */
-const TARGETS = ORDER.slice(0, ORDER.indexOf(from));
-const MAIN_TARGET = TARGETS[0];
+/** --to, or else the cheaper tiers than the source; cheapest first. */
+const TARGETS = to ?? ORDER.slice(0, ORDER.indexOf(from));
+const MAIN_TARGET = mainTarget ?? TARGETS[0];
 const upstream = new URL("https://api.anthropic.com");
 const SKIP = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade", "host", "content-length", "accept-encoding", "proxy-authorization", "te", "trailer"]);
 // $/MTok (platform.claude.com pricing, 2026-09-19): input, output. Cache write 1.25x (5m) / 2x (1h), read 0.1x.
@@ -124,16 +141,42 @@ async function probe(label, path, headers, bodyBuf, fields, facts) {
 const variantBody = (parsed, mutate) => { const b = structuredClone(parsed); mutate?.(b); return Buffer.from(JSON.stringify(b)); };
 const rt = (buf, to, extra = {}) => retarget(buf, { from, to, model: MODELS[to], ...extra });
 
-const state = { subTarget: new Map(), subCount: 0, mainPinned: null, unpinProbed: false, crossProbed: false };
+const state = { subTarget: new Map(), subCount: 0, mainPinned: null, unpinProbed: false, crossProbed: false, mainNewProbed: false, subUnpinProbed: new Set(), subDelayed: new Set() };
+/** What the run was made under (CLAUDE.md: real-API experiments record their settings). */
+const seen = { requested_models: new Set(), entrypoints: new Set(), betas: new Set() };
 
 async function route(req, raw, headers) {
   const view = (() => { const r = parseRequest(req.headers, raw); return r.ok ? r.view : null; })();
   if (!view || !String(view.requestedModel).includes(from) || view.toolCount === 0) return { body: raw, headers, note: "passthrough" };
   const parsed = JSON.parse(raw.toString("utf8"));
   const facts = shapeFacts(parsed, headers);
+  seen.requested_models.add(view.requestedModel);
+  seen.entrypoints.add(view.entrypoint);
+  for (const b of facts.betas) seen.betas.add(b);
+
+  if (view.kind === "main" && view.turn === "new" && !state.mainNewProbed && !noMainNew) {
+    state.mainNewProbed = true;
+    for (const t of TARGETS) {
+      const r = rt(raw, t);
+      if (r.ok) await probe(`main-new:${t}`, req.url, headers, r.body, r.fields, facts);
+      const beta = String(headers["anthropic-beta"] ?? "");
+      if (r.ok && probe1m && !beta.includes("context-1m-")) {
+        await probe(`main-new:${t}:+context-1m beta`, req.url, { ...headers, "anthropic-beta": `${beta},context-1m-2025-08-07` }, r.body, r.fields, { ...facts, betas: [...facts.betas, "context-1m-2025-08-07"] });
+      }
+    }
+    return { body: raw, headers, note: "main-new passthrough" };
+  }
 
   if (view.kind === "subagent" && view.agentId) {
     let target = state.subTarget.get(view.agentId);
+    if (target === undefined && delayPin && !state.subDelayed.has(view.agentId)) {
+      state.subDelayed.add(view.agentId);
+      for (const t of TARGETS) {
+        const r = rt(raw, t);
+        if (r.ok) await probe(`subagent-first-no-history:${t}`, req.url, headers, r.body, r.fields, facts);
+      }
+      return { body: raw, headers, note: "subagent-first passthrough (delay-pin)", facts };
+    }
     if (target === undefined) {
       // Probe every target on the first request; pin this subagent to the next target in turn.
       for (const t of TARGETS) {
@@ -144,6 +187,11 @@ async function route(req, raw, headers) {
       state.subTarget.set(view.agentId, target);
       const r = rt(raw, target);
       return r.ok ? { body: r.body, headers, note: `subagent-first routed:${target}`, fields: r.fields, facts } : { body: raw, headers, note: `rewrite_failed:${r.reason}` };
+    }
+    if (!state.subUnpinProbed.has(view.agentId)) {
+      // The retry-with-original / pin release case for a subagent: its original bytes, now with target-made turns.
+      state.subUnpinProbed.add(view.agentId);
+      await probe(`subagent-unpin-to-${from} (original bytes, ${target}-made turns in history)`, req.url, headers, raw, [], facts);
     }
     const r = rt(raw, target);
     return r.ok ? { body: r.body, headers, note: `subagent-pinned:${target}`, fields: r.fields, facts } : { body: raw, headers, note: `rewrite_failed:${r.reason}` };
@@ -222,10 +270,22 @@ server.listen(0, "127.0.0.1", () => {
   const env = {};
   for (const [k, v] of Object.entries(process.env)) { if (k.startsWith("CLAUDE_CODE_") || k === "CLAUDECODE") continue; env[k] = v; }
   env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${server.address().port}`;
-  const child = spawn("claude", claudeArgs, { cwd, stdio: ["ignore", "ignore", "inherit"], env });
+  let child;
+  if (interactiveExitS === null) child = spawn("claude", claudeArgs, { cwd, stdio: ["ignore", "ignore", "inherit"], env });
+  else {
+    // The TUI: Enter at 5 s accepts a folder-trust dialog if one is shown (a no-op on an empty prompt otherwise).
+    const i = claudeArgs.indexOf("-p");
+    const prompt = claudeArgs[i + 1];
+    const rest = claudeArgs.filter((_, k) => k !== i && k !== i + 1);
+    const keys = ["5", "\\r", "10", prompt, "12", "\\r", String(interactiveExitS), "/exit", String(interactiveExitS + 3), "\\r"];
+    child = spawn("python3", [join(import.meta.dirname, "pty-run.py"), ...keys, "--", "claude", ...rest], { cwd, stdio: ["ignore", "ignore", "inherit"], env });
+  }
   child.on("exit", (code) => {
     server.close();
-    writeFileSync(join(out, "results.json"), JSON.stringify({ from, targets: TARGETS, cap_usd: capUsd, est_total_usd: Number(spent.toFixed(4)), claude_exit: code, probes, forwarded }, null, 1));
+    let modelSetting = null;
+    try { modelSetting = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8")).model ?? null; } catch { /* none */ }
+    const settings = { model_setting: modelSetting, claude_args: claudeArgs.map((a, i) => (claudeArgs[i - 1] === "-p" ? "<prompt>" : a)), requested_models: [...seen.requested_models], entrypoints: [...seen.entrypoints], betas_seen: [...seen.betas].sort() };
+    writeFileSync(join(out, "results.json"), JSON.stringify({ from, targets: TARGETS, settings, cap_usd: capUsd, est_total_usd: Number(spent.toFixed(4)), claude_exit: code, probes, forwarded }, null, 1));
     log(`claude exited ${code}; estimated spend $${spent.toFixed(3)}; results in ${out}/results.json`);
     process.exit(0);
   });

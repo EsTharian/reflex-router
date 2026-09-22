@@ -222,6 +222,31 @@
     "PreToolUse:Read(sub)",
     "PostToolUse:Read(sub)"
    ]
+  },
+  {
+   "file": "experiment.route-haiku-first-turn-up.results.json",
+   "kind": "experiment",
+   "description": "Upgrades, run 1: the main chat's first Haiku request retargeted to Sonnet and to Opus (probed, not sent); then one subagent and the main chat routed to Sonnet (first request, pinned continuation, a main continuation holding a signed Haiku thinking block). The cap was set to $0.50 and the run spent an estimated $1.05, so the later probes were skipped. Model setting haiku (the user's own settings, no --model), sdk-cli, Claude Code 2.1.278. Statuses, API errors, shape facts (incl. beta names and history thinking-block counts), rewritten fields, usage, estimated cost and the run's settings; no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-haiku-to-sonnet-opus.results.json",
+   "kind": "experiment",
+   "description": "Upgrades, run 2: two subagents (first request probed to Sonnet and Opus; pinned to Sonnet and Opus), the main chat pinned to Opus with the four main-continuation variants probed to both targets; un-pin to Haiku with Opus-made thinking in the history; cross-target to Sonnet with Haiku- and Opus-made history. Model setting haiku (the user's own settings, no --model), sdk-cli, Claude Code 2.1.278. Statuses, API errors, shape facts (incl. beta names and history thinking-block counts), rewritten fields, usage, estimated cost and the run's settings; no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-haiku-to-sonnet-unpin.results.json",
+   "kind": "experiment",
+   "description": "Upgrades, run 3: main chat pinned to Sonnet; un-pin to Haiku (original bytes) with a Haiku-made and a Sonnet-made signed thinking block in the history. Model setting haiku (the user's own settings, no --model), sdk-cli, Claude Code 2.1.278. Statuses, API errors, shape facts (incl. beta names and history thinking-block counts), rewritten fields, usage, estimated cost and the run's settings; no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-haiku-up-interactive.results.json",
+   "kind": "experiment",
+   "description": "Upgrades, run 4: an INTERACTIVE Haiku session (TUI in a pseudo-terminal via scripts/spike/pty-run.py, cc_entrypoint=cli, 1-hour cache TTL, redact-thinking beta, thinking without display). First request probed to Sonnet and Opus, each also with the context-1m-2025-08-07 beta added; one subagent pinned to Sonnet; the main chat pinned to Sonnet with the four continuation variants probed to both targets; un-pin to Haiku and cross-target to Opus with Haiku- and Sonnet-made thinking in the history. Model setting haiku, no --model, Claude Code 2.1.278. Statuses, API errors, shape facts, rewritten fields, usage, estimated cost and the run's settings; no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-sonnet-to-opus-subagent.results.json",
+   "kind": "experiment",
+   "description": "Sonnet -> Opus on a native Sonnet subagent (the Haiku main chat spawned it with the Agent tool's model parameter; model setting haiku, no --model, sdk-cli). Its first request probed to Opus; its second request (a signed Sonnet thinking block, system messages mid-list and trailing, effort medium) probed and pinned to Opus; un-pin back to Sonnet with Opus-made thinking. Statuses, API errors, shape facts, rewritten fields, usage, estimated cost and the run's settings; no prompts, no headers."
   }
  ],
  "claude_code_version": "2.1.278",
