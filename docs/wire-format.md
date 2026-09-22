@@ -271,9 +271,38 @@ The rewrite is the model swap plus `thinking` `enabled` (budget) → `adaptive`;
 
 **Sonnet → Opus** (`experiment.route-sonnet-to-opus-subagent.results.json`, est. $0.61 over two runs, one kept). The model setting is `haiku` and `--model` is not used, so the Sonnet source was a native Sonnet **subagent** (the main chat set the Agent tool's `model` parameter). Its first request (no history), its second request (a signed Sonnet thinking block, `role:"system"` messages mid-list and trailing, `effort: "medium"`, the `effort-*` and `mid-conversation-system-*` betas), the pinned Opus continuations and un-pin back to Sonnet with Opus-made thinking were all accepted, with only `model` changed. A Sonnet **main chat** was not run; its request carries the same fields as that subagent request plus the interactive ones covered above. Efforts other than `medium` are untested, as for Opus → Sonnet (§5.3).
 
-**Not tested:** Fable in either direction, and histories near a context limit.
+### 5.6 Fable 5.1, efforts other than `medium`, a Sonnet main chat, and the Haiku context ceiling (experiment, 2.1.278)
 
-Route mode applies exactly the verified pairs: **Sonnet → Haiku, Opus → Sonnet, Opus → Haiku, Haiku → Sonnet, Haiku → Opus, Sonnet → Opus**. Upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
+Eight more sessions with `scripts/spike/route-experiment.mjs` (flags `--probe-efforts`, `--probe-ceiling`; probes now carry the product's header rewrite too). Estimated cost about $18.6 in total at list prices, plus one unpriced single-turn Fable capture (`scripts/spike/capture.mjs`, gitignored) to read the Fable request's structure. **Six of the eight used `--model` and some `--effort`**, a deliberate exception to the no-override rule approved by the user: a Sonnet, Opus or Fable source cannot be produced from the model setting `haiku` otherwise. Each results file records its flags.
+
+| Pair | First request | + effort low…max | Subagent | Main continuation (4 variants) | Un-pin to source | File |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sonnet main (effort xhigh) → Opus | 200 | 200 ×5 | 200 | 200 ×4 | 200 | `route-sonnet-main-to-opus-efforts` |
+| Opus (effort max) → Sonnet | 200 | 200 ×5 | 200 | 200 ×4 | 200 | `route-opus-max-to-sonnet-efforts` |
+| Haiku → Fable | 200 | 200 ×5 | 200 | 200 ×4 | 200 | `route-haiku-to-fable-and-ceiling` |
+| Sonnet → Fable | 200 | — | 200 | 200 ×4 | 200 | `route-sonnet-to-fable` |
+| Opus → Fable | 200 | — | 200 | 200 ×4 | 200 | `route-opus-to-fable` |
+| Fable → Haiku | 200 | — | 200 ×2 | 200 ×4 | 200 | `route-fable-down` |
+| Fable → Opus | 200 | 200 ×5 | 200 ×2 | 200 ×4 | — | `route-fable-down` |
+| Fable → Sonnet, rewrite as it was | **400** | **400 ×5** | **400** | **400 ×4** | — | `route-fable-down` |
+| Fable → Sonnet, fixed | 200 | 200 ×5 | 200 | 200 ×4 | 200 | `route-fable-to-sonnet` |
+
+**Fable → Sonnet needed a fix.** A Fable 5.1 request carries a per-turn effort on its `role:"system"` message (`{"role":"system","content":[…],"output_config":{"effort":"high"}}`, the same value as the top-level one) and the `per-turn-control-2026-07-01` beta. Sonnet 5 rejects the message field: with the beta, `output_config.effort requires a model that supports per-turn effort; this model does not`; with the beta removed, `messages.1.output_config: Extra inputs are not permitted`. `retarget` now drops `output_config` from system messages when the target is Sonnet (`messages.output_config_dropped:<n>`); the beta itself is harmless once the body is fixed (a "betas untouched" probe was accepted), so no `STRIP_BETAS` row. Opus and Fable keep the field; Haiku folds system messages into user messages, which already drops it.
+
+**The Haiku context ceiling is not safe for dense content.** Route mode estimates tokens as body bytes ÷ 2.5 and routes to Haiku only up to 150k estimated tokens (`CONTEXT_CEILING`, `src/tiers.ts`). The first request was padded with synthetic filler to exactly that estimate and sent to Haiku:
+
+| Filler | Bytes per token (measured) | Real tokens at an estimated 150k | Haiku (200k window) |
+| --- | --- | --- | --- |
+| English prose | 4.43 / 4.59 | 81k–84k | 200 |
+| code | 3.05 / 3.11 | 119k–122k | 200 |
+| this repository's `package-lock.json` | 2.69 | 139k | 200 |
+| digits and punctuation | ~1.4 | 244k / 265k | **400** `prompt is too long` |
+
+So a request made mostly of numeric or symbol-heavy text (data files, minified output) can be estimated under the ceiling and still exceed Haiku's window. Fail-open holds: the rejection triggers the retry with the original bytes. The cost is one rejected request, and the Haiku tier being disabled for 30 minutes as if it had rejected the rewrite for another reason. Not fixed here.
+
+**Not tested:** histories near the 1M window of Sonnet, Opus or Fable, and Fable → Haiku with a thinking budget too small for `max_tokens` (retarget refuses that case itself: `thinking_budget_too_small`).
+
+Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus and Fable** (§5.1–5.6). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 

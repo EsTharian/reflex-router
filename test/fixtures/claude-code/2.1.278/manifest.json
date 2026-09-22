@@ -247,6 +247,46 @@
    "file": "experiment.route-sonnet-to-opus-subagent.results.json",
    "kind": "experiment",
    "description": "Sonnet -> Opus on a native Sonnet subagent (the Haiku main chat spawned it with the Agent tool's model parameter; model setting haiku, no --model, sdk-cli). Its first request probed to Opus; its second request (a signed Sonnet thinking block, system messages mid-list and trailing, effort medium) probed and pinned to Opus; un-pin back to Sonnet with Opus-made thinking. Statuses, API errors, shape facts, rewritten fields, usage, estimated cost and the run's settings; no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-haiku-to-fable-and-ceiling.results.json",
+   "kind": "experiment",
+   "description": "Model setting haiku (the user's own, no --model). Haiku -> Fable 5.1: first request (plus effort low..max), subagent first/pinned, main continuation variants, un-pin to Haiku with Fable-made thinking. Plus the Haiku context-ceiling probe: the first request padded with synthetic filler (prose / code / dense digits+punctuation) to route mode's estimated 150k tokens and sent to Haiku; dense was 244k real tokens and rejected. Statuses, API errors, shape facts, rewritten fields (incl. anthropic-beta removals), usage, estimated cost and the run's settings (model flag, effort flag, requested models, entrypoints, betas seen); no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-sonnet-main-to-opus-efforts.results.json",
+   "kind": "experiment",
+   "description": "claude --model sonnet --effort xhigh (a documented exception to the no-override rule, approved by the user). Sonnet main chat -> Opus: first request with effort low..max, main continuation variants with a Sonnet thinking block, un-pin to Sonnet; subagent; context-ceiling probes incl. this repository's package-lock.json as filler. Statuses, API errors, shape facts, rewritten fields (incl. anthropic-beta removals), usage, estimated cost and the run's settings (model flag, effort flag, requested models, entrypoints, betas seen); no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-opus-max-to-sonnet-efforts.results.json",
+   "kind": "experiment",
+   "description": "claude --model opus --effort max (approved exception). Opus -> Sonnet with effort max and low..xhigh, subagent, main continuation variants, un-pin to Opus with Sonnet-made thinking. Statuses, API errors, shape facts, rewritten fields (incl. anthropic-beta removals), usage, estimated cost and the run's settings (model flag, effort flag, requested models, entrypoints, betas seen); no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-fable-down.results.json",
+   "kind": "experiment",
+   "description": "claude --model fable (approved exception). Fable 5.1 -> Haiku / Sonnet / Opus with the rewrite as it was: Haiku and Opus accepted everywhere, every Sonnet probe rejected (\"output_config.effort requires a model that supports per-turn effort\"). The requests carry the per-turn-control-2026-07-01 beta and a per-message output_config on the system message. Statuses, API errors, shape facts, rewritten fields (incl. anthropic-beta removals), usage, estimated cost and the run's settings (model flag, effort flag, requested models, entrypoints, betas seen); no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-fable-to-sonnet-beta-stripped.results.json",
+   "kind": "experiment",
+   "description": "Diagnosis step: Fable 5.1 -> Sonnet with per-turn-control-* removed from anthropic-beta but the body unchanged; the error becomes \"messages.1.output_config: Extra inputs are not permitted\". The beta removal was then dropped as unnecessary. Statuses, API errors, shape facts, rewritten fields (incl. anthropic-beta removals), usage, estimated cost and the run's settings (model flag, effort flag, requested models, entrypoints, betas seen); no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-fable-to-sonnet.results.json",
+   "kind": "experiment",
+   "description": "Fable 5.1 -> Sonnet with the fix (system messages lose output_config, betas untouched): first request (plus effort low..max, plus a betas-untouched variant), subagent first/pinned, main continuation variants, pinned continuations, un-pin to Fable with Sonnet-made thinking; all accepted. Statuses, API errors, shape facts, rewritten fields (incl. anthropic-beta removals), usage, estimated cost and the run's settings (model flag, effort flag, requested models, entrypoints, betas seen); no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-sonnet-to-fable.results.json",
+   "kind": "experiment",
+   "description": "claude --model sonnet (approved exception). Sonnet -> Fable 5.1: first request, subagent, main continuation variants with a Sonnet thinking block, un-pin to Sonnet with Fable-made thinking; all accepted. Statuses, API errors, shape facts, rewritten fields (incl. anthropic-beta removals), usage, estimated cost and the run's settings (model flag, effort flag, requested models, entrypoints, betas seen); no prompts, no headers."
+  },
+  {
+   "file": "experiment.route-opus-to-fable.results.json",
+   "kind": "experiment",
+   "description": "claude --model opus (approved exception). Opus -> Fable 5.1: first request, subagent, main continuation variants with an Opus thinking block, un-pin to Opus with Fable-made thinking; all accepted. Statuses, API errors, shape facts, rewritten fields (incl. anthropic-beta removals), usage, estimated cost and the run's settings (model flag, effort flag, requested models, entrypoints, betas seen); no prompts, no headers."
   }
  ],
  "claude_code_version": "2.1.278",

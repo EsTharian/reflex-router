@@ -137,3 +137,28 @@ describe("retarget within the adaptive families", () => {
     assert.deepEqual(r.fields, ["model"]);
   });
 });
+
+describe("retarget from Fable 5.1: per-message output_config", () => {
+  // The shape Fable 5.1 requests carry (2.1.278, observed): a system message with its own per-turn effort.
+  const fable = Buffer.from(JSON.stringify({
+    model: "claude-fable-5-1",
+    max_tokens: 64000,
+    thinking: { type: "adaptive", display: "omitted" },
+    output_config: { effort: "high" },
+    messages: [{ role: "user", content: [{ type: "text", text: "U" }] }, { role: "system", content: [{ type: "text", text: "S" }], output_config: { effort: "high" } }],
+  }));
+  it("Sonnet: the system message stays, its output_config goes; the top-level effort stays", () => {
+    const r = retarget(fable, { from: "fable", to: "sonnet", model: "claude-sonnet-5" });
+    assert.ok(r.ok);
+    const b = JSON.parse(r.body.toString()) as Json;
+    assert.deepEqual((b["messages"] as Json[])[1], { role: "system", content: [{ type: "text", text: "S" }] });
+    assert.deepEqual(b["output_config"], { effort: "high" });
+    assert.deepEqual(r.fields, ["model", "messages.output_config_dropped:1"]);
+  });
+  it("Opus keeps it: only the model changes", () => {
+    const r = retarget(fable, { from: "fable", to: "opus", model: "claude-opus-5" });
+    assert.ok(r.ok);
+    assert.deepEqual(r.fields, ["model"]);
+    assert.deepEqual((JSON.parse(r.body.toString()) as { messages: Json[] }).messages[1]!["output_config"], { effort: "high" });
+  });
+});

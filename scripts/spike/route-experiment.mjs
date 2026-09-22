@@ -17,6 +17,13 @@
 //
 //   node --import tsx scripts/spike/route-experiment.mjs --from opus --out DIR --cap-usd 0.40 -- <claude args>
 //
+// Options: --to a,b (targets instead of the cheaper tiers) · --main <tier> (the main chat's pin) · --no-main-new ·
+// --probe-1m (first request + context-1m beta) · --probe-efforts (first request at each effort) · --probe-ceiling
+// (first request padded to the Haiku ceiling, sent to Haiku) · --delay-pin (decide a subagent at its second request) ·
+// --interactive <exit-s> (TUI in a pseudo-terminal via pty-run.py). Probes and routed requests carry the product's
+// header rewrite (STRIP_BETAS). The cap is checked before each probe, not against its cost: one large probe can
+// overshoot it.
+//
 // Headers of the live request (auth included) are held in memory only and never written. Probes stop reading at
 // `message_start` (enough for status and input usage) and are aborted. Recorded per probe: status, API error
 // message, shape facts, rewritten fields, usage and an estimated cost. No prompt text is recorded.
@@ -27,7 +34,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseRequest } from "../../src/wire/claude-code.ts";
-import { retarget } from "../../src/wire/rewrite.ts";
+import { retarget, retargetBetas } from "../../src/wire/rewrite.ts";
+import { CONTEXT_CEILING, estimateTokens } from "../../src/tiers.ts";
 
 const argv = process.argv.slice(2);
 let out = join("_dumps", "route-exp-" + Date.now());
@@ -39,6 +47,10 @@ let mainTarget = null;
 let noMainNew = false;
 /** Also probe each main-new target with the long-context beta added (a `<model>[1m]` setting sends it). */
 let probe1m = false;
+/** Also probe each main-new target that takes `effort` with low / medium / high / xhigh / max. */
+let probeEfforts = false;
+/** Also send the main-new request, padded to route mode's Haiku context ceiling (estimated tokens), to Haiku. */
+let probeCeiling = false;
 /** Let each subagent's first request through unchanged, so its second request holds a source-model turn; decide there. */
 let delayPin = false;
 /** Run the TUI in a pseudo-terminal (scripts/spike/pty-run.py), type the -p prompt, and /exit after this many seconds. */
@@ -53,21 +65,23 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--main") mainTarget = argv[++i];
   else if (argv[i] === "--no-main-new") noMainNew = true;
   else if (argv[i] === "--probe-1m") probe1m = true;
+  else if (argv[i] === "--probe-efforts") probeEfforts = true;
+  else if (argv[i] === "--probe-ceiling") probeCeiling = true;
   else if (argv[i] === "--delay-pin") delayPin = true;
   else if (argv[i] === "--interactive") interactiveExitS = Number(argv[++i]);
   else if (argv[i] === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
 }
 mkdirSync(out, { recursive: true, mode: 0o700 });
 
-const MODELS = { haiku: "claude-haiku-4-5-20251001", sonnet: "claude-sonnet-5", opus: "claude-opus-5" };
-const ORDER = ["haiku", "sonnet", "opus"];
+const MODELS = { haiku: "claude-haiku-4-5-20251001", sonnet: "claude-sonnet-5", opus: "claude-opus-5", fable: "claude-fable-5-1" };
+const ORDER = ["haiku", "sonnet", "opus", "fable"];
 /** --to, or else the cheaper tiers than the source; cheapest first. */
 const TARGETS = to ?? ORDER.slice(0, ORDER.indexOf(from));
 const MAIN_TARGET = mainTarget ?? TARGETS[0];
 const upstream = new URL("https://api.anthropic.com");
 const SKIP = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade", "host", "content-length", "accept-encoding", "proxy-authorization", "te", "trailer"]);
 // $/MTok (platform.claude.com pricing, 2026-09-19): input, output. Cache write 1.25x (5m) / 2x (1h), read 0.1x.
-const PRICE = { sonnet: [2, 10], haiku: [1, 5], opus: [5, 25] };
+const PRICE = { sonnet: [2, 10], haiku: [1, 5], opus: [5, 25], fable: [10, 50] };
 const priceOf = (model) => PRICE[Object.keys(PRICE).find((k) => String(model).includes(k)) ?? "sonnet"];
 function costUsd(model, u) {
   if (!u) return 0;
@@ -127,8 +141,20 @@ function send(path, headers, body, { probe }) {
   });
 }
 
-async function probe(label, path, headers, bodyBuf, fields, facts) {
+/** The headers route mode would send with `body`: the product's per-target beta removals (STRIP_BETAS) when retargeted. */
+function productHeaders(headers, body) {
+  let model = null;
+  try { model = JSON.parse(body.toString("utf8")).model; } catch { return { headers, stripped: [] }; }
+  const tier = Object.keys(MODELS).find((k) => MODELS[k] === model);
+  if (!tier || tier === from) return { headers, stripped: [] };
+  const b = retargetBetas(headers["anthropic-beta"], tier);
+  return b.stripped.length === 0 ? { headers, stripped: [] } : { headers: { ...headers, "anthropic-beta": b.value }, stripped: b.stripped };
+}
+
+async function probe(label, path, rawHeaders, bodyBuf, rawFields, facts, { keepHeaders = false } = {}) {
   if (spent >= capUsd) { probes.push({ label, skipped: "cap reached" }); log(`skip ${label} (cap)`); return null; }
+  const { headers, stripped } = keepHeaders ? { headers: rawHeaders, stripped: [] } : productHeaders(rawHeaders, bodyBuf);
+  const fields = [...rawFields, ...stripped.map((x) => `anthropic-beta:-${x}`)];
   const r = await send(path, headers, bodyBuf, { probe: true });
   const model = JSON.parse(bodyBuf.toString("utf8")).model;
   const usd = costUsd(model, r.usage);
@@ -140,6 +166,38 @@ async function probe(label, path, headers, bodyBuf, fields, facts) {
 
 const variantBody = (parsed, mutate) => { const b = structuredClone(parsed); mutate?.(b); return Buffer.from(JSON.stringify(b)); };
 const rt = (buf, to, extra = {}) => retarget(buf, { from, to, model: MODELS[to], ...extra });
+
+/**
+ * Pads the last user text block with synthetic filler (never user text) until the body is estimated at exactly the Haiku
+ * ceiling, then sends it to Haiku: does the byte-based estimate keep a request inside Haiku's real 200k window? Three
+ * fillers with different bytes-per-token: English prose, code, and dense digits/punctuation (the worst case).
+ */
+const FILLERS = {
+  prose: "The quarterly report describes how the team moved the service to a new region, what broke, and what they changed afterwards. ",
+  code: "export function f(a: number, b: string[]): Record<string, number> { return Object.fromEntries(b.map((x, i) => [x, a + i])); }\n",
+  dense: "7,3;9.1|4-8=2+6*0/5^1%3#9@2!4?8~6&0 ",
+  // A realistic dense case: this repository's own lockfile (public, no user text), as a Read tool result would carry it.
+  lockfile: readFileSync(join(import.meta.dirname, "..", "..", "package-lock.json"), "utf8"),
+};
+async function ceilingProbes(req, raw, headers, facts) {
+  const ceiling = CONTEXT_CEILING.haiku;
+  for (const [kind, unit] of Object.entries(FILLERS)) {
+    const b = JSON.parse(raw.toString("utf8"));
+    const last = [...b.messages].reverse().find((m) => m.role === "user");
+    if (typeof last.content === "string") last.content = [{ type: "text", text: last.content }];
+    const block = { type: "text", text: "" };
+    last.content.push(block);
+    const base = Buffer.byteLength(JSON.stringify(b));
+    const need = ceiling * 2.5 - base;
+    block.text = unit.repeat(Math.ceil(need / Buffer.byteLength(JSON.stringify(unit)) + 1));
+    let body = Buffer.from(JSON.stringify(b));
+    while (estimateTokens(body.length) > ceiling) { block.text = block.text.slice(0, -50); body = Buffer.from(JSON.stringify(b)); }
+    let send = body;
+    let fields = [];
+    if (from !== "haiku") { const r = rt(body, "haiku"); if (!r.ok) continue; send = r.body; fields = r.fields; }
+    await probe(`ceiling:${kind} (est ${estimateTokens(send.length)} tokens, ${send.length} bytes) -> haiku`, req.url, headers, send, fields, { ...facts, body_bytes: send.length, est_tokens: estimateTokens(send.length), filler: kind });
+  }
+}
 
 const state = { subTarget: new Map(), subCount: 0, mainPinned: null, unpinProbed: false, crossProbed: false, mainNewProbed: false, subUnpinProbed: new Set(), subDelayed: new Set() };
 /** What the run was made under (CLAUDE.md: real-API experiments record their settings). */
@@ -159,11 +217,20 @@ async function route(req, raw, headers) {
     for (const t of TARGETS) {
       const r = rt(raw, t);
       if (r.ok) await probe(`main-new:${t}`, req.url, headers, r.body, r.fields, facts);
+      if (r.ok && productHeaders(headers, r.body).stripped.length > 0) await probe(`main-new:${t}:betas untouched`, req.url, headers, r.body, r.fields, facts, { keepHeaders: true });
+      if (r.ok && probeEfforts && t !== "haiku") {
+        for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+          const b = JSON.parse(r.body.toString("utf8"));
+          b.output_config = { ...b.output_config, effort };
+          await probe(`main-new:${t}:effort=${effort}`, req.url, headers, Buffer.from(JSON.stringify(b)), [...r.fields, `output_config.effort=${effort}`], { ...facts, effort });
+        }
+      }
       const beta = String(headers["anthropic-beta"] ?? "");
       if (r.ok && probe1m && !beta.includes("context-1m-")) {
         await probe(`main-new:${t}:+context-1m beta`, req.url, { ...headers, "anthropic-beta": `${beta},context-1m-2025-08-07` }, r.body, r.fields, { ...facts, betas: [...facts.betas, "context-1m-2025-08-07"] });
       }
     }
+    if (probeCeiling) await ceilingProbes(req, raw, headers, facts);
     return { body: raw, headers, note: "main-new passthrough" };
   }
 
@@ -242,6 +309,7 @@ const server = http.createServer((req, res) => {
     if (req.method === "POST" && req.url.startsWith("/v1/messages") && !req.url.includes("count_tokens")) {
       try { plan = await route(req, raw, headers); } catch (e) { log(`route error ${e.message}; passthrough`); }
     }
+    if (plan.note !== "passthrough") { const ph = productHeaders(plan.headers, plan.body); plan = { ...plan, headers: ph.headers, fields: [...(plan.fields ?? []), ...ph.stripped.map((x) => `anthropic-beta:-${x}`)] }; }
     const up = https.request({ hostname: upstream.hostname, method: req.method, path: req.url, headers: { ...plan.headers, host: upstream.host, ...(plan.body.length ? { "content-length": String(plan.body.length) } : {}), "accept-encoding": "identity" } }, (ur) => {
       const oh = {};
       for (const [k, v] of Object.entries(ur.headers)) if (!SKIP.has(k)) oh[k] = v;

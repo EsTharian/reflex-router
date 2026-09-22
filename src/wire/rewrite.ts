@@ -10,6 +10,12 @@ const STYLE: Readonly<Record<Tier, ThinkingStyle>> = { haiku: "budget", sonnet: 
 /** Families that accept `role:"system"` messages and `output_config.effort` (both rejected by Haiku 4.5: M1 experiment). */
 const ACCEPTS_SYSTEM_MESSAGES: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: true, opus: true, fable: true };
 const ACCEPTS_EFFORT: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: true, opus: true, fable: true };
+/**
+ * Families that take a per-message `output_config` on a `role:"system"` message (per-turn effort; Fable 5.1 requests
+ * carry one). Sonnet 5 rejects it: "messages.1.output_config: Extra inputs are not permitted" (2.1.278
+ * experiment.route-fable-to-sonnet). Haiku never sees it: its system messages are folded into user messages.
+ */
+const ACCEPTS_MESSAGE_OUTPUT_CONFIG: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: false, opus: true, fable: true };
 
 /** Native Haiku 4.5 requests from Claude Code use this budget (with max_tokens 32000). */
 export const HAIKU_THINKING_BUDGET = 31999;
@@ -17,11 +23,12 @@ export const HAIKU_THINKING_BUDGET = 31999;
 const MIN_THINKING_BUDGET = 1024;
 
 /**
- * Source -> target pairs whose rewrite the API accepted in real sessions (docs/wire-format.md §5.1-5.5,
+ * Source -> target pairs whose rewrite the API accepted in real sessions (docs/wire-format.md §5.1-5.6,
  * test/fixtures/claude-code/2.1.277/experiment.*, 2.1.278/experiment.route-haiku-*). Route mode only rewrites these;
  * anything else is logged as `rewrite_unverified` and forwarded unchanged.
  */
-const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>sonnet", "opus>haiku", "haiku>sonnet", "haiku>opus", "sonnet>opus"]);
+const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>sonnet", "opus>haiku", "haiku>sonnet", "haiku>opus", "sonnet>opus",
+  "fable>haiku", "fable>sonnet", "fable>opus", "haiku>fable", "sonnet>fable", "opus>fable"]);
 export const isVerifiedRetarget = (from: Tier, to: Tier): boolean => VERIFIED_RETARGETS.has(`${from}>${to}`);
 
 /**
@@ -134,6 +141,15 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
     const r = foldSystemMessages(messages);
     messages = r.messages;
     fields.push(`messages.system_folded:${r.folded}`);
+  }
+  if (!ACCEPTS_MESSAGE_OUTPUT_CONFIG[opts.to] && messages.some((m) => m["role"] === "system" && "output_config" in m)) {
+    let dropped = 0;
+    messages = messages.map((m) => {
+      if (m["role"] !== "system" || !("output_config" in m)) return m;
+      dropped++;
+      return Object.fromEntries(Object.entries(m).filter(([k]) => k !== "output_config"));
+    });
+    fields.push(`messages.output_config_dropped:${dropped}`);
   }
   if (opts.dropHistoryThinking) {
     let dropped = 0;

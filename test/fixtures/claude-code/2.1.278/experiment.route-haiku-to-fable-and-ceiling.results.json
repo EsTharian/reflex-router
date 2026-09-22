@@ -1,0 +1,1164 @@
+{
+ "from": "haiku",
+ "targets": [
+  "fable"
+ ],
+ "settings": {
+  "model_setting": "haiku",
+  "claude_args": [
+   "-p",
+   "<prompt>",
+   "--allowedTools",
+   "Bash(ls:*)",
+   "Bash(pwd)",
+   "Agent"
+  ],
+  "requested_models": [
+   "claude-haiku-4-5-20251001"
+  ],
+  "entrypoints": [
+   "sdk-cli"
+  ],
+  "betas_seen": [
+   "advisor-tool-2026-03-01",
+   "claude-code-20250219",
+   "context-management-2025-06-27",
+   "extended-cache-ttl-2025-04-11",
+   "interleaved-thinking-2025-05-14",
+   "oauth-2025-04-20",
+   "prompt-caching-scope-2026-01-05",
+   "thinking-token-count-2026-05-13"
+  ]
+ },
+ "cap_usd": 100,
+ "est_total_usd": 2.7103,
+ "claude_exit": 0,
+ "probes": [
+  {
+   "label": "main-new:fable",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 58123,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 58123
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 1.1626
+  },
+  {
+   "label": "main-new:fable:effort=low",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking",
+    "output_config.effort=low"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": "low",
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 58123,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.05826
+  },
+  {
+   "label": "main-new:fable:effort=medium",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking",
+    "output_config.effort=medium"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": "medium",
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 58123,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.05826
+  },
+  {
+   "label": "main-new:fable:effort=high",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking",
+    "output_config.effort=high"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 58123,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.05826
+  },
+  {
+   "label": "main-new:fable:effort=xhigh",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking",
+    "output_config.effort=xhigh"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": "xhigh",
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 58123,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.05826
+  },
+  {
+   "label": "main-new:fable:effort=max",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking",
+    "output_config.effort=max"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": "max",
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 58123,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.05826
+  },
+  {
+   "label": "ceiling:prose (est 148724 tokens, 371808 bytes) -> haiku",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ],
+    "body_bytes": 371808,
+    "est_tokens": 148724,
+    "filler": "prose"
+   },
+   "usage": {
+    "input_tokens": 39971,
+    "cache_creation_input_tokens": 5573,
+    "cache_read_input_tokens": 38426,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 5573
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.05496
+  },
+  {
+   "label": "ceiling:code (est 148786 tokens, 371963 bytes) -> haiku",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ],
+    "body_bytes": 371963,
+    "est_tokens": 148786,
+    "filler": "code"
+   },
+   "usage": {
+    "input_tokens": 75449,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 43999,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.07985
+  },
+  {
+   "label": "ceiling:dense (est 145566 tokens, 363915 bytes) -> haiku",
+   "status": 400,
+   "accepted": false,
+   "error": "prompt is too long: 244258 tokens > 200000 maximum",
+   "fields": [],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ],
+    "body_bytes": 363915,
+    "est_tokens": 145566,
+    "filler": "dense"
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "subagent-first:fable",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01"
+    ]
+   },
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 33624,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 33624,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 20,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.42134
+  },
+  {
+   "label": "main-cont1:fable:keep-history-thinking",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 1,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 1740,
+    "cache_read_input_tokens": 58123,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1740
+    },
+    "output_tokens": 39,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.09489
+  },
+  {
+   "label": "main-cont1:fable:drop-history-thinking",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking",
+    "messages.thinking_dropped:1"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 1,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 599,
+    "cache_read_input_tokens": 58123,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 599
+    },
+    "output_tokens": 22,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.07122
+  },
+  {
+   "label": "subagent-unpin-to-haiku (original bytes, fable-made turns in history)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01"
+    ]
+   },
+   "usage": {
+    "input_tokens": 5,
+    "cache_creation_input_tokens": 26672,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 26672,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.03335
+  },
+  {
+   "label": "main-cont1:fable:no-display (interactive shape)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 1,
+    "thinking": {
+     "type": "enabled"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 59863,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 25,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.06113
+  },
+  {
+   "label": "main-cont1:fable:+redact-thinking beta (interactive header)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 1,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 59863,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 33,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.06153
+  },
+  {
+   "label": "unpin-to-haiku (original bytes, fable-made turns in history)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uauauau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 1030,
+    "cache_read_input_tokens": 45821,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1030
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.00666
+  }
+ ],
+ "forwarded": [
+  {
+   "note": "main-new passthrough",
+   "model": "claude-haiku-4-5-20251001",
+   "status": 200,
+   "error": null,
+   "fields": [],
+   "facts": null,
+   "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 43999,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 997,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 861
+    },
+    "iterations": [
+     {
+      "input_tokens": 10,
+      "output_tokens": 997,
+      "cache_read_input_tokens": 43999,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.00939
+  },
+  {
+   "note": "subagent-first routed:fable",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "u",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01"
+    ]
+   },
+   "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33624,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 161,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "iterations": [
+     {
+      "input_tokens": 4,
+      "output_tokens": 161,
+      "cache_read_input_tokens": 33624,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.04171
+  },
+  {
+   "note": "subagent-pinned:fable",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 1587,
+    "cache_read_input_tokens": 33624,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 1587,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 3,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3,
+      "cache_read_input_tokens": 33624,
+      "cache_creation_input_tokens": 1587,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 1587,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.05363
+  },
+  {
+   "note": "main-cont1 routed:fable",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 1,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 59863,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 41,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 41,
+      "cache_read_input_tokens": 59863,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.06193
+  },
+  {
+   "note": "passthrough",
+   "model": "claude-haiku-4-5-20251001",
+   "status": 200,
+   "error": null,
+   "fields": [],
+   "facts": null,
+   "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 1822,
+    "cache_read_input_tokens": 43999,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1822
+    },
+    "output_tokens": 945,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 628
+    },
+    "iterations": [
+     {
+      "input_tokens": 10,
+      "output_tokens": 945,
+      "cache_read_input_tokens": 43999,
+      "cache_creation_input_tokens": 1822,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 1822
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.01278
+  },
+  {
+   "note": "main-pinned:fable",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uauauau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 1714,
+    "cache_read_input_tokens": 59863,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1714
+    },
+    "output_tokens": 506,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 428
+    },
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 506,
+      "cache_read_input_tokens": 59863,
+      "cache_creation_input_tokens": 1714,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 1714
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.11946
+  },
+  {
+   "note": "main-pinned:fable",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "thinking"
+   ],
+   "facts": {
+    "model": "claude-haiku-4-5-20251001",
+    "roles": "uauauauau",
+    "system_positions": [],
+    "system_mid_list": false,
+    "history_thinking_blocks": 4,
+    "thinking": {
+     "budget_tokens": 31999,
+     "type": "enabled",
+     "display": "omitted"
+    },
+    "effort": null,
+    "max_tokens": 32000,
+    "betas": [
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "claude-code-20250219",
+     "advisor-tool-2026-03-01",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 524,
+    "cache_read_input_tokens": 61577,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 524
+    },
+    "output_tokens": 8,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 8,
+      "cache_read_input_tokens": 61577,
+      "cache_creation_input_tokens": 524,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 524
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.07248
+  }
+ ]
+}

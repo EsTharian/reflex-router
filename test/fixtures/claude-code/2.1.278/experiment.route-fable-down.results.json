@@ -1,0 +1,2329 @@
+{
+ "from": "fable",
+ "targets": [
+  "haiku",
+  "sonnet",
+  "opus"
+ ],
+ "settings": {
+  "model_setting": "haiku",
+  "claude_args": [
+   "--model",
+   "fable",
+   "-p",
+   "<prompt>",
+   "--allowedTools",
+   "Bash(ls:*)",
+   "Bash(pwd)",
+   "Agent"
+  ],
+  "requested_models": [
+   "claude-fable-5-1"
+  ],
+  "entrypoints": [
+   "sdk-cli"
+  ],
+  "betas_seen": [
+   "advisor-tool-2026-03-01",
+   "claude-code-20250219",
+   "context-management-2025-06-27",
+   "effort-2025-11-24",
+   "extended-cache-ttl-2025-04-11",
+   "interleaved-thinking-2025-05-14",
+   "mid-conversation-system-2026-04-07",
+   "mid-conversation-tool-changes-2026-07-01",
+   "oauth-2025-04-20",
+   "per-turn-control-2026-07-01",
+   "prompt-caching-scope-2026-01-05",
+   "thinking-token-count-2026-05-13"
+  ]
+ },
+ "cap_usd": 100,
+ "est_total_usd": 2.8356,
+ "claude_exit": 0,
+ "probes": [
+  {
+   "label": "main-new:haiku",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 33234,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 33234
+    },
+    "output_tokens": 3,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.06649
+  },
+  {
+   "label": "main-new:sonnet",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-new:sonnet:effort=low",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model",
+    "output_config.effort=low"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "low",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-new:sonnet:effort=medium",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model",
+    "output_config.effort=medium"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "medium",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-new:sonnet:effort=high",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model",
+    "output_config.effort=high"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-new:sonnet:effort=xhigh",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model",
+    "output_config.effort=xhigh"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "xhigh",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-new:sonnet:effort=max",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model",
+    "output_config.effort=max"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "max",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-new:opus",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 43298,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 43298
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.43301
+  },
+  {
+   "label": "main-new:opus:effort=low",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort=low"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "low",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 43298,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 6,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.02181
+  },
+  {
+   "label": "main-new:opus:effort=medium",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort=medium"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "medium",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 43298,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.02168
+  },
+  {
+   "label": "main-new:opus:effort=high",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort=high"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 43298,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.02168
+  },
+  {
+   "label": "main-new:opus:effort=xhigh",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort=xhigh"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "xhigh",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 43298,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.02168
+  },
+  {
+   "label": "main-new:opus:effort=max",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort=max"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "max",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 43298,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.02168
+  },
+  {
+   "label": "subagent-first:haiku",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 27158,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 27158,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.03396
+  },
+  {
+   "label": "subagent-first:sonnet",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "subagent-first:opus",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 35068,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 35068,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.21921
+  },
+  {
+   "label": "subagent-unpin-to-fable (original bytes, haiku-made turns in history)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usaus",
+    "system_positions": [
+     1,
+     4
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 1,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 32,
+    "cache_creation_input_tokens": 36711,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 36711,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 20,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.46021
+  },
+  {
+   "label": "subagent-first:haiku",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 4080,
+    "cache_read_input_tokens": 23078,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 4080,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 3,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.00743
+  },
+  {
+   "label": "subagent-first:sonnet",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "subagent-first:opus",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4985,
+    "cache_read_input_tokens": 30083,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 4985,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.04623
+  },
+  {
+   "label": "subagent-unpin-to-fable (original bytes, sonnet-made turns in history)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4985,
+    "cache_read_input_tokens": 30083,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 4985,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 20,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.09342
+  },
+  {
+   "label": "main-cont1:haiku:keep-history-thinking",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 36,
+    "cache_creation_input_tokens": 5861,
+    "cache_read_input_tokens": 28110,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 5861
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.01457
+  },
+  {
+   "label": "main-cont1:haiku:drop-history-thinking",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2",
+    "messages.thinking_dropped:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 38,
+    "cache_creation_input_tokens": 913,
+    "cache_read_input_tokens": 33234,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 913
+    },
+    "output_tokens": 4,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.00521
+  },
+  {
+   "label": "main-cont1:haiku:no-display (interactive shape)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 36,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33971,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.00344
+  },
+  {
+   "label": "main-cont1:haiku:+redact-thinking beta (interactive header)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 36,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33971,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.00344
+  },
+  {
+   "label": "main-cont1:sonnet:keep-history-thinking",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-cont1:sonnet:drop-history-thinking",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model",
+    "messages.thinking_dropped:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-cont1:sonnet:no-display (interactive shape)",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-cont1:sonnet:+redact-thinking beta (interactive header)",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "main-cont1:opus:keep-history-thinking",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 33,
+    "cache_creation_input_tokens": 1065,
+    "cache_read_input_tokens": 43298,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1065
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.03251
+  },
+  {
+   "label": "main-cont1:opus:drop-history-thinking",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.thinking_dropped:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 33,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 44363,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.0224
+  },
+  {
+   "label": "main-cont1:opus:no-display (interactive shape)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 33,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 44363,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 3,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.02242
+  },
+  {
+   "label": "main-cont1:opus:+redact-thinking beta (interactive header)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 33,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 44363,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 2,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.0224
+  },
+  {
+   "label": "unpin-to-fable (original bytes, haiku-made turns in history)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauauaus",
+    "system_positions": [
+     1,
+     10
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 33,
+    "cache_creation_input_tokens": 963,
+    "cache_read_input_tokens": 44204,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 963
+    },
+    "output_tokens": 173,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.07244
+  },
+  {
+   "label": "cross-target:sonnet (history made by fable and haiku)",
+   "status": 400,
+   "accepted": false,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauauaus",
+    "system_positions": [
+     1,
+     10
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "label": "cross-target:opus (history made by fable and haiku)",
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauauaus",
+    "system_positions": [
+     1,
+     10
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 33,
+    "cache_creation_input_tokens": 212,
+    "cache_read_input_tokens": 44363,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 212
+    },
+    "output_tokens": 4,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+   },
+   "est_usd": 0.02457
+  }
+ ],
+ "forwarded": [
+  {
+   "note": "main-new passthrough",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "error": null,
+   "fields": [],
+   "facts": null,
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 43298,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 43298
+    },
+    "output_tokens": 199,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 199,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 43298,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 43298
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.87593
+  },
+  {
+   "note": "subagent-first routed:haiku",
+   "model": "claude-haiku-4-5-20251001",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 27158,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 275,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 130
+    },
+    "iterations": [
+     {
+      "input_tokens": 10,
+      "output_tokens": 275,
+      "cache_read_input_tokens": 27158,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.0041
+  },
+  {
+   "note": "subagent-pinned:haiku",
+   "model": "claude-haiku-4-5-20251001",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usaus",
+    "system_positions": [
+     1,
+     4
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 1,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 35,
+    "cache_creation_input_tokens": 1253,
+    "cache_read_input_tokens": 27158,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 1253,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 152,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 131
+    },
+    "iterations": [
+     {
+      "input_tokens": 35,
+      "output_tokens": 152,
+      "cache_read_input_tokens": 27158,
+      "cache_creation_input_tokens": 1253,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 1253,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.00508
+  },
+  {
+   "note": "passthrough",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "error": null,
+   "fields": [],
+   "facts": null,
+   "usage": {
+    "input_tokens": 33,
+    "cache_creation_input_tokens": 463,
+    "cache_read_input_tokens": 43298,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 463
+    },
+    "output_tokens": 175,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "iterations": [
+     {
+      "input_tokens": 33,
+      "output_tokens": 175,
+      "cache_read_input_tokens": 43298,
+      "cache_creation_input_tokens": 463,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 463
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.06164
+  },
+  {
+   "note": "subagent-first routed:sonnet",
+   "model": "claude-sonnet-5",
+   "status": 400,
+   "error": "output_config.effort requires a model that supports per-turn effort; this model does not",
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": null,
+   "est_usd": 0
+  },
+  {
+   "note": "subagent-pinned:sonnet",
+   "model": "claude-sonnet-5",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "us",
+    "system_positions": [
+     1
+    ],
+    "system_mid_list": false,
+    "history_thinking_blocks": 0,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 35135,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 35135,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 98,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 18
+    },
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 98,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 35135,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 35135,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.08882
+  },
+  {
+   "note": "subagent-pinned:sonnet",
+   "model": "claude-sonnet-5",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usaus",
+    "system_positions": [
+     1,
+     4
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 1,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24"
+    ]
+   },
+   "usage": {
+    "input_tokens": 32,
+    "cache_creation_input_tokens": 1426,
+    "cache_read_input_tokens": 35135,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 1426,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 28,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "iterations": [
+     {
+      "input_tokens": 32,
+      "output_tokens": 28,
+      "cache_read_input_tokens": 35135,
+      "cache_creation_input_tokens": 1426,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 1426,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.01094
+  },
+  {
+   "note": "passthrough",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "error": null,
+   "fields": [],
+   "facts": null,
+   "usage": {
+    "input_tokens": 33,
+    "cache_creation_input_tokens": 443,
+    "cache_read_input_tokens": 43761,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 443
+    },
+    "output_tokens": 666,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "output_tokens_details": {
+     "thinking_tokens": 593
+    },
+    "iterations": [
+     {
+      "input_tokens": 33,
+      "output_tokens": 666,
+      "cache_read_input_tokens": 43761,
+      "cache_creation_input_tokens": 443,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 443
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.08625
+  },
+  {
+   "note": "main-cont1 routed:haiku",
+   "model": "claude-haiku-4-5-20251001",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauaus",
+    "system_positions": [
+     1,
+     8
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 36,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 33971,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 174,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 36,
+      "output_tokens": 174,
+      "cache_read_input_tokens": 33971,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.0043
+  },
+  {
+   "note": "main-pinned:haiku",
+   "model": "claude-haiku-4-5-20251001",
+   "status": 200,
+   "error": null,
+   "fields": [
+    "model",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2"
+   ],
+   "facts": {
+    "model": "claude-fable-5-1",
+    "roles": "usauauauaus",
+    "system_positions": [
+     1,
+     10
+    ],
+    "system_mid_list": true,
+    "history_thinking_blocks": 2,
+    "thinking": {
+     "type": "adaptive",
+     "display": "omitted"
+    },
+    "effort": "high",
+    "max_tokens": 64000,
+    "betas": [
+     "claude-code-20250219",
+     "oauth-2025-04-20",
+     "interleaved-thinking-2025-05-14",
+     "thinking-token-count-2026-05-13",
+     "context-management-2025-06-27",
+     "prompt-caching-scope-2026-01-05",
+     "mid-conversation-system-2026-04-07",
+     "per-turn-control-2026-07-01",
+     "mid-conversation-tool-changes-2026-07-01",
+     "advisor-tool-2026-03-01",
+     "effort-2025-11-24",
+     "extended-cache-ttl-2025-04-11"
+    ]
+   },
+   "usage": {
+    "input_tokens": 36,
+    "cache_creation_input_tokens": 193,
+    "cache_read_input_tokens": 33971,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 193
+    },
+    "output_tokens": 565,
+    "service_tier": "standard",
+    "inference_geo": "not_available",
+    "iterations": [
+     {
+      "input_tokens": 36,
+      "output_tokens": 565,
+      "cache_read_input_tokens": 33971,
+      "cache_creation_input_tokens": 193,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 0,
+       "ephemeral_1h_input_tokens": 193
+      },
+      "type": "message"
+     }
+    ]
+   },
+   "est_usd": 0.00664
+  }
+ ]
+}
