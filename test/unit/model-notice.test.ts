@@ -40,4 +40,14 @@ describe("model notices", () => {
     n.observe(d(SONNET, { requestedModel: SONNET }));
     assert.equal(n.take("s"), null);
   });
+  it("a change stays queued when the user switches models before the next hook", () => {
+    // Seen in a real session: Haiku upgraded to Opus, then /model sonnet before any main-chat hook fired.
+    const n = new ModelNotices();
+    n.observe(d(OPUS, { requestedModel: HAIKU }));
+    n.observe(d(SONNET, { requestedModel: SONNET, turn: "continuation" }));
+    assert.equal(n.take("s"), `reflex upgraded the model: ${HAIKU} → ${OPUS}`);
+    n.observe(d(OPUS, { requestedModel: HAIKU }));
+    n.observe(d(HAIKU, { requestedModel: SONNET }));
+    assert.equal(n.take("s"), `reflex upgraded the model: ${HAIKU} → ${OPUS}\nreflex downgraded the model: ${SONNET} → ${HAIKU}`);
+  });
 });
