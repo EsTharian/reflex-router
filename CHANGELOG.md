@@ -6,6 +6,23 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.6 — 2026-09-22
+
+### Added
+
+- **Claude Opus 5.5 is the opus tier default** (`claude-opus-5-5`), so an upgrade to Opus lands on it;
+  `REFLEX_MODEL_OPUS` / `ANTHROPIC_DEFAULT_OPUS_MODEL` still override it. A session that asks for Opus 5.5 was
+  already classified as opus. The Opus 5.5 retargets have not been run against the real API yet; a rejection falls
+  back to the original request.
+- **Each Opus is priced at its own rate.** Opus 5.5 is $4 / $20 per MTok with cache reads at 0.05x (pricing page,
+  checked 2026-09-22); Opus 5 and 4.x stay at $5 / $25 / 0.1x, and `reflex report` prices every record at the model
+  it names, so logs recorded on Opus 5 keep their figures.
+
+### Fixed
+
+- **The model-change notice could be lost.** A change reflex made was dropped if you switched models with `/model`
+  before a main-chat hook carried it. It now stays queued; several pending changes are shown one per line.
+
 ## 0.3.5 — 2026-09-22
 
 ### Added
