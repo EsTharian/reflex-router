@@ -6,6 +6,28 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.8 — 2026-09-23
+
+### Fixed
+
+- **Harness calls were decided as your turns.** On 2.1.280, four main-chat requests arrived within 50 s with no prompt
+  typed behind them, and were decided and routed like user turns. Once hooks are arriving in a session, a main-chat
+  request that is not the prompt you just typed is now a side call (`unclassified`, reason `no_typed_prompt`, with a
+  fingerprint) and forwards unchanged. Sessions without hooks are classified as before.
+- **Section 12 printed a break-even of 2500000000.0** when a warm cache read on the side tier costs as much as on the
+  requested model (Sonnet 5 vs Opus 5.5). It now says there is no break-even.
+
+### Added
+
+- **Drift in section 1 covers more than turn counts.** It also flags a requested model or a `max_tokens` value that no
+  captured fixture holds, and every rewrite the upstream rejected (`unseen_requested_model`, `unseen_max_tokens`,
+  `rewrite_rejected`). An alarm only; routing is unchanged. Claude Code 2.1.280 is **not** added to the tested versions:
+  no 2.1.280 capture is in the fixtures yet.
+
+### Docs
+
+- `docs/observations.md`: the 2.1.280 / Opus 5.5 log, section 8's −$0.95 by pair.
+
 ## 0.3.7 — 2026-09-23
 
 A hotfix from a 15-hour route-mode log on Claude Code 2.1.280 with Opus 5.5, where routing cost more than it saved
