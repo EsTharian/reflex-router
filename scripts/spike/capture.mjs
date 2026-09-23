@@ -20,6 +20,7 @@ import { join } from "node:path";
 // The product's own list prices, so a cap here means the same thing a cap in a report does. Imported as .ts: needs
 // Node's type stripping (>= 22.18) or `node --import tsx`.
 import { usageCostUsd } from "../../src/pricing.ts";
+import { estimateTokens } from "../../src/tiers.ts";
 
 const argv = process.argv.slice(2);
 let out = join("_dumps", new Date().toISOString().replace(/[:.]/g, "-"));
@@ -91,12 +92,12 @@ const server = http.createServer((req, res) => {
     const base = `${n}-${req.method}-${slug(url.pathname)}`;
     const started = Date.now();
 
-    // Pre-charge from the request's own bytes (~4 bytes/token, priced as a 1-hour cache write, the worst case) so a
+    // Pre-charge from the request's own bytes (2.5 bytes/token as measured, not 4, priced as a 1-hour cache write, the worst case) so a
     // burst of parallel requests is counted the moment it is sent, not when it returns. Replaced by the real usage
     // once the response is read. A request that would cross the cap is REFUSED, never forwarded.
     const reqModel = raw.length ? (parse(raw.toString("utf8"))?.model ?? null) : null;
     const preUsd = url.pathname === "/v1/messages"
-      ? usageCostUsd(TIER_OF(reqModel), { input: 0, output: 0, cacheRead: 0, cacheCreate: Math.ceil(raw.length / 4) }, "1h")
+      ? usageCostUsd(TIER_OF(reqModel), { input: 0, output: 0, cacheRead: 0, cacheCreate: estimateTokens(raw.length) }, "1h")
       : 0;
     if (spentUsd + preUsd > capUsd) {
       refusals++;

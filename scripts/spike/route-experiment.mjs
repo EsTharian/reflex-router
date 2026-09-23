@@ -20,9 +20,14 @@
 // Options: --to a,b (targets instead of the cheaper tiers) · --main <tier> (the main chat's pin) · --no-main-new ·
 // --probe-1m (first request + context-1m beta) · --probe-efforts (first request at each effort) · --probe-ceiling
 // (first request padded to the Haiku ceiling, sent to Haiku) · --delay-pin (decide a subagent at its second request) ·
-// --interactive <exit-s> (TUI in a pseudo-terminal via pty-run.py). Probes and routed requests carry the product's
-// header rewrite (STRIP_BETAS). The cap is checked before each probe, not against its cost: one large probe can
-// overshoot it.
+// --interactive <exit-s> (TUI in a pseudo-terminal via pty-run.py) · --lean (main-cont1: only the product's own
+// keep-history variant) · --probe-message-oc (first request to each target that drops a system message's
+// output_config, sent with it kept). Probes and routed requests carry the product's header rewrite (STRIP_BETAS).
+// Target model ids and prices are the product's own (DEFAULT_MODELS, src/pricing.ts).
+//
+// The cap is ENFORCED: every probe and every forwarded request is pre-charged from its own bytes (estimateTokens: 2.5 bytes/token,
+// priced as a 1-hour cache write on its model, the worst case) and refused if that would cross the cap; the reservation
+// is replaced by the billed usage once the response is read. A refused forward answers the client 429.
 //
 // Headers of the live request (auth included) are held in memory only and never written. Probes stop reading at
 // `message_start` (enough for status and input usage) and are aborted. Recorded per probe: status, API error
@@ -35,7 +40,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseRequest } from "../../src/wire/claude-code.ts";
 import { retarget, retargetBetas } from "../../src/wire/rewrite.ts";
-import { CONTEXT_CEILING, estimateTokens } from "../../src/tiers.ts";
+import { CONTEXT_CEILING, estimateTokens, tierOfModel } from "../../src/tiers.ts";
+import { DEFAULT_MODELS } from "../../src/config.ts";
+import { priceOf } from "../../src/pricing.ts";
 
 const argv = process.argv.slice(2);
 let out = join("_dumps", "route-exp-" + Date.now());
@@ -55,6 +62,8 @@ let probeCeiling = false;
 let delayPin = false;
 /** Run the TUI in a pseudo-terminal (scripts/spike/pty-run.py), type the -p prompt, and /exit after this many seconds. */
 let interactiveExitS = null;
+let lean = false;
+let probeMessageOc = false;
 const claudeArgs = [];
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--out") out = argv[++i];
@@ -69,30 +78,38 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--probe-ceiling") probeCeiling = true;
   else if (argv[i] === "--delay-pin") delayPin = true;
   else if (argv[i] === "--interactive") interactiveExitS = Number(argv[++i]);
+  else if (argv[i] === "--lean") lean = true;
+  else if (argv[i] === "--probe-message-oc") probeMessageOc = true;
   else if (argv[i] === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
 }
 mkdirSync(out, { recursive: true, mode: 0o700 });
 
-const MODELS = { haiku: "claude-haiku-4-5-20251001", sonnet: "claude-sonnet-5", opus: "claude-opus-5", fable: "claude-fable-5-1" };
+const MODELS = { ...DEFAULT_MODELS };
 const ORDER = ["haiku", "sonnet", "opus", "fable"];
 /** --to, or else the cheaper tiers than the source; cheapest first. */
 const TARGETS = to ?? ORDER.slice(0, ORDER.indexOf(from));
 const MAIN_TARGET = mainTarget ?? TARGETS[0];
 const upstream = new URL("https://api.anthropic.com");
 const SKIP = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade", "host", "content-length", "accept-encoding", "proxy-authorization", "te", "trailer"]);
-// $/MTok (platform.claude.com pricing, 2026-09-19): input, output. Cache write 1.25x (5m) / 2x (1h), read 0.1x.
-const PRICE = { sonnet: [2, 10], haiku: [1, 5], opus: [5, 25], fable: [10, 50] };
-const priceOf = (model) => PRICE[Object.keys(PRICE).find((k) => String(model).includes(k)) ?? "sonnet"];
+// The product's list prices (src/pricing.ts), per model: Opus 5.5 is not priced like Opus 5.
+const price = (model) => priceOf(tierOfModel(String(model)) ?? "opus", String(model));
 function costUsd(model, u) {
   if (!u) return 0;
-  const [pin, pout] = priceOf(model);
+  const p = price(model);
   const c = u.cache_creation ?? {};
   const w1h = c.ephemeral_1h_input_tokens ?? 0;
   const w5m = c.ephemeral_5m_input_tokens ?? Math.max(0, (u.cache_creation_input_tokens ?? 0) - w1h);
-  return ((u.input_tokens ?? 0) * pin + w5m * pin * 1.25 + w1h * pin * 2 + (u.cache_read_input_tokens ?? 0) * pin * 0.1 + (u.output_tokens ?? 0) * pout) / 1e6;
+  return ((u.input_tokens ?? 0) * p.input + w5m * p.input * 1.25 + w1h * p.input * 2 + (u.cache_read_input_tokens ?? 0) * p.input * p.cacheReadMult + (u.output_tokens ?? 0) * p.output) / 1e6;
 }
+/**
+ * Cost of sending `body` if every input token is a 1-hour cache write, reserved before it is sent. Output is not
+ * reserved: a long answer can still overshoot. (At 4 bytes/token the first capped run, 2026-09-23, overshot $0.50 by
+ * $0.02: real requests run 2.5-2.8 bytes/token.)
+ */
+const preUsd = (body) => { let model = null; try { model = JSON.parse(body.toString("utf8")).model; } catch { /* not json */ } return model ? (estimateTokens(body.length) * price(model).input * 2) / 1e6 : 0; };
 
 let spent = 0;
+let refused = 0;
 const probes = [];
 const forwarded = [];
 const log = (s) => process.stderr.write(`[exp] ${s}\n`);
@@ -152,13 +169,15 @@ function productHeaders(headers, body) {
 }
 
 async function probe(label, path, rawHeaders, bodyBuf, rawFields, facts, { keepHeaders = false } = {}) {
-  if (spent >= capUsd) { probes.push({ label, skipped: "cap reached" }); log(`skip ${label} (cap)`); return null; }
+  const pre = preUsd(bodyBuf);
+  if (spent + pre > capUsd) { refused++; probes.push({ label, skipped: "cap reached", pre_usd: Number(pre.toFixed(4)) }); log(`skip ${label} (cap)`); return null; }
+  spent += pre;
   const { headers, stripped } = keepHeaders ? { headers: rawHeaders, stripped: [] } : productHeaders(rawHeaders, bodyBuf);
   const fields = [...rawFields, ...stripped.map((x) => `anthropic-beta:-${x}`)];
   const r = await send(path, headers, bodyBuf, { probe: true });
   const model = JSON.parse(bodyBuf.toString("utf8")).model;
   const usd = costUsd(model, r.usage);
-  spent += usd;
+  spent += usd - pre;
   probes.push({ label, status: r.status, accepted: r.status === 200, error: r.error ?? null, fields, facts, usage: r.usage ?? null, est_usd: Number(usd.toFixed(5)) });
   log(`${r.status === 200 ? "ACCEPT" : "reject"} ${r.status} ${label}${r.error ? " :: " + String(r.error).slice(0, 160) : ""}  (spent ~$${spent.toFixed(3)})`);
   return r.status === 200;
@@ -217,6 +236,14 @@ async function route(req, raw, headers) {
     for (const t of TARGETS) {
       const r = rt(raw, t);
       if (r.ok) await probe(`main-new:${t}`, req.url, headers, r.body, r.fields, facts);
+      if (r.ok && probeMessageOc) {
+        // The product drops a system message's output_config for this target; send it kept, to show whether it must go.
+        const orig = JSON.parse(raw.toString("utf8"));
+        const b = JSON.parse(r.body.toString("utf8"));
+        let kept = 0;
+        b.messages.forEach((m, i) => { const o = orig.messages[i]; if (m.role === "system" && o?.role === "system" && "output_config" in o && !("output_config" in m)) { m.output_config = o.output_config; kept++; } });
+        if (kept > 0) await probe(`main-new:${t}:message-output_config kept (${kept})`, req.url, headers, Buffer.from(JSON.stringify(b)), r.fields.filter((f) => !f.startsWith("messages.output_config_dropped")), facts);
+      }
       if (r.ok && productHeaders(headers, r.body).stripped.length > 0) await probe(`main-new:${t}:betas untouched`, req.url, headers, r.body, r.fields, facts, { keepHeaders: true });
       if (r.ok && probeEfforts && t !== "haiku") {
         for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
@@ -269,6 +296,7 @@ async function route(req, raw, headers) {
       for (const t of TARGETS) {
         const keep = rt(raw, t);
         if (keep.ok) await probe(`main-cont1:${t}:keep-history-thinking`, req.url, headers, keep.body, keep.fields, facts);
+        if (lean) continue;
         const drop = rt(raw, t, { dropHistoryThinking: true });
         if (drop.ok) await probe(`main-cont1:${t}:drop-history-thinking`, req.url, headers, drop.body, drop.fields, facts);
         const noDisplay = rt(variantBody(parsed, (b) => { if (b.thinking) delete b.thinking.display; }), t);
@@ -310,6 +338,15 @@ const server = http.createServer((req, res) => {
       try { plan = await route(req, raw, headers); } catch (e) { log(`route error ${e.message}; passthrough`); }
     }
     if (plan.note !== "passthrough") { const ph = productHeaders(plan.headers, plan.body); plan = { ...plan, headers: ph.headers, fields: [...(plan.fields ?? []), ...ph.stripped.map((x) => `anthropic-beta:-${x}`)] }; }
+    const pre = req.url.startsWith("/v1/messages") ? preUsd(plan.body) : 0;
+    if (spent + pre > capUsd) {
+      refused++;
+      forwarded.push({ note: plan.note, refused: "cap reached", pre_usd: Number(pre.toFixed(4)) });
+      log(`REFUSED ${plan.note} (cap: spent ~$${spent.toFixed(3)}, this request ~$${pre.toFixed(3)})`);
+      res.writeHead(429, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: `experiment cap $${capUsd} reached; not forwarded` } }));
+      return;
+    }
+    spent += pre;
     const up = https.request({ hostname: upstream.hostname, method: req.method, path: req.url, headers: { ...plan.headers, host: upstream.host, ...(plan.body.length ? { "content-length": String(plan.body.length) } : {}), "accept-encoding": "identity" } }, (ur) => {
       const oh = {};
       for (const [k, v] of Object.entries(ur.headers)) if (!SKIP.has(k)) oh[k] = v;
@@ -324,7 +361,7 @@ const server = http.createServer((req, res) => {
         let model = null; try { model = JSON.parse(plan.body.toString("utf8")).model ?? null; } catch { /* not json */ }
         let error = null; if (ur.statusCode >= 400) { try { error = JSON.parse(text).error.message; } catch { error = text.slice(0, 200); } }
         const usd = costUsd(model, usage);
-        spent += usd;
+        spent += usd - pre;
         forwarded.push({ note: plan.note, model, status: ur.statusCode, error, fields: plan.fields ?? [], facts: plan.facts ?? null, usage, est_usd: Number(usd.toFixed(5)) });
         log(`forward ${ur.statusCode} ${plan.note} -> ${model}${error ? " :: " + error : ""}  (spent ~$${spent.toFixed(3)})`);
       });
@@ -353,7 +390,7 @@ server.listen(0, "127.0.0.1", () => {
     let modelSetting = null;
     try { modelSetting = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8")).model ?? null; } catch { /* none */ }
     const settings = { model_setting: modelSetting, claude_args: claudeArgs.map((a, i) => (claudeArgs[i - 1] === "-p" ? "<prompt>" : a)), requested_models: [...seen.requested_models], entrypoints: [...seen.entrypoints], betas_seen: [...seen.betas].sort() };
-    writeFileSync(join(out, "results.json"), JSON.stringify({ from, targets: TARGETS, settings, cap_usd: capUsd, est_total_usd: Number(spent.toFixed(4)), claude_exit: code, probes, forwarded }, null, 1));
+    writeFileSync(join(out, "results.json"), JSON.stringify({ from, targets: TARGETS, settings, cap_usd: capUsd, est_total_usd: Number(spent.toFixed(4)), refused_for_cap: refused, claude_exit: code, probes, forwarded }, null, 1));
     log(`claude exited ${code}; estimated spend $${spent.toFixed(3)}; results in ${out}/results.json`);
     process.exit(0);
   });
