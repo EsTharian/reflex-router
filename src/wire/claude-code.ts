@@ -171,9 +171,11 @@ const sha = (s: string): string => crypto.createHash("sha256").update(s).digest(
  * - non_text_block            a block that is not text (image, document): not handled yet
  * - no_own_text               nothing left after reminders and harness wrappers are stripped
  * - subagent_mid_run          a subagent text message that is not its first request, so not a new task
+ * - no_typed_prompt           a main-chat user message in a session whose hooks are arriving, with no typed prompt
+ *                             behind it (see classifyTurn)
  */
 export type UnclassifiedReason =
-  | "not_user_message" | "plain_string_no_typed_match" | "non_text_block" | "no_own_text" | "subagent_mid_run";
+  | "not_user_message" | "plain_string_no_typed_match" | "non_text_block" | "no_own_text" | "subagent_mid_run" | "no_typed_prompt";
 
 interface TurnResult {
   readonly turn: Turn;
@@ -237,6 +239,12 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
   if (task === "") return unclassified("no_own_text");
   // A subagent's work starts with its first request; a later text message inside its run is not a new task.
   if (kind === "subagent" && nonSystem.length !== 1) return unclassified("subagent_mid_run");
+  // Once hooks are arriving in a session (`typed` non-null), every prompt the user types reaches us through
+  // UserPromptSubmit before its request. A main-chat message with no newest unclaimed typed prompt behind it was written
+  // by the harness, whatever its encoding: 2.1.280 sent four such calls within 50 s (session 999c1b7f, 11k-38k input,
+  // no cache), which were decided and routed as new turns. They are kept `side` with a fingerprint so their shape can
+  // be named. Without hooks nothing changes: the structural rule above still stands alone.
+  if (kind === "main" && typed !== null && !matchesTypedPrompt(task, newestTyped === null ? null : [newestTyped])) return unclassified("no_typed_prompt");
   return { turn: "new", sideKind: null, sideMarker: null, unclassifiedReason: null, task, interjection: false };
 }
 

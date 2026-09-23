@@ -181,3 +181,29 @@ describe("wire drift cross-check", () => {
     assert.equal(d.check(5), "typed_prompts_without_new_turns");
   });
 });
+
+describe("2.1.280: a main new turn needs a typed prompt once hooks are arriving (no_typed_prompt)", () => {
+  // Session 999c1b7f: four array-encoded main-chat calls within 50 s, none behind a UserPromptSubmit, each decided and
+  // routed as a new turn. Array encoding is what 2.1.277 used for typed prompts, so the shape alone cannot tell them apart.
+  const PROMPT = "Refactor the parser so the tokenizer is its own module.";
+  const array = (t: string): unknown[] => [{ role: "user", content: [text(t)] }];
+
+  it("hooks arriving, the newest prompt already claimed: the harness call is side / unclassified", () => {
+    const v = view(array("Summarise the conversation so far for the session title."), [PROMPT], null);
+    assert.deepEqual([v.turn, v.sideKind, v.unclassifiedReason, v.task], ["side", "unclassified", "no_typed_prompt", null]);
+  });
+
+  it("hooks arriving, a newest prompt that is not these words: still side", () => {
+    const v = view(array("Summarise the conversation so far for the session title."), [PROMPT]);
+    assert.equal(v.unclassifiedReason, "no_typed_prompt");
+  });
+
+  it("the prompt the user just typed is a new turn, as before", () => {
+    const v = view(array(PROMPT), [PROMPT]);
+    assert.deepEqual([v.turn, v.task], ["new", PROMPT]);
+  });
+
+  it("no hook stream: the structural rule stands alone (tests, spikes, a session whose hooks never arrived)", () => {
+    assert.equal(view(array("Summarise the conversation so far."), null).turn, "new");
+  });
+});

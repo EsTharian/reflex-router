@@ -7,9 +7,15 @@ import { loadFixtures } from "../support/fixtures.js";
 import { request, waitFor } from "../support/http.js";
 import { allRecords, replay, sseHandler } from "../support/replay.js";
 import { startStack, type Stack } from "../support/stack.js";
+import { parseRequest } from "../../src/wire/claude-code.js";
 
 const fixture = loadFixtures().find((f) => f.file === "interactive.main-new-turn.request.json")!;
 const SESSION = String(fixture.headers["x-claude-code-session-id"]);
+/**
+ * The fixture's own typed words. With hooks arriving, a main new turn needs the typed prompt behind it
+ * (no_typed_prompt), so each UserPromptSubmit here carries them after its own words.
+ */
+const TASK = (() => { const r = parseRequest(fixture.headers, fixture.body); assert.ok(r.ok && r.view.task); return r.view.task; })();
 
 describe("outcome capture through the front door", () => {
   let jev: FakeJev;
@@ -28,11 +34,11 @@ describe("outcome capture through the front door", () => {
   });
 
   it("prompt -> wire turn -> edit -> failing test -> correction: one outcome record keyed to that turn's decision", async () => {
-    assert.equal(await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "P1", prompt: "fix the parser" }), 204);
+    assert.equal(await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "P1", prompt: `fix the parser ${TASK}` }), 204);
     const { rec } = await replay(stack, fixture);
     assert.equal(await hook({ hook_event_name: "PostToolUse", prompt_id: "P1", tool_name: "Edit", tool_input: { file_path: "/r/p.ts", old_string: "a", new_string: "b" }, tool_response: {} }), 204);
     assert.equal(await hook({ hook_event_name: "PostToolUseFailure", prompt_id: "P1", tool_name: "Bash", tool_input: { command: "npm test" }, error: "Exit code 1" }), 204);
-    assert.equal(await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "P2", prompt: "no, that's wrong" }), 204);
+    assert.equal(await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "P2", prompt: `no, that's wrong ${TASK}` }), 204);
 
     const outcome = await waitFor(() => allRecords(stack).find((r) => r["record"] === "outcome"), { what: "outcome record" });
     assert.equal(outcome["decision_id"], rec["id"], "joined to the decision of the same turn");
@@ -72,12 +78,12 @@ describe("escalation through the front door", () => {
   });
 
   it("a correction on a routed turn raises the conversation's next new turn one tier, and says why", async () => {
-    await hook(stack, { hook_event_name: "UserPromptSubmit", prompt_id: "E1", prompt: "rename the helper" });
+    await hook(stack, { hook_event_name: "UserPromptSubmit", prompt_id: "E1", prompt: `rename the helper ${TASK}` });
     const { rec: first } = await replay(stack, fixture);
     assert.equal(first["forwarded"] && (first["forwarded"] as Record<string, unknown>)["model"], "claude-haiku-4-5-20251001", "the policy's own pick, unescalated");
 
     // The correction closes E1's window; the signal reaches the router before the next turn is decided.
-    await hook(stack, { hook_event_name: "UserPromptSubmit", prompt_id: "E2", prompt: "no, that's wrong" });
+    await hook(stack, { hook_event_name: "UserPromptSubmit", prompt_id: "E2", prompt: `no, that's wrong ${TASK}` });
     await waitFor(() => allRecords(stack).find((r) => r["record"] === "outcome"), { what: "the first window to close" });
 
     const { rec: second } = await replay(stack, fixture);
@@ -97,7 +103,9 @@ describe("escalation through the front door", () => {
 
   it("the escalation decays: once its turns are spent the conversation routes normally again", async () => {
     // escalateWindowTurns is 2 and the turn above spent one; this one spends the last.
+    await hook(stack, { hook_event_name: "UserPromptSubmit", prompt_id: "E3", prompt: `go on ${TASK}` });
     await replay(stack, fixture);
+    await hook(stack, { hook_event_name: "UserPromptSubmit", prompt_id: "E4", prompt: `go on ${TASK}` });
     const { rec: after } = await replay(stack, fixture);
     assert.equal(after["escalation"], null, "decayed");
     assert.equal((after["forwarded"] as Record<string, unknown>)["model"], "claude-haiku-4-5-20251001");
@@ -125,9 +133,9 @@ describe("escalation is off unless REFLEX_ESCALATE is set", () => {
   it("the same correction changes nothing about the next turn", async () => {
     const hook = async (event: Record<string, unknown>): Promise<number> =>
       (await request(`${stack.url}/__reflex/hook`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: SESSION, ...event }) })).status;
-    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "N1", prompt: "rename the helper" });
+    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "N1", prompt: `rename the helper ${TASK}` });
     await replay(stack, fixture);
-    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "N2", prompt: "no, that's wrong" });
+    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "N2", prompt: `no, that's wrong ${TASK}` });
     await waitFor(() => allRecords(stack).find((r) => r["record"] === "outcome"), { what: "the first window to close" });
     const { rec: second } = await replay(stack, fixture);
     assert.equal(second["escalation"], null);
@@ -151,9 +159,9 @@ describe("REFLEX_ESCALATE=shadow records what it would have done and changes not
   it("writes would_escalate, leaves the tier alone, and adds no escalated: reason", async () => {
     const hook = async (event: Record<string, unknown>): Promise<number> =>
       (await request(`${stack.url}/__reflex/hook`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: SESSION, ...event }) })).status;
-    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "S1", prompt: "rename the helper" });
+    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "S1", prompt: `rename the helper ${TASK}` });
     await replay(stack, fixture);
-    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "S2", prompt: "no, that's wrong" });
+    await hook({ hook_event_name: "UserPromptSubmit", prompt_id: "S2", prompt: `no, that's wrong ${TASK}` });
     await waitFor(() => allRecords(stack).find((r) => r["record"] === "outcome"), { what: "the first window to close" });
 
     const { rec: second } = await replay(stack, fixture);
