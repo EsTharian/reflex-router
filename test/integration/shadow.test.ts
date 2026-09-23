@@ -240,3 +240,34 @@ describe("REFLEX_COMPARE=laya: Laya asked alongside Jev, recorded only", () => {
     assert.equal(laya.calls.at(-1)!.headers.authorization, "Bearer session-key");
   });
 });
+
+describe("REFLEX_COMPARE=laya while laya-serve is still loading", () => {
+  let jev: FakeJev;
+  let laya: FakeJev | null = null;
+  let stack: Stack;
+  let port = 0;
+  const newTurn = fixtures.find((f) => f.file === "interactive.main-new-turn.request.json");
+  before(async () => {
+    jev = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.9, reasoning: 0.4 });
+    const probe = await startFakeJev(); // borrow a free port, then free it: nothing listens there yet
+    port = Number(new URL(probe.url).port);
+    await probe.close();
+    stack = await startStack({ config: { jevBaseUrl: jev.url, compare: "laya", layaBaseUrl: `http://127.0.0.1:${port}`, layaModel: "typed-decisions" } });
+    stack.upstream.setHandler(sseHandler);
+  });
+  after(async () => {
+    await stack.close();
+    await jev.close();
+    await laya?.close();
+  });
+
+  it("the comparison waits for it (off the request's path) instead of recording a refused connection", async () => {
+    assert.ok(newTurn);
+    setTimeout(() => void startFakeJev({ kind: "answer", tier: "opus" }, port).then((l) => (laya = l)), 1000);
+    const { rec, status } = await replay(stack, newTurn);
+    assert.equal(status, 200);
+    const compare = rec["compare"] as { error: string | null; x: number[] | null };
+    assert.equal(compare.error, null);
+    assert.ok(compare.x !== null);
+  });
+});

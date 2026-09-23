@@ -35,6 +35,8 @@ import type { DecisionInfo } from "../outcome/tracker.js";
 import { HINT_VERSION } from "../delegate/hint.js";
 import { decay, escalatedTier, raise, type EscalationEvent, type EscalationState } from "./escalation.js";
 
+/** How long a REFLEX_COMPARE call waits for laya-serve to come up (it never delays a request). */
+const COMPARE_READY_WAIT_MS = 30_000;
 /** A tier whose rewritten request was rejected stays off for the session this long. */
 export const TIER_DISABLE_MS = 30 * 60 * 1000;
 /** Safety margin on top of the backend's own deadline before route mode gives up waiting. */
@@ -441,14 +443,25 @@ export class Router {
   }
 
   /** Always resolves. Only positively identified `new` turns of a known kind are decided. */
-  /** REFLEX_COMPARE: Laya's feature vector for the same state. Never throws; an error is recorded as its category. */
+  /**
+   * REFLEX_COMPARE: Laya's feature vector for the same state. Never throws; an error is recorded as its category.
+   * laya-serve starts with the session and loads for seconds, while a session's first decision comes at once; the
+   * comparison is off the request's path, so a refused connection is retried until COMPARE_READY_WAIT_MS.
+   */
   async #compare(laya: LayaBackend, state: DecisionState, questions: QuestionSet): Promise<CompareBlock> {
     const base = { backend: "laya" as const, model: this.d.config.layaModel, feature_version: FEATURE_VERSION };
-    try {
-      const { decision, features } = await laya.decideWithFeatures(state, questions, { signal: new AbortController().signal });
-      return { ...base, x: features, latency_ms: decision.latencyMs, error: features === null ? "incomplete" : null };
-    } catch (e) {
-      return { ...base, x: null, latency_ms: null, error: e instanceof BackendError ? e.kind : "internal" };
+    const until = Date.now() + COMPARE_READY_WAIT_MS;
+    for (;;) {
+      try {
+        const { decision, features } = await laya.decideWithFeatures(state, questions, { signal: new AbortController().signal });
+        return { ...base, x: features, latency_ms: decision.latencyMs, error: features === null ? "incomplete" : null };
+      } catch (e) {
+        if (e instanceof BackendError && e.kind === "network" && Date.now() < until) {
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
+        }
+        return { ...base, x: null, latency_ms: null, error: e instanceof BackendError ? e.kind : "internal" };
+      }
     }
   }
 

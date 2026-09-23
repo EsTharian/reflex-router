@@ -49,7 +49,8 @@ export function answerFor(questions: JevCall["body"]["questions"], tier: string,
   return { model: "jev-test", answers, usage: { input_tokens: 321, output_tokens: 0 } };
 }
 
-export async function startFakeJev(initial: JevBehaviour = { kind: "answer", tier: "haiku" }): Promise<FakeJev> {
+/** `port` 0 picks a free one; a fixed port lets a test start the fake after a client already points at it. */
+export async function startFakeJev(initial: JevBehaviour = { kind: "answer", tier: "haiku" }, port = 0): Promise<FakeJev> {
   let behaviour = initial;
   const calls: JevCall[] = [];
   const other: FakeJev["other"] = [];
@@ -96,7 +97,7 @@ export async function startFakeJev(initial: JevBehaviour = { kind: "answer", tie
       }
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     calls,

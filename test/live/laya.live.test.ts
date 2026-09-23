@@ -8,6 +8,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { JevBackend } from "../../src/backend/jev.js";
+import { LayaBackend } from "../../src/backend/laya.js";
+import { calibratedAnswers } from "../../src/backend/laya-calibration.js";
+import { LAYA_CALIBRATIONS } from "../../src/backend/laya-calibration.generated.js";
+import type { Decision } from "../../src/types.js";
 import { LAYA_MODELS, loadConfig, type Config, type LayaModel, type Tier } from "../../src/config.js";
 import { mergeEnvFile } from "../../src/env-file.js";
 import { realResolveIO, resolveBin } from "../../src/launcher/claude-bin.js";
@@ -42,17 +46,32 @@ interface Row {
   tokensIn: number | null;
 }
 
+function row(p: (typeof REASONING_SET)[number], d: Decision): Row {
+  const j = judge(d, cfg);
+    assert.ok(j.ok, `${p.id}: ${j.ok ? "" : j.error}`);
+  const t = d.answers["tier"];
+  assert.ok(t?.type === "choice");
+  return { id: p.id, cell: p.cell, label: p.label, pick: j.judgement.tier.value, argmax: t.choice, pOpus: t.probabilities["opus"] ?? 0, demand: j.judgement.vetoes["reasoning_demand"], latencyMs: d.latencyMs, tokensIn: d.tokensIn };
+}
+
 async function run(backend: JevBackend): Promise<Row[]> {
   const rows: Row[] = [];
-  for (const p of REASONING_SET) {
-    const d = await backend.decide(stateOf(p.task), questions, signal());
-    const j = judge(d, cfg);
-    assert.ok(j.ok, `${p.id}: ${j.ok ? "" : j.error}`);
-    const t = d.answers["tier"];
-    assert.ok(t?.type === "choice");
-    rows.push({ id: p.id, cell: p.cell, label: p.label, pick: j.judgement.tier.value, argmax: t.choice, pOpus: t.probabilities["opus"] ?? 0, demand: j.judgement.vetoes["reasoning_demand"], latencyMs: d.latencyMs, tokensIn: d.tokensIn });
-  }
+  for (const p of REASONING_SET) rows.push(row(p, await backend.decide(stateOf(p.task), questions, signal())));
   return rows;
+}
+
+/** One Laya call per prompt: its own answers, and (when a calibration exists for the checkpoint) the calibrated ones. */
+async function runLaya(laya: LayaBackend, model: LayaModel): Promise<{ raw: Row[]; calibrated: Row[] | null }> {
+  const cal = LAYA_CALIBRATIONS[model];
+  const raw: Row[] = [];
+  const calibrated: Row[] = [];
+  for (const p of REASONING_SET) {
+    const state = stateOf(p.task);
+    const { decision, features } = await laya.decideWithFeatures(state, questions, signal());
+    raw.push(row(p, decision));
+    if (cal && features) calibrated.push(row(p, { ...decision, answers: { ...decision.answers, ...calibratedAnswers(cal, features) } }));
+  }
+  return { raw, calibrated: cal ? calibrated : null };
 }
 
 function summary(rows: Row[]) {
@@ -100,12 +119,16 @@ describe("live backend comparison on the labelled reasoning set", { skip }, () =
       try {
         assert.equal(await laya.ready, true, `laya-serve (${model}) did not load`);
         const readyMs = Date.now() - t0;
-        const b = new JevBackend({ id: "laya", baseUrl: laya.baseUrl, apiKey: laya.apiKey, model, deadlineMs: 30_000 });
+        const b = new LayaBackend(new JevBackend({ id: "laya", baseUrl: laya.baseUrl, apiKey: laya.apiKey, model, deadlineMs: 30_000 }), undefined);
         await b.decide(stateOf("warm-up"), questions, signal()); // first forward pass pays one-off setup
-        const rows = await run(b);
+        const { raw, calibrated } = await runLaya(b, model);
         b.close();
-        results[`laya:${model}`] = { summary: summary(rows), rows, readyMs };
+        results[`laya:${model}`] = { summary: summary(raw), rows: raw, readyMs };
         console.log(`# laya:${model} ready in ${readyMs} ms: ${JSON.stringify(results[`laya:${model}`]!.summary)}`);
+        if (calibrated) {
+          results[`laya:${model}+${LAYA_CALIBRATIONS[model]!.version}`] = { summary: summary(calibrated), rows: calibrated };
+          console.log(`# laya:${model}+${LAYA_CALIBRATIONS[model]!.version}: ${JSON.stringify(summary(calibrated))}`);
+        }
       } finally {
         await laya.stop();
       }
