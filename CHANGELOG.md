@@ -4,6 +4,10 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.4.1 — 2026-09-23
+
 ### Fixed
 
 - **The Laya calibration head of 0.4.0 routed too low on real prompts.** Tested on 190 prompts the maintainer had
