@@ -331,3 +331,48 @@ produced zero unclassified side calls — so there is no residual to read either
 plain strings" — but that is inference from the version, not a measurement, and it is the thing the question wanted
 tested. The hint also cannot plausibly change it: it is appended to the trailing `role:"system"` message, not to the
 user message (2026-09-19 delegation entry). **Measuring this needs a field that does not exist yet.**
+
+## 2026-09-22 — 15 hours of route mode on 2.1.280 with Opus 5.5: routing cost more than it saved
+
+**Setup.** The maintainer's own work, Claude Code 2.1.280, `~/.reflex/decisions.jsonl` from 2026-09-22 15:21 to
+2026-09-23 07:17 UTC: 295 classified requests, 8 sessions, route mode throughout, `REFLEX_UPGRADES=on` in
+`~/.reflex/env`. The builds were 0.3.3–0.3.6, so the opus tier default changed from `claude-opus-5` to
+`claude-opus-5-5` mid-log. The requested model moved from Haiku to Sonnet to Opus 5.5 (`opus[1m]`) as the day went on.
+Figures are list-price estimates over recorded token counts (`reflex report --usd`), not a benchmark.
+
+**Section 8: −$0.95** on 55 routed main-chat and subagent requests ($3.38 at the requested model, $4.33 at the model
+sent). By pair, same pricing:
+
+| Requested → sent | Records | $ at requested | $ at sent | Difference |
+| --- | --- | --- | --- | --- |
+| Haiku 4.5 → Opus 5 (upgrade) | 5 | $0.17 | $0.84 | −$0.67 |
+| Sonnet 5 → Opus 5 (upgrade) | 15 | $0.80 | $1.99 | −$1.20 |
+| Opus 5.5 → Sonnet 5 | 35 | $2.41 | $1.50 | +$0.91 |
+
+The loss is the upgrades. They were opt-in and turned on, but only 5 records were an upgrade decision: one subagent
+(session `1a9d6360`) was decided Haiku → Opus at its first request. All 15 Sonnet → Opus records are that same
+subagent's later continuations, still on the Haiku-era pin after the requested model became Sonnet, with no new decision
+behind them. 0.3.7 drops a pin when the requested tier changes. The one saving pair was applied before any real
+run had verified it.
+
+**Section 5: one rejected rewrite**, Opus 5.5 → Haiku: `max_tokens: 128000 > 64000`. Opus 5.5 requests ask for 128000;
+Haiku 4.5's maximum is 64000. The retry with the original bytes kept the session working and disabled Haiku for 30
+minutes. 0.3.7 lowers `max_tokens` to the target tier's maximum.
+
+**Harness calls decided as user turns (session `999c1b7f`).** Five main-chat `new` turns, all array-encoded (`blocks`):
+one at 21:10:46 with a 75k-token cache write, then four at 21:14:12, 21:14:12, 21:14:31 and 21:15:02. Those four came
+within 50 s, with 11,177–38,328 input tokens, no cache read or write, and no `UserPromptSubmit` behind any of them (4
+`harness_injected` records). They were decided and two were routed to Sonnet. 0.3.8 keeps such a call `side` /
+`unclassified` (`no_typed_prompt`) once hooks are arriving in the session, so the next log's section 11 can name its
+shape.
+
+**Nothing flagged it.** Section 1 read `drift: none` across a Claude Code version, a requested model and a `max_tokens`
+value that no fixture held. 0.3.8 flags all three, and every rejected rewrite (`rewrite_rejected`).
+
+**Section 12** printed a break-even of 2500000000.0 for Sonnet `notification` calls on the Opus 5.5 session: Sonnet 5
+and Opus 5.5 both read the cache at $0.20/MTok, so a warm read saves nothing and there is no break-even. 0.3.8 prints
+that instead.
+
+**Follow-up run, 2026-09-23** (`docs/wire-format.md` §5.7): Opus 5.5 → Haiku (with the clamp) and → Sonnet were
+accepted on first requests under the user's own settings. The $0.50 cap stopped the run before any continuation, so
+every Opus 5.5 pair stays unapplied.
