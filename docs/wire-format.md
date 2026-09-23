@@ -400,6 +400,17 @@ Fable-signed block. As for Sonnet above, the un-pin after an Opus 5.5 → Fable 
 Fable-signed thinking in it: Opus 5.5 accepting its own request shape and accepting Fable-signed thinking were
 verified separately. **Verified and applied** (Fable still needs `REFLEX_ALLOW_FABLE=1`). 
 
+**Interactive Opus 5.5** (`experiment.route-opus55-interactive.results.json`, est. $1.39, cap $3.00). Every run above was
+`-p` (`sdk-cli`), while real Opus 5.5 use is interactive: 814 of 823 Opus 5.5 records in the maintainer's log have
+entrypoint `cli`. `--interactive 180 --to haiku,sonnet --main haiku --lean --no-main-new` ran the TUI in a
+pseudo-terminal under the user's settings (`opus[1m]`, no `--model`), in this repository's folder: a new folder's trust
+dialog now defaults to "No, exit". The request carried `cc_entrypoint=cli`, `redact-thinking-2026-02-12`,
+`extended-cache-ttl-2025-04-11`, `context-1m-2025-08-07`, and `thinking` without `display`. All 200: the main
+continuation holding Opus 5.5 thinking → Haiku and → Sonnet, subagent first requests → both (×2), pinned Haiku and
+Sonnet loops (main and subagent), un-pin to Opus 5.5 with Haiku-made thinking (main, 2 blocks; subagent) and with
+Sonnet-made turns (subagent), and a history made by Opus 5.5 and Haiku → Sonnet. The very first Opus 5.5 request got
+a 429 from the API (not the cap) and Claude Code retried it.
+
 **A Fable main chat → Opus 5.5** (`experiment.route-fable-main-to-opus55.results.json`, est. $1.15, cap $4.00). This
 is a deliberate exception to the no-override rule, approved by the user as in §5.6: `--model fable` with the model setting
 `opus[1m]`, since a Fable main chat cannot be produced otherwise. Flags `--from fable --to opus --main opus --lean`;
