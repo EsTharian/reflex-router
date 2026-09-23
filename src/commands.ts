@@ -1,9 +1,11 @@
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { loadConfig, SETTING_NAMES, unknownReflexEnvNames } from "./config.js";
 import { resolveEffectiveMode } from "./effective-mode.js";
 import { HINT_VERSION } from "./delegate/hint.js";
 import { mergeEnvFile, type MergedEnv } from "./env-file.js";
-import { resolveClaude, realResolveIO } from "./launcher/claude-bin.js";
+import { resolveBin, resolveClaude, realResolveIO } from "./launcher/claude-bin.js";
 import { assessVersion, describeVerdict, probeClaudeVersion } from "./launcher/version.js";
 import { sanitizedEnv, type LaunchIO } from "./launcher/launch.js";
 import { TESTED_CLAUDE_VERSIONS } from "./wire/tested-versions.generated.js";
@@ -75,7 +77,17 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
   const c = loaded.config;
   for (const w of loaded.warnings) out(`config warning: ${w}`);
   out(`mode requested:  ${c.mode}`);
-  out(`backend:         ${c.backend} (key ${c.typesafeApiKey ? "present" : merged.state === "refused" ? "missing: the env file was refused (see above)" : "missing"})`);
+  let layaMissing = false;
+  if (c.backend === "laya") {
+    // laya-serve reads the Hugging Face cache only (HF_HUB_OFFLINE): without the checkpoint there, it cannot load.
+    const hub = io.env["HF_HUB_CACHE"] ?? path.join(io.env["HF_HOME"] ?? path.join(io.homedir ?? os.homedir(), ".cache", "huggingface"), "hub");
+    const cached = fs.existsSync(path.join(hub, "models--convaiinnovations--laya", "snapshots"));
+    const layaBin = resolveBin("laya-serve", c.layaBin, realResolveIO(io.env));
+    layaMissing = layaBin === null;
+    out(`backend:         laya, started by reflex on 127.0.0.1, offline (model ${c.layaModel}; no TypeSafe key used)`);
+    out(`laya-serve:      ${layaBin ? layaBin.path : 'NOT FOUND - install it with `uv tool install "laya[serve]"` or set REFLEX_LAYA_BIN; sessions run plain claude until then'}`);
+    out(`laya weights:    ${cached ? `in ${hub}` : `NOT in ${hub} - fetch them once with \`hf download convaiinnovations/laya\` (reflex runs laya-serve offline)`}`);
+  } else out(`backend:         ${c.backend} (key ${c.typesafeApiKey ? "present" : merged.state === "refused" ? "missing: the env file was refused (see above)" : "missing"})`);
   out(`upstream:        ${new URL(c.upstreamUrl).origin}${new URL(c.upstreamUrl).pathname === "/" ? "" : new URL(c.upstreamUrl).pathname}`);
   out(`state directory: ${c.home}`);
   out(`prompt preview:  ${c.logPrompts ? "on (REFLEX_LOG_PROMPTS) - decisions.jsonl includes a redacted, 300-char preview of each decided prompt" : "off (REFLEX_LOG_PROMPTS=1 to add a redacted prompt preview to decisions.jsonl)"}`);
@@ -119,5 +131,5 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
     out(`hint injection:  ${why === null ? `ok (${HINT_VERSION} via reflex's UserPromptSubmit hook)` : `CANNOT INJECT - ${why}`}`);
     if (hintBroken) out("                 the hint will NOT reach Claude Code; unset REFLEX_DELEGATE or fix the above");
   }
-  return envProblem || hintBroken ? 1 : 0;
+  return envProblem || hintBroken || layaMissing ? 1 : 0;
 }

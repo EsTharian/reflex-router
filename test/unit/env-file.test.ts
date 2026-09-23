@@ -132,6 +132,15 @@ describe("reflex doctor: env file and setting sources", () => {
     assert.match(text, /backend:\s+jev \(key present\)/);
     assert.ok(!text.includes(KEY));
   });
+  it("laya: names the laya-serve it would start and where the weights are; a missing laya-serve fails", async () => {
+    const found = await run({ REFLEX_BACKEND: "laya", REFLEX_LAYA_BIN: FAKE_CLAUDE, HF_HUB_CACHE: "/nonexistent" }, {});
+    assert.equal(found.code, 0);
+    assert.match(found.text, /backend:\s+laya, started by reflex on 127\.0\.0\.1, offline \(model english/);
+    assert.match(found.text, /laya weights:\s+NOT in \/nonexistent - fetch them once/);
+    const missing = await run({ REFLEX_BACKEND: "laya", REFLEX_LAYA_BIN: "/nonexistent/laya-serve" }, {});
+    assert.equal(missing.code, 1);
+    assert.match(missing.text, /laya-serve:\s+NOT FOUND - install it with `uv tool install "laya\[serve\]"`/);
+  });
   it("says why a group-readable key file is not used, exits 1, and shows the key as missing", async () => {
     const { code, text } = await run({}, { [FILE]: { text: `TYPESAFE_API_KEY=${KEY}\n`, mode: 0o100644 } });
     assert.equal(code, 1);
