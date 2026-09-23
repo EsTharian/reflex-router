@@ -480,3 +480,21 @@ The corpora had put the cheaper-than-Jev rate at 3–4%. On real prompts the def
 Cross-entropy against Jev is the same (1.046 vs 1.046); demand MAE 0.72 → 0.67.
 
 **What it means.** 382 synthetic tasks and five minutes of training give a checkpoint that is 3.4× faster (two questions instead of nine), agrees with Jev more and moves far more turns off Opus, but it moves a quarter of the turns Jev keeps on Opus as well: its cheaper-than-Jev rate is where the 0.4.0 head was before the safety margin (14.7%). As is, it must not ship. Two gaps are visible: the corpus has fewer hard tasks than real traffic (25% vs 47% opus by Jev), and there is no opus margin. Next: a larger corpus weighted towards real traffic's shape, and a margin tuned on one half of the transcripts and scored on the other.
+
+## 2026-09-23 — Laya fine-tuned on 2,734 synthetic tasks: at the head's safety level it saves no more; only faster. Not shipped
+
+**Setup.** As the pilot (entry above), with the corpus grown to 2,734 tasks after filtering: the pilot's 500, 1,249 model-written tasks kept, 1,000 written one by one by subagents without scripts (five of ten first-round batches were template-generated, 45–54% unique openings against 96–100%, and were discarded), 30% Turkish, half of the main tasks with a previous reply. Rows sharing any six-word sequence with the owner's typed prompts (10) and exact duplicates (5) were dropped. Jev's argmax: 884 haiku, 1,296 sonnet, 554 opus (20% opus; the owner's real prompts: 46%). Kaggle 2×T4, 2,185 training tasks, 4 epochs, about 40 min.
+
+**Held out, synthetic (549 tasks).** 79% argmax agreement with Jev (pilot 77%), 9% cheaper, tier TV 0.20 (0.23), demand MAE 0.31 (0.36).
+
+**Real prompts** (`eval-checkpoint.ts`, with the owner's consent: 285 typed prompts in 80 transcripts, 278 answered by every backend; Jev planned 23 haiku / 126 sonnet / 129 opus; plan with Opus requested):
+
+| | agree | cheaper than Jev | picks h/s/o | opus recall | latency p50/p95 |
+| --- | --- | --- | --- | --- | --- |
+| shipped `english` + `cal-20260923.2` | 152 | **7 (2.5%)** | 1 / 47 / 230 | 122/129 | 1,471 / 1,566 ms |
+| fine-tuned, no margin | 173 | 22 (7.9%) | 8 / 90 / 180 | 108/129 | 449 / 600 ms |
+| fine-tuned + opus margin, tuned on the other half of the transcripts | 155 | **7 (2.5%)** | 8 / 38 / 232 | 123/129 | 449 / 600 ms |
+
+The margins picked were 2 and 1.5 (large: its cheaper-than-Jev plans are confident ones).
+
+**What it means.** Five times the data brought the cheaper-than-Jev rate from 12.6% to 7.9%, still too high. At the shipped head's safety level the fine-tuned checkpoint keeps as many turns on Opus as the head (232 vs 230): no saving gained. Its one gain is latency (3.3× at p95, two questions instead of nine), which item "cut Laya latency" can get far more cheaply than hosting an 800 MB custom checkpoint behind a `laya-serve` wrapper. The limit is the data: synthetic tasks do not carry real traffic's shape (20% vs 46% Opus by Jev), and the owner decided that their prompts are not training data. **Not shipped.** The tools stay (`label-corpus.ts`, `eval-checkpoint.ts`, `laya-serve-checkpoint.sh`) for a later attempt with better data.

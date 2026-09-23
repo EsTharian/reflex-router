@@ -35,16 +35,23 @@ const signal = { signal: new AbortController().signal };
 fs.mkdirSync(path.dirname(out), { recursive: true, mode: 0o700 });
 const fd = fs.openSync(out, "w", 0o600);
 let ok = 0;
-for (const it of items) {
-  const state = buildState({ kind: it.kind, task: it.task, previousAssistantText: it.previous, requestedModel: cfg.models.opus }, cfg).state;
-  try {
-    const d = await jev.decide(state, questions, signal);
-    fs.writeSync(fd, JSON.stringify({ group: groupOf(it.task), kind: it.kind, state, questions, gold: d.answers, jev_version: d.backendModel }) + "\n");
-    ok++;
-  } catch (e) {
-    console.error(`jev: ${e instanceof Error ? e.message : "error"}`);
+let next = 0;
+// Four at a time, the Jev client's socket limit; lines are written in completion order.
+const worker = async (): Promise<void> => {
+  for (let i = next++; i < items.length; i = next++) {
+    const it = items[i]!;
+    if (i % 100 === 0) console.error(`jev: ${i}/${items.length}`);
+    const state = buildState({ kind: it.kind, task: it.task, previousAssistantText: it.previous, requestedModel: cfg.models.opus }, cfg).state;
+    try {
+      const d = await jev.decide(state, questions, signal);
+      fs.writeSync(fd, JSON.stringify({ group: groupOf(it.task), kind: it.kind, state, questions, gold: d.answers, jev_version: d.backendModel }) + "\n");
+      ok++;
+    } catch (e) {
+      console.error(`jev: ${e instanceof Error ? e.message : "error"}`);
+    }
   }
-}
+};
+await Promise.all([worker(), worker(), worker(), worker()]);
 fs.closeSync(fd);
 jev.close();
 console.log(`labelled ${ok}/${items.length} to ${out}`);
