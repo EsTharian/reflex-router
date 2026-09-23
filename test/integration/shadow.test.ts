@@ -271,3 +271,32 @@ describe("REFLEX_COMPARE=laya while laya-serve is still loading", () => {
     assert.ok(compare.x !== null);
   });
 });
+
+describe("REFLEX_BACKEND=laya: the first prompt arrives while laya-serve is still loading", () => {
+  let laya: FakeJev | null = null;
+  let stack: Stack;
+  let port = 0;
+  const newTurn = fixtures.find((f) => f.file === "interactive.main-new-turn.request.json");
+  before(async () => {
+    const probe = await startFakeJev(); // a free port with nothing listening yet
+    port = Number(new URL(probe.url).port);
+    await probe.close();
+    stack = await startStack({ config: { backend: "laya", layaBaseUrl: `http://127.0.0.1:${port}`, layaModel: "english", typesafeApiKey: undefined } });
+    stack.upstream.setHandler(sseHandler);
+  });
+  after(async () => {
+    await stack.close();
+    await laya?.close();
+  });
+
+  it("is still decided (shadow: off the request's path), not recorded as a refused connection", async () => {
+    assert.ok(newTurn);
+    setTimeout(() => void startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.9, reasoning: 0.4 }, port).then((l) => (laya = l)), 1000);
+    const { rec, status, ms } = await replay(stack, newTurn);
+    assert.equal(status, 200);
+    assert.ok(ms < 900, `the request did not wait for Laya (${ms} ms)`);
+    assert.equal(rec.error, null);
+    assert.equal(rec["backend"], "laya");
+    assert.ok(rec.decision);
+  });
+});
