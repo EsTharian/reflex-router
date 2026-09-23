@@ -22,7 +22,8 @@ const server = http.createServer((req, res) => {
     const loaded = !env.FAKE_LAYA_NEVER_READY && Date.now() - started >= Number(env.FAKE_LAYA_LOAD_MS ?? 0);
     report.health.push({ auth: req.headers.authorization === `Bearer ${env.LAYA_API_KEY}`, loaded });
     save();
-    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok", loaded, device: "cpu" }));
+    // As the real laya-serve 0.3.x answers: the list of loaded checkpoints, not a boolean.
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok", loaded: loaded ? (env.LAYA_MODELS ?? "").split(",") : [], device: "auto" }));
     return;
   }
   res.writeHead(404).end();

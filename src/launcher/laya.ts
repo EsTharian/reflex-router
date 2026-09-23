@@ -51,12 +51,14 @@ export function layaEnv(env: NodeJS.ProcessEnv, port: number, apiKey: string, mo
   };
 }
 
-async function loaded(baseUrl: string, apiKey: string): Promise<boolean> {
+/** laya-serve's /health lists the checkpoints it has loaded (`{"loaded": ["english"]}`); `true` is accepted too. */
+async function loaded(baseUrl: string, apiKey: string, model: string): Promise<boolean> {
   try {
     const res = await forward(new URL(baseUrl), { method: "GET", url: "/health", headers: { authorization: `Bearer ${apiKey}` }, body: Buffer.alloc(0) }, { connectTimeoutMs: 500 });
     const chunks: Buffer[] = [];
     for await (const c of res) chunks.push(c as Buffer);
-    return res.statusCode === 200 && (JSON.parse(Buffer.concat(chunks).toString("utf8")) as { loaded?: unknown }).loaded === true;
+    const l = (JSON.parse(Buffer.concat(chunks).toString("utf8")) as { loaded?: unknown }).loaded;
+    return res.statusCode === 200 && (l === true || (Array.isArray(l) && l.includes(model)));
   } catch {
     return false;
   }
@@ -101,7 +103,7 @@ export async function startLaya(opts: StartLayaOptions): Promise<LayaServer> {
   const started = Date.now();
   const ready = (async (): Promise<boolean> => {
     while (!gone && Date.now() - started < opts.readyTimeoutMs) {
-      if (await loaded(baseUrl, apiKey)) {
+      if (await loaded(baseUrl, apiKey, opts.model)) {
         log(`${opts.model} loaded after ${Date.now() - started} ms on ${baseUrl}`);
         return true;
       }
