@@ -177,3 +177,32 @@ describe("shadow mode: the decision backend failing never touches the session", 
     assert.equal(jev.calls.length, calls);
   });
 });
+
+describe("shadow mode with REFLEX_BACKEND=laya", () => {
+  let laya: FakeJev;
+  let stack: Stack;
+  const newTurn = fixtures.find((f) => f.file === "interactive.main-new-turn.request.json");
+  before(async () => {
+    laya = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.9, reasoning: 0.4 });
+    // What the launcher hands the worker after starting laya-serve; the TypeSafe key is present and must stay unused.
+    stack = await startStack({ config: { backend: "laya", layaBaseUrl: laya.url, layaApiKey: "session-key", layaModel: "multilingual", jevBaseUrl: "http://127.0.0.1:1" } });
+    stack.upstream.setHandler(sseHandler);
+  });
+  after(async () => {
+    await stack.close();
+    await laya.close();
+  });
+
+  it("asks laya-serve with the session key and checkpoint, never the TypeSafe key, and records backend `laya`", async () => {
+    assert.ok(newTurn);
+    const { rec } = await replay(stack, newTurn);
+    const call = laya.calls.at(-1);
+    assert.ok(call);
+    assert.equal(call.headers.authorization, "Bearer session-key");
+    assert.equal(call.body.model, "multilingual");
+    assert.ok(!JSON.stringify(call.headers).includes("apikey_test"));
+    assert.equal(rec["backend"], "laya");
+    assert.equal(rec.error, null);
+    assert.ok(rec.decision);
+  });
+});

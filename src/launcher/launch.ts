@@ -7,7 +7,8 @@ import { mergeEnvFile, type EnvFileIO } from "../env-file.js";
 import type { InitMessage } from "../ipc.js";
 import { forward } from "../net/forward.js";
 import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
-import { resolveClaude, realResolveIO, type ResolvedBin } from "./claude-bin.js";
+import { resolveBin, resolveClaude, realResolveIO, type ResolvedBin } from "./claude-bin.js";
+import { startLaya, type LayaServer } from "./laya.js";
 import { startFrontDoor } from "./front-door.js";
 import { injectSettings, realInjectIO } from "./settings-inject.js";
 import { Supervisor, type Timings } from "./supervisor.js";
@@ -121,8 +122,20 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
   }
   if (effective.degradedReason) warn(`mode ${config.mode} runs as ${effective.mode} (${effective.degradedReason})`);
 
-  const init: InitMessage = { type: "init", config, effectiveMode: effective.mode, degradedReason: effective.degradedReason, claudeVersion: version };
   const logFile = openWorkerLog(config.home);
+  let workerConfig = config;
+  let laya: LayaServer | null = null;
+  if (config.backend === "laya") {
+    const layaBin = resolveBin("laya-serve", config.layaBin, realResolveIO(io.env));
+    if (!layaBin) {
+      warn('cannot find `laya-serve` (install it with `uv tool install "laya[serve]"`, or set REFLEX_LAYA_BIN); running plain claude');
+      logFile?.end();
+      return plain();
+    }
+    laya = await startLaya({ bin: layaBin, env: sanitizedEnv(io.env), model: config.layaModel, readyTimeoutMs: config.layaReadyTimeoutMs, logFile });
+    workerConfig = { ...config, layaBaseUrl: laya.baseUrl, layaApiKey: laya.apiKey };
+  }
+  const init: InitMessage = { type: "init", config: workerConfig, effectiveMode: effective.mode, degradedReason: effective.degradedReason, claudeVersion: version };
   const supervisor = new Supervisor({
     spawnWorker: () => spawnWorkerProcess({ init, readyTimeoutMs: io.timings?.readyTimeoutMs ?? 5000, logFile, log: () => undefined }),
     probe: workerProbe,
@@ -146,6 +159,7 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
     injection.cleanup();
     await door.close();
     await supervisor.stop();
+    await laya?.stop();
     logFile?.end();
   }
 }

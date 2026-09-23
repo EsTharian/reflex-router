@@ -3,7 +3,7 @@
 //   FAKE_CLAUDE_REPORT   file the report JSON is written to (at start, and again when the action finishes)
 //   FAKE_CLAUDE_VERSION  text printed for `--version` (default "2.1.277 (Claude Code)")
 //   FAKE_CLAUDE_HANG_VERSION=1   never answer `--version`
-//   FAKE_CLAUDE_ACTION   exit:N | request | wait | die:SIGKILL     (default exit:0)
+//   FAKE_CLAUDE_ACTION   exit:N | sleep:MS | request | wait | die:SIGKILL     (default exit:0)
 import { readFileSync, writeFileSync } from "node:fs";
 
 const argv = process.argv.slice(2);
@@ -33,6 +33,8 @@ if (argv.includes("--version")) {
   const action = process.env.FAKE_CLAUDE_ACTION ?? "exit:0";
   if (action.startsWith("exit:")) {
     process.exit(Number(action.slice(5)));
+  } else if (action.startsWith("sleep:")) {
+    setTimeout(() => process.exit(0), Number(action.slice(6)));
   } else if (action.startsWith("die:")) {
     process.kill(process.pid, action.slice(4));
   } else if (action === "request") {

@@ -36,9 +36,12 @@ const needsShell = (file: string, platform: NodeJS.Platform): boolean => platfor
  * Finds the real `claude`. `override` (REFLEX_CLAUDE_BIN) may be a path or a command name.
  * Returns null when nothing executable is found.
  */
-export function resolveClaude(override: string | undefined, io: ResolveIO): ResolvedBin | null {
+export const resolveClaude = (override: string | undefined, io: ResolveIO): ResolvedBin | null => resolveBin("claude", override, io);
+
+/** Finds `override` (a path or a command name), else `defaultName`, on PATH. Returns null when nothing executable is found. */
+export function resolveBin(defaultName: string, override: string | undefined, io: ResolveIO): ResolvedBin | null {
   const p = io.platform === "win32" ? path.win32 : path.posix;
-  const name = override ?? "claude";
+  const name = override ?? defaultName;
   const exts = io.platform === "win32" ? (io.pathExt ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [];
   const variants = (base: string): string[] => (io.platform === "win32" && p.extname(base) === "" ? [base, ...exts.map((e) => base + e.toLowerCase()), ...exts.map((e) => base + e)] : [base]);
 

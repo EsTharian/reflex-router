@@ -260,6 +260,24 @@ describe("launcher end to end (fake claude)", () => {
       assert.match(o.stderr, /running plain claude/);
     });
 
+    it("laya without a laya-serve to start: plain claude, and how to install it", async () => {
+      const o = await run(["-p", "x"], { REFLEX_BACKEND: "laya", REFLEX_LAYA_BIN: "/nonexistent/laya-serve", TYPESAFE_API_KEY: undefined });
+      assert.equal(o.report.baseUrl, upstream.url);
+      assert.match(o.stderr, /cannot find `laya-serve`.*uv tool install "laya\[serve\]"/);
+    });
+
+    it("laya: proxied without a TypeSafe key, and laya-serve is gone when claude is", async () => {
+      const layaReport = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "reflex-laya-")), "report.json");
+      const fake = fileURLToPath(new URL("../support/fake-laya-serve.mjs", import.meta.url));
+      fs.chmodSync(fake, 0o755);
+      const o = await run(["-p", "x"], { REFLEX_BACKEND: "laya", REFLEX_LAYA_BIN: fake, TYPESAFE_API_KEY: undefined, FAKE_LAYA_REPORT: layaReport, FAKE_CLAUDE_ACTION: "sleep:1000" });
+      assert.ok(isProxied(o), o.stderr);
+      assert.equal(o.report.hasTypesafeKey, false);
+      assert.deepEqual(o.report.reflexVars, []);
+      const pid = (JSON.parse(fs.readFileSync(layaReport, "utf8")) as { pid: number }).pid; // written on listen, well inside claude's 1 s
+      await waitFor(() => { try { process.kill(pid, 0); return false; } catch { return true; } }, { timeoutMs: 5000, what: "laya-serve to exit with the session" });
+    });
+
     it("the removed `local` backend is a configuration error: plain claude with an explanation", async () => {
       const o = await run(["-p", "x"], { REFLEX_BACKEND: "local" });
       assert.match(o.stderr, /invalid configuration: REFLEX_BACKEND/);
