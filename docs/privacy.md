@@ -1,6 +1,8 @@
 # Privacy: what reflex sends and stores
 
-## Sent to the decision backend (TypeSafe Jev)
+## Sent to the decision backend (TypeSafe Jev, or Laya on this machine)
+
+With `REFLEX_BACKEND=laya` the same request goes to a `laya-serve` that reflex started on `127.0.0.1` for this session, with a per-session key and `HF_HUB_OFFLINE=1`; it does not leave the machine, and no TypeSafe key is used ([reference](reference.md#laya-decisions-on-this-machine)). Everything below about content and limits applies unchanged.
 
 Only for a request positively identified as the start of work (a user-typed main-chat prompt, or a subagent's first request; see `docs/wire-format.md` §4). Tool-loop steps, harness side calls and anything unclassified are never sent.
 

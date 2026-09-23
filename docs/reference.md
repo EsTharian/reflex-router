@@ -13,7 +13,11 @@ Settings are environment variables, optionally supplied by `~/.reflex/env`. A va
 | Variable | Values | Default | Meaning |
 | --- | --- | --- | --- |
 | `REFLEX_MODE` | `route`, `shadow`, `off` | `shadow` | `off` runs plain `claude` with no proxy at all. `shadow` and `route` run the proxy. |
-| `REFLEX_BACKEND` | `jev`, `local` | `jev` | Decision backend. `local` is a placeholder and currently runs plain `claude`. |
+| `REFLEX_BACKEND` | `jev`, `laya` | `jev` | Decision backend. `jev`: TypeSafe Jev, needs `TYPESAFE_API_KEY`. `laya`: reflex starts [Laya](https://github.com/NandhaKishorM/laya)'s `laya-serve` on this machine for the session (see [Laya](#laya-decisions-on-this-machine)); no key, and nothing leaves the machine but your Claude Code session. |
+| `REFLEX_LAYA_BIN` | path or command | `laya-serve` on `PATH` | The `laya-serve` to start. Not found: reflex runs plain `claude` and says how to install it. |
+| `REFLEX_LAYA_MODEL` | `english`, `multilingual`, `typed-decisions` | `english` | The one Laya checkpoint `laya-serve` preloads and every decision asks for. |
+| `REFLEX_LAYA_DEADLINE_MS` | integer, 50–60000 | `1500` | Hard deadline for one Laya decision; on expiry the request goes out unchanged. Laya's README gives 193–464 ms per question on CPU; not measured by reflex. |
+| `REFLEX_LAYA_READY_TIMEOUT_MS` | integer, 1000–600000 | `60000` | How long `laya-serve` may take to load its checkpoint. Past it, reflex stops the server and the session runs without decisions. |
 | `TYPESAFE_API_KEY` | `apikey_...` | unset | Key for the Jev backend. Without it reflex runs plain `claude` and says so. |
 | `REFLEX_UPSTREAM_URL` | http(s) URL | your `ANTHROPIC_BASE_URL`, else `https://api.anthropic.com` | Where requests are forwarded. A path prefix (gateway) is kept. |
 | `REFLEX_CLAUDE_BIN` | path or command | `claude` on `PATH` | The real Claude Code binary. |
@@ -36,6 +40,26 @@ Settings are environment variables, optionally supplied by `~/.reflex/env`. A va
 | `REFLEX_AB` | number, 0–1 | `0` | `route` mode only. Of the turns the backend would route **below** the requested tier, this fraction is held on the requested model at random and tagged `ab: "control"`; the rest are tagged `ab: "routed"`. Report section 7 then compares only those tagged turns, and refuses the comparison until both arms pass `MIN_OUTCOME_N`. This is the only setting that produces data supporting a causal read of routing: every other comparison in the report is between turns the backend judged easy and turns it did not, which differ in difficulty before any outcome is measured. Only a conversation currently **on** the requested tier is eligible; an escalated turn is never randomised. |
 | `REFLEX_ESCALATE_THRESHOLD` | number, 0–3 | `1` | Correction score at or above which a closed window escalates. Scores run 0–3 (`CORRECTION_SCORE_CAP`); the default is the lowest score ever recorded from a real correction (1.0, rule `en:thats_wrong`). The other two signals are binary and have no threshold. |
 | `REFLEX_ESCALATE_WINDOW_TURNS` | integer, 1–20 | `3` | How many of the conversation's later new turns one signal covers before it decays. Deliberately small: a sticky escalation turns one complaint into "reflex is off for this session". |
+
+### Laya: decisions on this machine
+
+`REFLEX_BACKEND=laya` replaces TypeSafe Jev with [Laya](https://github.com/NandhaKishorM/laya) (Apache-2.0, Convai Innovations), an encoder classifier whose `laya-serve` speaks the same `/v1/systemone` format. reflex starts it, uses it and stops it; you only install it once:
+
+```sh
+uv tool install "laya[serve]"          # or: pip install "laya[serve]"
+hf download convaiinnovations/laya     # the weights, once; skip if they are already in ~/.cache/huggingface
+REFLEX_BACKEND=laya reflex doctor      # finds laya-serve and the weights
+REFLEX_BACKEND=laya reflex             # shadow mode, as always, until you have read `reflex report`
+```
+
+What reflex does with it, per session:
+
+- Starts `laya-serve` on a free `127.0.0.1` port (Laya's own default is `0.0.0.0`; reflex overrides it), with a random per-session key the server requires, preloading only `REFLEX_LAYA_MODEL`, and with `HF_HUB_OFFLINE=1`: the weights come from the Hugging Face cache and nothing is fetched. Its environment has no `REFLEX_*`, `TYPESAFE_*` or `ANTHROPIC_*` variable; `LAYA_THREADS` and `LAYA_DEVICE` from your environment pass through.
+- Does not make `claude` wait for it. Loading takes seconds on CPU; until `/health` reports the model loaded, a decision fails at once and the request goes out unchanged, so the first turns of a session may be undecided (`error: backend:network` in the log).
+- Runs it under a small guard process that holds an IPC channel to the launcher, so `laya-serve` exits with reflex even when reflex is killed with `kill -9`. It is not restarted if it crashes: the rest of the session runs undecided. Its output goes to `~/.reflex/worker.log`, prefixed `laya:`.
+- Records `backend: "laya"` and Laya's reported model in `backend_version` on every decision, so `reflex report` and calibration can tell the two backends apart.
+
+Quality is not measured by reflex. Laya's README says its base checkpoints are near chance on typed decisions zero-shot and over-confident until calibrated, and the `english` checkpoint reads 512 tokens, which is less than the default `REFLEX_MAX_USER_CHARS` budget can hold. Run it in `shadow` mode and read `reflex report` before routing with it.
 
 What is sent to the decision backend and what is stored locally is listed in [`docs/privacy.md`](privacy.md). In short: the decision log holds no secrets and no home-directory paths, and no user text beyond a redacted preview of at most 300 characters of each decided prompt (project-relative paths in it are not removed). The preview is **off by default**; `REFLEX_LOG_PROMPTS=1` turns it on so decisions can be reviewed and tuned.
 

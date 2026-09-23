@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-reflex-router: a CLI (`reflex`) that runs the real `claude` behind a loopback proxy and, as decision-making lands, routes work to the cheapest adequate model using a fast decision backend (TypeSafe's Jev). TypeScript (strict), Node 20+, ESM, zero runtime dependencies.
+reflex-router: a CLI (`reflex`) that runs the real `claude` behind a loopback proxy and, as decision-making lands, routes work to the cheapest adequate model using a fast decision backend (TypeSafe's Jev, or Laya run locally by the launcher). TypeScript (strict), Node 20+, ESM, zero runtime dependencies.
 
 ## Commands
 
@@ -26,6 +26,7 @@ Tests run with `--import tsx` and a preloaded guard (`test/support/no-network.ts
 reflex (launcher process)                        src/launcher/
   front door  127.0.0.1:<port>  owns the port for the whole session; buffers, tries the worker, else forwards to the upstream
   supervisor  keeps one worker alive: liveness probe, restart with backoff, crash loop => passthrough
+  laya        REFLEX_BACKEND=laya: laya-serve on 127.0.0.1, per-session key, offline, under laya-guard (dies with the launcher)
   claude      spawned with stdio inherited; ANTHROPIC_BASE_URL -> front door; one merged --settings file
 worker (child process)                           src/worker/   all routing logic; every failure ends in "forward the original bytes"
 src/outcome/  outcome capture (record only): hook settings, hook payload parsing, heuristics, the tracker that joins hooks to decisions
@@ -48,7 +49,7 @@ Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacte
 - **Byte-identical passthrough** unless a rewrite is deliberately applied; never re-serialise a body that did not change.
 - **Loopback only**, and never edit the user's `~/.claude/settings.json`.
 - **No unmeasured claims** (cost, speed, quality) in README or docs. Dollar figures are list-price estimates over recorded token counts and must say so.
-- **No telemetry, ever.** reflex opens exactly two kinds of connection: Anthropic (the user's own session) and the decision backend (one question per start of work). `reflex share` writes a file and never uploads it. A field reaches a shared log only by being named in `src/report/share.ts`.
+- **No telemetry, ever.** reflex opens exactly two kinds of connection: Anthropic (the user's own session) and the decision backend (one question per start of work): TypeSafe Jev, or with `REFLEX_BACKEND=laya` the loopback `laya-serve` the launcher starts with `HF_HUB_OFFLINE=1`. `reflex share` writes a file and never uploads it. A field reaches a shared log only by being named in `src/report/share.ts`.
 - **Pricing** lives in `src/pricing.ts` with a "last verified" date and must be checked against Anthropic's pricing page before release (not present yet).
 - **Attribution.** Any code adapted from another project is listed in `THIRD_PARTY.md` (tracked, shipped in the npm package) in the same commit.
 - **Hook answers carry nothing but the delegation hint and the model-change notice.** Every hook is answered `204` except: with `REFLEX_DELEGATE=1`, a user-typed main-chat `UserPromptSubmit` gets `hookSpecificOutput.additionalContext`; and the first main-chat hook after reflex moved the main chat to a different model gets `systemMessage` (shown to the user, not the model; `src/worker/model-notice.ts`). Never `decision`, `continue` or anything that can block or change a prompt; any failure is a `204`. Changing the hint text means bumping `HINT_VERSION`.

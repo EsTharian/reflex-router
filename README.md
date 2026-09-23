@@ -4,7 +4,7 @@
 
 `reflex` runs the real [Claude Code](https://docs.claude.com/en/docs/claude-code) behind a loopback proxy and does three things with it:
 
-1. **Decide.** At the start of each piece of work, a fast decision model ([TypeSafe Jev](https://docs.typesafe.ai)) judges how much *reasoning* the task demands, not how long the message is.
+1. **Decide.** At the start of each piece of work, a fast decision model ([TypeSafe Jev](https://docs.typesafe.ai), or [Laya](https://github.com/NandhaKishorM/laya) running on your own machine) judges how much *reasoning* the task demands, not how long the message is.
 2. **Route** (opt-in). When it is safe, and does not throw away the conversation's prompt cache for nothing, send the work to a cheaper model. Otherwise leave it exactly as it was.
 3. **Observe.** For every decision, record whether it looked wrong afterwards (the next prompt reads like a correction, a test failed after an edit, an edit was undone) and read the result back with `reflex report`.
 
@@ -59,6 +59,16 @@ mkdir -p ~/.reflex && (umask 077; echo 'TYPESAFE_API_KEY=apikey_...' > ~/.reflex
 reflex doctor        # what it would do, and where each setting came from
 ```
 
+**Or keep decisions on your machine** with [Laya](https://github.com/NandhaKishorM/laya): no key, reflex starts and stops a loopback `laya-serve` for each session, offline. Install once, then set the backend:
+
+```sh
+uv tool install "laya[serve]"
+export REFLEX_BACKEND=laya
+reflex doctor
+```
+
+Details and caveats (reflex has not measured Laya's decision quality): [`docs/reference.md`](docs/reference.md#laya-decisions-on-this-machine).
+
 `~/.reflex/env` holds `KEY=value` lines for `REFLEX_*` settings and the key. It is merged **under** your environment (the environment wins), and a file that holds the key but is readable by group or others is refused: reflex warns, ignores the file, and runs plain `claude`. `reflex doctor` says why.
 
 **Start in shadow mode, and look before you route:**
@@ -98,7 +108,7 @@ Capabilities only. This table has no speed or savings figures, ours or theirs, a
 | Outcome capture (correction, failing test after an edit, reverted edit, per decision) | Yes. Record-only by default; `REFLEX_ESCALATE` can raise a later turn's tier, off unless you set it | Not in what we read; cost only ([§5](docs/prior-art.md#5-what-reflex-router-does-differently)) | Not in what we read; cost only ([§5](docs/prior-art.md#5-what-reflex-router-does-differently)) |
 | Quality-aware reporting | `reflex report`: outcome signals for routed vs unchanged turns with sample sizes, next to a stated cost estimate | Status line showing scores (display only, [§3](docs/prior-art.md#3-jev-router)) | Dashboard of cost, cache health and Jev latency; offline eval of decisions on hand-labelled prompts ([§2](docs/prior-art.md#2-jcm-router)) |
 | Shadow mode | Default mode; report compares would-route with actual | No | `dry_run` |
-| Pluggable / local decision backend | `DecisionBackend` interface; only Jev is implemented, the local backend is a placeholder | Jev only | Jev only |
+| Pluggable / local decision backend | `DecisionBackend` interface: TypeSafe Jev, or Laya started by reflex on loopback | Jev only | Jev only |
 | Per-agent pins | Pin per conversation, and per subagent id; state is session-scoped | State per session + first message, reused through the tool loop; no explicit subagent signal | Reuses the most recent routed turn's decision; subagents detected from the system prompt; turn key is prompt-based ([§2](docs/prior-art.md#2-jcm-router)) |
 | Cost guard | Yes: refuses a main-chat switch whose lost prompt cache would cost more than a limit (list prices) | No cost model; a fixed context-size rule | Yes: cache-aware, with a maximum switch cost |
 | Privacy controls | Allow-listed state sent to the backend, character budgets and secret redaction before anything leaves the machine, log files `0600` in a `0700` directory and size-rotated, a redacted 300-character prompt preview (off by default, switchable) | README says only the prompt is sent; the code also sends model, context size and available models ([§3](docs/prior-art.md#3-jev-router)) | Journal keeps a 300-character prompt preview by default (switchable) and is not rotated ([§2](docs/prior-art.md#2-jcm-router)) |
@@ -174,7 +184,8 @@ You can run the same command on your own traffic today. It prices the same measu
 ## Contributing data
 
 **reflex has no telemetry.** It makes exactly two kinds of network connection: to Anthropic, because that is your
-Claude Code session, and to TypeSafe Jev, to ask one question per start of work. There is no third. Nothing about your
+Claude Code session, and to the decision backend, to ask one question per start of work: TypeSafe Jev, or with
+`REFLEX_BACKEND=laya` a `laya-serve` on `127.0.0.1` that reflex starts offline. There is no third. Nothing about your
 usage is sent anywhere, ever, and there is no setting that turns such a thing on.
 
 Which is also the problem. Every threshold in reflex is tuned on **one person's log**, and the section above says what
