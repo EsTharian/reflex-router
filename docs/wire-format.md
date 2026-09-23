@@ -337,10 +337,31 @@ message; Sonnet rejects its `effort`, so that key must go, and `retarget` remove
 effort was all it held, as in every request seen).
 
 **What it does not.** No continuation with Opus 5.5 thinking in the history, no pinned loop and no un-pin were sent, so
-**every pair with `claude-opus-5-5` on either side stays `rewrite_unverified`** (`UNVERIFIED_MODELS`,
-`src/wire/rewrite.ts`) until a run covers them.
+every pair with `claude-opus-5-5` on either side stayed `rewrite_unverified` (`UNVERIFIED_MODELS`,
+`src/wire/rewrite.ts`) until the follow-up below.
 
-Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and none with Opus 5.5 yet (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
+**Continuations (follow-up run, same settings, same day).** `--to haiku,sonnet --main sonnet --lean --no-main-new
+--cap-usd 2.50`, one session with two subagents. Results:
+`test/fixtures/experiments/2.1.280/experiment.route-opus55-continuations.results.json`, est. $0.94; three further
+attempts (est. $0.59 together, not kept) tried to make Sonnet think before a tool call and did not.
+
+| Probe | Haiku | Sonnet |
+| --- | --- | --- |
+| subagent first request (×2) | 200 ×2 | 200 ×2 |
+| subagent pinned continuation | 200 | 200 |
+| subagent un-pin to Opus 5.5 with target-made turns | 200 (one **Haiku-signed** thinking block) | 200 (no thinking block) |
+| main continuation with an **Opus 5.5 thinking block** in the history | 200 | 200 |
+| later main continuation, pinned | — | 200 |
+| main un-pin to Opus 5.5 after Sonnet turns | — | 200 (the one thinking block is Opus 5.5's own) |
+| history made by Opus 5.5 and Sonnet, sent to Haiku | 200 | — |
+
+So **Opus 5.5 → Haiku is verified** (first request, subagent pin, a continuation holding Opus 5.5 thinking, un-pin
+with Haiku-signed thinking) and route mode applies it (`VERIFIED_MODEL_RETARGETS`, `src/wire/rewrite.ts`). **Opus 5.5
+→ Sonnet is not yet**: Sonnet produced no thinking block in any routed turn (6 of 6 at `effort: "medium"` before a
+tool call), so un-pin with **Sonnet-signed** thinking back to Opus 5.5, the request the retry-with-original would
+send, has not been sent. Upgrades into Opus 5.5 were not run.
+
+Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and of those with Opus 5.5 only Opus 5.5 → Haiku (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 

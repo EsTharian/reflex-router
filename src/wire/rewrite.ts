@@ -38,8 +38,16 @@ const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>s
  */
 const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5"];
 const unverifiedModel = (m: string | null): boolean => m !== null && UNVERIFIED_MODELS.some((u) => m.toLowerCase().includes(u));
+/**
+ * `<unverified model>><target tier>` pairs verified since (docs/wire-format.md §5.7,
+ * test/fixtures/experiments/2.1.280/experiment.route-opus55-*): first request, subagent pin, a continuation holding
+ * Opus 5.5 thinking, and un-pin with target-signed thinking back to Opus 5.5.
+ */
+const VERIFIED_MODEL_RETARGETS: ReadonlySet<string> = new Set(["claude-opus-5-5>haiku"]);
+const sourceVerified = (m: string | null, to: Tier): boolean =>
+  !unverifiedModel(m) || UNVERIFIED_MODELS.some((u) => m!.toLowerCase().includes(u) && VERIFIED_MODEL_RETARGETS.has(`${u}>${to}`));
 export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean =>
-  VERIFIED_RETARGETS.has(`${from}>${to}`) && !unverifiedModel(fromModel) && !unverifiedModel(toModel);
+  VERIFIED_RETARGETS.has(`${from}>${to}`) && sourceVerified(fromModel, to) && !unverifiedModel(toModel);
 
 /**
  * `anthropic-beta` values a target model rejects, removed from the header when a request is retargeted to it (the

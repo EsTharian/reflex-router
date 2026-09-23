@@ -5,7 +5,7 @@ import { parseOverride } from "../../src/overrides.js";
 import { cacheReadUsd, cacheWriteUsd, LAST_VERIFIED, priceOf, PRICES } from "../../src/pricing.js";
 import { isVerifiedRetarget } from "../../src/wire/rewrite.js";
 
-const base: GuardInput = { cacheTier: "sonnet", to: "haiku", ctxTokens: 40_000, ttl: "1h", fresh: false, maxPenaltyUsd: 0.01 };
+const base: GuardInput = { cacheTier: "sonnet", to: "haiku", ctxTokens: 40_000, ttl: "1h", fresh: false, maxPenaltyUsd: 0.01, perRequest: null, breakevenRequests: 10 };
 
 describe("pricing", () => {
   it("matches the pricing page as verified (per MTok) and carries the verification date", () => {
@@ -33,13 +33,13 @@ describe("pricing", () => {
 
 describe("guard", () => {
   it("a fresh conversation has nothing cached: allowed", () => {
-    assert.deepEqual(guard({ ...base, fresh: true, ctxTokens: null, cacheTier: null }), { allowed: true, reason: "fresh", ctx: null, penaltyUsd: null });
+    assert.deepEqual(guard({ ...base, fresh: true, ctxTokens: null, cacheTier: null }), { allowed: true, reason: "fresh", ctx: null, penaltyUsd: null, savingUsd: null });
   });
   it("staying on the tier that holds the cache costs nothing", () => {
     assert.equal(guard({ ...base, cacheTier: "haiku" }).reason, "no_switch");
   });
   it("unknown context refuses", () => {
-    assert.deepEqual(guard({ ...base, ctxTokens: null }), { allowed: false, reason: "ctx_unknown", ctx: null, penaltyUsd: null });
+    assert.deepEqual(guard({ ...base, ctxTokens: null }), { allowed: false, reason: "ctx_unknown", ctx: null, penaltyUsd: null, savingUsd: null });
   });
   it("penalty = write(to, ctx, ttl) - read(from, ctx); 40k context on the 1h main chat is over $0.01", () => {
     const r = guard(base);
@@ -52,6 +52,23 @@ describe("guard", () => {
     const exact = (5_000 * 2 - 5_000 * 0.2) / 1e6;
     assert.equal(guard({ ...base, ctxTokens: 5_000, maxPenaltyUsd: exact + 1e-12 }).reason, "within_limit");
     assert.equal(guard({ ...base, ctxTokens: 5_000, maxPenaltyUsd: exact - 1e-9 }).reason, "over_limit");
+  });
+  it("break-even: allowed when N requests at the conversation's own averages recover the penalty", () => {
+    // Opus 5.5 -> Sonnet at 100k (1h): penalty = 100k * (4 - 0.2) = $0.38; reads cost the same on both.
+    const g: GuardInput = { ...base, cacheTier: "opus", to: "sonnet", ctxTokens: 100_000, perRequest: { write: 5_000, output: 1_500 } };
+    const saving = (5_000 * (8 - 4) + 1_500 * (20 - 10)) / 1e6; // $0.035 per request
+    const r = guard(g);
+    assert.ok(Math.abs((r.penaltyUsd ?? 0) - 0.38) < 1e-9);
+    assert.ok(Math.abs((r.savingUsd ?? 0) - saving) < 1e-12);
+    assert.deepEqual([r.allowed, r.reason], [false, "over_limit"]); // 10 x $0.035 < $0.38
+    assert.deepEqual([guard({ ...g, breakevenRequests: 11 }).allowed, guard({ ...g, breakevenRequests: 11 }).reason], [true, "breakeven"]);
+    assert.equal(guard({ ...g, breakevenRequests: 0, perRequest: { write: 1e6, output: 1e6 } }).allowed, false); // 0 = off
+    assert.equal(guard({ ...g, perRequest: null }).reason, "over_limit"); // no averages yet: only the $ limit
+  });
+  it("break-even counts the cheaper cache read on every request (Opus 5.5 -> Haiku)", () => {
+    const r = guard({ ...base, cacheTier: "opus", to: "haiku", ctxTokens: 100_000, perRequest: { write: 0, output: 0 } });
+    assert.ok(Math.abs((r.savingUsd ?? 0) - 100_000 * (0.2 - 0.1) / 1e6) < 1e-12);
+    assert.equal(r.allowed, false); // $0.18 penalty vs 10 x $0.01
   });
   it("uses the 5-minute write multiplier when the request has no 1h TTL", () => {
     const r = guard({ ...base, ttl: "5m", maxPenaltyUsd: 1 });
@@ -76,9 +93,10 @@ describe("verified retargets", () => {
     for (const [f, t] of [["haiku", "haiku"], ["opus", "opus"]] as const) assert.equal(isVerifiedRetarget(f, t, M[f], M[t]), false);
   });
 
-  it("a pair with Opus 5.5 on either side is not, whatever its tiers", () => {
+  it("Opus 5.5 -> Haiku is verified; every other pair with Opus 5.5 on either side is not", () => {
+    assert.equal(isVerifiedRetarget("opus", "haiku", "claude-opus-5-5[1m]", M.haiku), true);
     assert.equal(isVerifiedRetarget("opus", "sonnet", "claude-opus-5-5", M.sonnet), false);
-    assert.equal(isVerifiedRetarget("opus", "haiku", "claude-opus-5-5[1m]", M.haiku), false);
     assert.equal(isVerifiedRetarget("sonnet", "opus", M.sonnet, "claude-opus-5-5"), false);
+    assert.equal(isVerifiedRetarget("haiku", "opus", M.haiku, "claude-opus-5-5"), false);
   });
 });
