@@ -67,7 +67,7 @@ export REFLEX_BACKEND=laya
 reflex doctor
 ```
 
-Details and caveats (reflex has not measured Laya's decision quality): [`docs/reference.md`](docs/reference.md#laya-decisions-on-this-machine).
+On a 30-prompt labelled set Laya kept Opus for essentially every prompt, so today it keeps your data local but does not route ([measurement](docs/observations.md#2026-09-23--laya-vs-jev-on-the-labelled-reasoning-set-laya-never-routes-down), [details](docs/reference.md#laya-decisions-on-this-machine)).
 
 `~/.reflex/env` holds `KEY=value` lines for `REFLEX_*` settings and the key. It is merged **under** your environment (the environment wins), and a file that holds the key but is readable by group or others is refused: reflex warns, ignores the file, and runs plain `claude`. `reflex doctor` says why.
 

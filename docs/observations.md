@@ -376,3 +376,20 @@ that instead.
 **Follow-up run, 2026-09-23** (`docs/wire-format.md` §5.7): Opus 5.5 → Haiku (with the clamp) and → Sonnet were
 accepted on first requests under the user's own settings. The $0.50 cap stopped the run before any continuation, so
 every Opus 5.5 pair stays unapplied.
+
+## 2026-09-23 — Laya vs Jev on the labelled reasoning set: Laya never routes down
+
+**Setup.** `test/live/laya.live.test.ts` at commit `0eabb94`: the 30-prompt set of `test/live/reasoning-set.ts` (labels are the author's judgment, not ground truth; 12 haiku, 6 sonnet, 12 opus), the product's own state and questions, the default `mass` rule (`REFLEX_MASS_EPS` 0.10). Laya 0.3.7 (torch 2.14.0, CPU) started by the launcher exactly as in a session, once per checkpoint, on an Apple M4; Jev `jev-latest` over the network from Turkey. One run each, no repeats.
+
+| Backend | exact | cheaper than label | dearer than label | picks haiku / sonnet / opus | AUC of P(opus), opus vs haiku labels | latency p50 / p95 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Laya `english` | 12/30 | 0 | 18 | 0 / 0 / 30 | 0.68 | 175 / 334 ms |
+| Laya `multilingual` | 12/30 | 0 | 18 | 0 / 2 / 28 | 0.76 | 88 / 310 ms |
+| Laya `typed-decisions` | 12/30 | 0 | 18 | 0 / 0 / 30 | 0.95 | 216 / 712 ms |
+| Jev | 27/30 | 2 | 1 | 13 / 5 / 12 | 1.00 | 321 / 400 ms |
+
+**What it means.** Zero-shot, Laya picks Opus for essentially every prompt, so with Opus requested reflex would change nothing: no under-routing (safe), and no saving either. The 12 exact matches are just the 12 Opus labels. The reason is visible in the probabilities: `english` and `typed-decisions` keep P(opus) between 0.31 and 0.68 for every prompt, and the mass rule only moves below Opus when P(opus) ≤ 0.10. `multilingual` spreads its probabilities but puts 0.84–1.00 on Opus for half the haiku-labelled prompts. Jev's P(opus) is 0.00 on all 12 haiku-labelled prompts. This matches Laya's own README (base checkpoints "near chance on typed-decisions zero-shot", over-confident until temperatures are fitted); `laya-serve` also warns at start-up that the `english` checkpoint ships invalid temperatures.
+
+**The one signal.** `typed-decisions` ranks the prompts well (AUC 0.95 for P(opus) between opus- and haiku-labelled prompts) inside a narrow band (0.31–0.50 haiku, 0.45–0.63 opus). A threshold picked on these 30 prompts would be fitted to the author's labels, so none is proposed here; making Laya route needs calibration or fine-tuning on reflex's own questions against more labelled data than one person's 30 prompts.
+
+**Other measurements.** Ready (checkpoint loaded) in 2.0 s (`english`), 3.6 s (`multilingual`), 3.0 s (`typed-decisions`). Laya reported more than 512 input tokens for 16 of 30 prompts on `english` (max 1024) and for all 30 on the others (max 2048): the state plus the question text exceeds a 512-token context on long prompts, so `english` reads a truncated task. Latencies are local CPU vs network and not comparable as a claim about either backend in general.
