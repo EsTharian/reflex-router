@@ -6,6 +6,49 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.4.0 — 2026-09-23
+
+Decisions can now stay on your machine: [Laya](https://github.com/NandhaKishorM/laya), run by reflex itself, as an
+alternative to TypeSafe Jev. **Experimental**: measured less accurate than Jev (below). Try it in `shadow` mode first.
+
+### Added
+
+- **`REFLEX_BACKEND=laya`.** reflex starts `laya-serve` for each session on a free `127.0.0.1` port (Laya's own default
+  is `0.0.0.0`), with a random per-session key, one preloaded checkpoint (`REFLEX_LAYA_MODEL`, default `english`) and
+  `HF_HUB_OFFLINE=1`, and stops it when the session ends. It runs under a small guard process, so it exits with reflex
+  even after `kill -9`. Its environment has no `REFLEX_*`, `TYPESAFE_*` or `ANTHROPIC_*` variable. No TypeSafe key is
+  used. Install once with `uv tool install "laya[serve]"`; `reflex doctor` finds `laya-serve` and the weights. With no
+  `laya-serve` on `PATH`, reflex runs plain `claude` and says so.
+- **A calibration head for Laya** (`REFLEX_LAYA_CALIBRATION`, on by default). Uncalibrated, Laya keeps Opus for
+  essentially every task. reflex asks it seven extra yes/no questions and maps all of its answers to Jev's scale with
+  parameters fitted by distillation from Jev (`src/backend/laya-calibration.generated.ts`, `cal-20260923`). Each
+  record's `backend_version` names the calibration. Measured (`docs/observations.md`): 17/30 on the held-out author set
+  (uncalibrated 12, Jev 27). On 440 synthetic tasks, 3–4% of its plans were cheaper than Jev's; in 31 turns of two real
+  sessions, 3 were. It is "Sonnet by default, Opus when it looks hard" and rarely picks Haiku.
+- **`REFLEX_COMPARE=laya`** (with the Jev backend) also puts every decided state to a local Laya, off the request's
+  path, and records only numbers (a feature vector) in a `compare` block. Jev alone decides. This is how calibration
+  data is collected: `scripts/calibrate/harvest-corpus.ts` and `scripts/calibrate/fit.ts`.
+- New settings: `REFLEX_LAYA_BIN`, `REFLEX_LAYA_MODEL`, `REFLEX_LAYA_DEADLINE_MS` (default 2500 ms: 9 questions, a
+  measured long-task p95 of 1.5–2.2 s on an idle Apple M4), `REFLEX_LAYA_READY_TIMEOUT_MS`, `REFLEX_LAYA_CALIBRATION`,
+  `REFLEX_COMPARE`.
+
+### Changed
+
+- **`REFLEX_BACKEND=local` is removed.** It was a placeholder that ran plain `claude`; it is now a configuration error
+  (reflex warns and runs plain `claude`, as before).
+
+### Fixed
+
+- In route mode, the wait for a decision and the logged `decision_deadline_ms` always used `REFLEX_JEV_DEADLINE_MS`,
+  whatever the backend.
+
+### Known limits
+
+- Laya is not Jev: see the measurements above. `english` reads at most 512 tokens, less than the default
+  `REFLEX_MAX_USER_CHARS` budget holds. Laya's first decision of a session waits for its checkpoint to load (seconds):
+  shadow mode waits off the request's path; in route mode that first turn usually goes out unchanged.
+- The process guard is untested on Windows.
+
 ## 0.3.8 — 2026-09-23
 
 ### Fixed
