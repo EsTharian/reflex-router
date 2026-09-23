@@ -398,8 +398,14 @@ Only `model` changes in either direction: both models take adaptive thinking, `e
 third run put a puzzle before the subagent's first tool call. Fable then thought, and Opus 5.5 accepted that
 Fable-signed block. As for Sonnet above, the un-pin after an Opus 5.5 → Fable pin was not sent literally with
 Fable-signed thinking in it: Opus 5.5 accepting its own request shape and accepting Fable-signed thinking were
-verified separately. **Verified and applied** (Fable still needs `REFLEX_ALLOW_FABLE=1`). Not run: an upgrade or
-downgrade of a main chat whose source is Fable (a Fable main chat needs `--model`).
+verified separately. **Verified and applied** (Fable still needs `REFLEX_ALLOW_FABLE=1`). 
+
+**A Fable main chat → Opus 5.5** (`experiment.route-fable-main-to-opus55.results.json`, est. $1.15, cap $4.00). This
+is a deliberate exception to the no-override rule, approved by the user as in §5.6: `--model fable` with the model setting
+`opus[1m]`, since a Fable main chat cannot be produced otherwise. Flags `--from fable --to opus --main opus --lean`;
+the prompt puts a puzzle before the first tool call so Fable thinks (525 thinking tokens). The first request to Opus 5.5,
+the main continuation holding a **Fable-signed** thinking block, the pinned Opus 5.5 continuation, and un-pin to Fable
+with Fable- and Opus 5.5-signed thinking in the history: all 200. Only `model` changes.
 
 Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and every pair between Opus 5.5 and Haiku, Sonnet or Fable (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
