@@ -16,6 +16,8 @@ node bin/reflex.js report --fingerprints   # unclassified side-call fingerprints
 node bin/reflex.js share [--since 7d] [--out f.jsonl]      # structural-only log for calibration; allow-list, writes a file, never uploads
 node scripts/report/strip-archive.mjs <in> <out>   # structural copy of an archived log (allow-listed fields) for test/fixtures/report/archives/
 node scripts/acceptance/check-archives.mjs # Phase 1 acceptance checks over ~/.reflex/archive/*.jsonl (docs/acceptance-phase1.md)
+node --import tsx scripts/calibrate/harvest-corpus.ts <tasks.jsonl> <out.jsonl>   # Jev + every Laya checkpoint over a task corpus; writes numbers only
+node --import tsx scripts/calibrate/fit.ts [--model m] [--write] <files...>         # fit/cross-validate the Laya head from harvests and REFLEX_COMPARE logs; --write updates src/backend/laya-calibration.generated.ts
 ```
 
 Tests run with `--import tsx` and a preloaded guard (`test/support/no-network.ts`) that throws on any non-loopback connection or DNS lookup, including in forked workers. Never weaken it; use the fake upstream and fake backend in `test/support/`.
@@ -33,6 +35,7 @@ src/outcome/  outcome capture (record only): hook settings, hook payload parsing
 src/delegate/ REFLEX_DELEGATE: the hint text + version (hint.ts, the only place it lives) and which UserPromptSubmit gets it (reply.ts)
 src/worker/escalation.ts REFLEX_ESCALATE: the tier arithmetic and the decay of an escalation; the tracker hands signals to the router through TrackerDeps.onSignal
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
+src/backend/  decision backends: jev.ts (the Jev wire client, also used for laya-serve), laya.ts + laya-calibration.ts (feature questions and the fitted head; a feature change bumps FEATURE_VERSION and needs a refit)
 src/config.ts the ONLY interpreter of settings (and of process.env); src/env-file.ts only reads/permission-checks ~/.reflex/env and merges it under the process env
 src/report/   `reflex report`: tolerant JSONL reader, pure sections 0-13 (0 = workflow profile, 11 = side-call fingerprints, 12 = side-call routing estimate, 13 = escalations), no network
 src/report/share.ts  `reflex share`: the ALLOW-LIST of fields a shared log may contain. Adding a field to the decision record does NOT add it here; that is deliberate and test/unit/share.test.ts pins it

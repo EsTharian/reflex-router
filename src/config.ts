@@ -166,8 +166,12 @@ export const DEFAULT_JEV_DEADLINE_MS = 1500;
  * decided. 0 disables it. The first decision after an idle gap otherwise pays a fresh TCP+TLS handshake
  * (docs/observations.md: p50 823 ms on a new connection vs 382 ms reused).
  */
-/** Laya on CPU answers one question in 193-464 ms (its README); the Jev default leaves room above that. */
-export const DEFAULT_LAYA_DEADLINE_MS = 1500;
+/**
+ * One calibrated Laya decision (the product's 2 questions + 7 feature questions) measured on an idle Apple M4, CPU:
+ * `english` p95 754 ms on short tasks and 1,478 ms on long ones; `typed-decisions` p95 2,223 ms on long ones
+ * (docs/observations.md, 2026-09-23). Above the long-task p95 with some headroom, as the Jev default is.
+ */
+export const DEFAULT_LAYA_DEADLINE_MS = 2500;
 /** Importing torch and loading a checkpoint on CPU; generous, since the session runs unrouted meanwhile anyway. */
 export const DEFAULT_LAYA_READY_TIMEOUT_MS = 60_000;
 export const DEFAULT_WARM_INTERVAL_MS = 60_000;

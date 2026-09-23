@@ -7,7 +7,7 @@
 // is optimistic by however much decisions of one session resemble each other.
 //
 // Inputs: decisions.jsonl files from sessions run with REFLEX_COMPARE=laya (a decision record with a `compare` block
-// holds Laya's feature vector next to Jev's answer), and/or harvest-history.ts output. Only numbers are read.
+// holds Laya's feature vector next to Jev's answer), and/or harvest-*.ts output. Only numbers are read.
 // --write adds (or replaces) the checkpoint's entry in src/backend/laya-calibration.generated.ts.
 import fs from "node:fs";
 import { FEATURE_VERSION, type LayaCalibration } from "../../src/backend/laya-calibration.js";
@@ -47,12 +47,12 @@ for (const file of files) {
     let t = null;
     let group = "";
     let source = "";
-    if (r["source"] === "history") {
+    if (typeof r["source"] === "string") {
       x = vec(r[`x_${model}`]);
       const j = r["jev"] as { p?: Record<string, number>; demand?: number } | undefined;
       t = j?.p && num(j.demand) !== null ? targetOf(j.p, j.demand!) : null;
       group = typeof r["group"] === "string" ? r["group"] : `${file}:${i}`;
-      source = "history";
+      source = `${r["source"]}${typeof r["kind"] === "string" ? `:${r["kind"]}` : ""}`;
     } else if (r["record"] === "decision") {
       const c = r["compare"] as Rec | undefined;
       const d = r["decision"] as { picks?: { tier?: { probabilities?: Record<string, number> } }; vetoes?: Record<string, number> } | null;
@@ -73,10 +73,13 @@ console.log(`${samples.length} samples for ${model} (${FEATURE_VERSION}): ${JSON
 if (samples.length < 20) throw new Error("too few samples to fit");
 
 const fmt = (s: Scores): string =>
-  `agree ${s.agree}/${s.n} (${((100 * s.agree) / s.n).toFixed(1)}%), under ${s.under}, over ${s.over}, xent ${s.xent.toFixed(3)}, demand MAE ${s.demandMae.toFixed(2)}, picks ${JSON.stringify(s.picks)}`;
-const jevPicks = score(samples.map((s) => ({ p: s.t.p, demand: s.t.demand, t: s.t })), eps).picks;
-console.log(`jev picks (mass, eps ${eps}): ${JSON.stringify(jevPicks)}`);
+  `pick agree ${s.agree}/${s.n} (${((100 * s.agree) / s.n).toFixed(1)}%) under ${s.under} over ${s.over} | PLAN agree ${s.plan.agree} under ${s.plan.under} over ${s.plan.over} picks ${JSON.stringify(s.plan.picks)} recall ${JSON.stringify(s.recall)} | xent ${s.xent.toFixed(3)} demand MAE ${s.demandMae.toFixed(2)}`;
+const jevSelf = score(samples.map((s) => ({ p: s.t.p, demand: s.t.demand, t: s.t })), eps);
+console.log(`jev (mass, eps ${eps}): picks ${JSON.stringify(jevSelf.picks)}, planned with Opus requested ${JSON.stringify(jevSelf.plan.picks)}`);
 console.log(`raw laya      : ${fmt(score(samples.map((s) => ({ ...rawOf(s.x), t: s.t })), eps))}`);
+// Reference points: a head that learned nothing but the base rate would land near "always sonnet".
+const constant = (tier: string): { p: Record<string, number>; demand: number } => ({ p: { haiku: 0, sonnet: 0, opus: 0, [tier]: 1 }, demand: tier === "haiku" ? 0 : 2 });
+for (const tier of ["sonnet", "opus"]) console.log(`always ${tier.padEnd(7)}: ${fmt(score(samples.map((s) => ({ ...constant(tier), t: s.t })), eps))}`);
 
 let best: { lambda: number; s: Scores } | null = null;
 for (const lambda of [0.001, 0.01, 0.03, 0.1, 0.3, 1]) {
@@ -97,6 +100,8 @@ if (write) {
     cv_agree: Math.round((1000 * best!.s.agree) / best!.s.n) / 1000,
     cv_under: Math.round((1000 * best!.s.under) / best!.s.n) / 1000,
     cv_over: Math.round((1000 * best!.s.over) / best!.s.n) / 1000,
+    cv_plan_agree: Math.round((1000 * best!.s.plan.agree) / best!.s.n) / 1000,
+    cv_plan_under: Math.round((1000 * best!.s.plan.under) / best!.s.n) / 1000,
     sources: JSON.stringify(bySource),
   });
   const all = { ...LAYA_CALIBRATIONS, [model]: cal };

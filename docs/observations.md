@@ -393,3 +393,32 @@ every Opus 5.5 pair stays unapplied.
 **The one signal.** `typed-decisions` ranks the prompts well (AUC 0.95 for P(opus) between opus- and haiku-labelled prompts) inside a narrow band (0.31–0.50 haiku, 0.45–0.63 opus). A threshold picked on these 30 prompts would be fitted to the author's labels, so none is proposed here; making Laya route needs calibration or fine-tuning on reflex's own questions against more labelled data than one person's 30 prompts.
 
 **Other measurements.** Ready (checkpoint loaded) in 2.0 s (`english`), 3.6 s (`multilingual`), 3.0 s (`typed-decisions`). Laya reported more than 512 input tokens for 16 of 30 prompts on `english` (max 1024) and for all 30 on the others (max 2048): the state plus the question text exceeds a 512-token context on long prompts, so `english` reads a truncated task. Latencies are local CPU vs network and not comparable as a claim about either backend in general.
+
+## 2026-09-23 — Laya calibrated by distillation from Jev
+
+**Why.** Zero-shot Laya never routes down (entry above). A calibration head (`src/backend/laya-calibration.ts`) maps Laya's answers to the product's two questions plus seven yes/no feature questions (`lf-1`) to Jev's tier distribution and reasoning score. It is a soft-target multinomial logistic regression plus a ridge regression, 14 inputs, fitted with `scripts/calibrate/fit.ts`, and shipped as parameters (`laya-calibration.generated.ts`, `cal-20260923`), so a Laya user never contacts Jev.
+
+**Data (the teacher is Jev `jev-latest`; Laya 0.3.7 on CPU, Apple M4).**
+- *Synthetic corpora:* 320 generated tasks (templated; cross-validation keeps tasks sharing their first three words in one fold) and 120 hand-written ones (40 over 800 characters: pasted logs, code, configs). Written by a model to cover stacks and difficulty; **not** real user prompts. Both went to Jev and to every Laya checkpoint; only numbers were kept (`harvest-corpus.ts`).
+- *Real sessions:* two long `claude -p --continue` sessions behind reflex, in route mode with `REFLEX_COMPARE=laya` (`typed-decisions`). Session 1: 20 turns building a time-series database. Session 2: 17 turns building a CRDT editor backend. Settings: Claude Code 2.1.280, the user's own model setting (`claude-opus-5-5[1m]` on every turn), entrypoint `sdk-cli`, `--permission-mode acceptEdits` with a Bash allow-list, no `--model` override. **Cost: about $60.7 at the reported `total_cost_usd`, against a stated cap of $60** (the last turn crossed it). The results yielded 44 decisions with a comparison, 31 of them usable: 13 were lost to two bugs found on the way, both fixed (the comparison did not wait for `laya-serve` to load, and it used the product deadline). Jev asked for a downgrade 19 times, but none was applied: 18 were refused by the main-chat cost guard and 1 was `rewrite_unverified`, so both sessions ran entirely on Opus. These sessions ran behind a second, outer reflex (the one the experimenter's own Claude Code ran under), so its log holds every request twice; only the inner records have a `compare` block.
+- *Not used:* the experimenter's own Claude Code history, which would have been the most realistic source, because sending it to Jev was not done.
+
+**Cross-validated on the corpora** (440 tasks, plan = what the policy does with Opus requested, reasoning veto applied, `mass` eps 0.10):
+
+| | agree with Jev | cheaper than Jev | Jev-opus turns kept on opus | Jev-haiku turns sent to haiku |
+| --- | --- | --- | --- | --- |
+| raw Laya (any checkpoint) | 13.6% | 0 | 60/60 | 0/129 |
+| always Sonnet (reference) | 57.0% | 13.6% | 0/60 | 0/129 |
+| `english` + head | 57.3% | 4.1% | 45/60 | 10/129 |
+| `typed-decisions` + head (466 incl. sessions) | 53.9% | 3.4% | 60/74 | 1/135 |
+| `multilingual` + head | 48.2% | 5.2% | 37/60 | 7/129 |
+
+**Held out: the 30-prompt author-labelled set** (`test/live/laya.live.test.ts`; mass pick vs label): `english` 12 → 17 exact (4 cheaper than the label, all short-but-hard prompts, 9 dearer); `typed-decisions` 12 → 15 (2 cheaper); Jev 27 (2 cheaper). AUC of P(opus) between opus- and haiku-labelled prompts: `english` 0.68 → 0.97, `typed-decisions` 0.95 → 0.99.
+
+**Held out: the real sessions** (head fitted on the corpora only, `typed-decisions`, n = 31, 29 main turns): Jev planned 8 haiku / 6 sonnet / 17 opus; the head planned 0 / 6 / 25 and agreed on 17 turns, **the same as raw Laya**. It moved 6 turns to Sonnet, 3 of which Jev had kept on Opus. So on real work it was no more accurate than Laya uncalibrated and ~10% of its plans were cheaper than Jev's; on the corpora that rate was 3–4%. The corpora are not the distribution of this kind of session (Jev said Opus for 14% of corpus tasks and 55% of session turns), and n = 31 is small.
+
+**Things tried that did not help.** Squared or pairwise feature terms, and one extra Laya choice question (the kind of task, 10 options): within noise on agreement, a little more haiku at the price of more cheaper-than-Jev plans, and slower (`english` p95 1.9 s with the extra question).
+
+**Latency, one calibrated decision (9 questions), idle M4, CPU.** `english` p50/p95 678/754 ms on short tasks and 1,474/1,478 ms on long ones; `typed-decisions` 864/946 and 1,763/2,223; `multilingual` 348/378 and 786/1,087. With the machine busy (inside the sessions) `typed-decisions` took p50 1,741 ms, p95 3,104 ms. `REFLEX_LAYA_DEADLINE_MS` now defaults to 2,500 ms.
+
+**What it means.** The head turns Laya from "Opus for everything" into "Sonnet by default, Opus when it looks hard": it keeps most of what Jev keeps on Opus and almost never picks Haiku. It is not Jev: 3–4% of plans cheaper than Jev's on the corpora, about 10% (3/31) in the real sessions. Laya's own README says the real gain needs fine-tuning. The Jev-labelled data these tools now produce is exactly what that would need, and a shared-nothing way to grow it is `REFLEX_COMPARE=laya` in shadow mode.

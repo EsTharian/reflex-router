@@ -67,7 +67,7 @@ export REFLEX_BACKEND=laya
 reflex doctor
 ```
 
-On a 30-prompt labelled set Laya kept Opus for essentially every prompt, so today it keeps your data local but does not route ([measurement](docs/observations.md#2026-09-23--laya-vs-jev-on-the-labelled-reasoning-set-laya-never-routes-down), [details](docs/reference.md#laya-decisions-on-this-machine)).
+Uncalibrated, Laya keeps Opus for everything; reflex ships a calibration head fitted to reproduce Jev's decisions, which makes it "Sonnet by default, Opus when it looks hard". It is measurably less accurate than Jev: 3–4% of its plans on synthetic tasks, and 3 of 31 in real sessions, were cheaper than Jev's ([measurement](docs/observations.md#2026-09-23--laya-calibrated-by-distillation-from-jev), [details](docs/reference.md#laya-decisions-on-this-machine)).
 
 `~/.reflex/env` holds `KEY=value` lines for `REFLEX_*` settings and the key. It is merged **under** your environment (the environment wins), and a file that holds the key but is readable by group or others is refused: reflex warns, ignores the file, and runs plain `claude`. `reflex doctor` says why.
 

@@ -3,7 +3,7 @@
 // grouped k-fold cross-validation that reports what the policy would do with the result. No dependencies.
 import { CAL_TIERS, softmax, type LayaCalibration } from "../../src/backend/laya-calibration.js";
 import type { Tier } from "../../src/config.js";
-import { massPick } from "../../src/policy.js";
+import { massPick, MAX_REASONING_DEMAND_FOR } from "../../src/policy.js";
 import { tierRank } from "../../src/tiers.js";
 import type { Answer } from "../../src/types.js";
 
@@ -113,6 +113,13 @@ export function fitDemand(samples: readonly Sample[], lambda: number): number[] 
 
 const pickOf = (p: Readonly<Record<string, number>>, eps: number): Tier => massPick(p, CAL_TIERS, eps).value;
 
+/** What the policy does with Opus requested: the mass pick, unless the reasoning-demand veto keeps the request on Opus. */
+export function planned(p: Readonly<Record<string, number>>, demand: number, eps: number): Tier {
+  const pick = pickOf(p, eps);
+  const limit = MAX_REASONING_DEMAND_FOR[pick];
+  return limit !== undefined && demand > limit ? "opus" : pick;
+}
+
 export interface Scores {
   n: number;
   /** Mass pick equal to Jev's mass pick. */
@@ -120,6 +127,10 @@ export interface Scores {
   /** Cheaper than Jev's pick: the direction that can cost quality. */
   under: number;
   over: number;
+  /** The same three counts for the tier the policy would plan with Opus requested (veto applied): what a user gets. */
+  plan: { agree: number; under: number; over: number; picks: Record<string, number> };
+  /** Per Jev planned tier: how many of those turns got exactly that tier here (recall). */
+  recall: Record<string, string>;
   /** Mean cross-entropy against Jev's distribution. */
   xent: number;
   demandMae: number;
@@ -127,8 +138,17 @@ export interface Scores {
 }
 
 export function score(pairs: readonly { p: Readonly<Record<string, number>>; demand: number; t: Target }[], eps: number): Scores {
-  const s: Scores = { n: pairs.length, agree: 0, under: 0, over: 0, xent: 0, demandMae: 0, picks: { haiku: 0, sonnet: 0, opus: 0 } };
+  const s: Scores = { n: pairs.length, agree: 0, under: 0, over: 0, plan: { agree: 0, under: 0, over: 0, picks: { haiku: 0, sonnet: 0, opus: 0 } }, recall: {}, xent: 0, demandMae: 0, picks: { haiku: 0, sonnet: 0, opus: 0 } };
+  const hit: Record<string, [number, number]> = { haiku: [0, 0], sonnet: [0, 0], opus: [0, 0] };
   for (const { p, demand, t } of pairs) {
+    const mineP = planned(p, demand, eps);
+    const jevP = planned(t.p, t.demand, eps);
+    s.plan.picks[mineP]! += 1;
+    hit[jevP]![1] += 1;
+    if (mineP === jevP) hit[jevP]![0] += 1;
+    if (mineP === jevP) s.plan.agree++;
+    else if (tierRank(mineP) < tierRank(jevP)) s.plan.under++;
+    else s.plan.over++;
     const mine = pickOf(p, eps);
     const jev = pickOf(t.p, eps);
     s.picks[mine]! += 1;
@@ -138,6 +158,7 @@ export function score(pairs: readonly { p: Readonly<Record<string, number>>; dem
     s.xent -= CAL_TIERS.reduce((a, k) => a + (t.p[k] ?? 0) * Math.log(Math.max(1e-9, p[k] ?? 0)), 0) / pairs.length;
     s.demandMae += Math.abs(demand - t.demand) / pairs.length;
   }
+  s.recall = Object.fromEntries(Object.entries(hit).map(([k, [a, n]]) => [k, `${a}/${n}`]));
   return s;
 }
 

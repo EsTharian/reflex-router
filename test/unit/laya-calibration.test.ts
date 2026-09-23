@@ -3,6 +3,7 @@ import { after, before, describe, it } from "node:test";
 import { JevBackend, validateAnswer } from "../../src/backend/jev.js";
 import { LayaBackend } from "../../src/backend/laya.js";
 import { CAL_TIERS, calibratedAnswers, FEATURE_QUESTIONS, FEATURE_VERSION, layaFeatures, type LayaCalibration } from "../../src/backend/laya-calibration.js";
+import { LAYA_CALIBRATIONS } from "../../src/backend/laya-calibration.generated.js";
 import { loadConfig } from "../../src/config.js";
 import { buildQuestions, judge } from "../../src/policy.js";
 import type { Answer, DecisionState } from "../../src/types.js";
@@ -94,4 +95,21 @@ describe("LayaBackend", () => {
       b.close();
     }
   });
+});
+
+describe("shipped calibrations (laya-calibration.generated.ts)", () => {
+  for (const [model, cal] of Object.entries(LAYA_CALIBRATIONS)) {
+    it(`${model}: fitted for this feature layout, and its answers pass the validator and the policy`, () => {
+      assert.equal(cal.featureVersion, FEATURE_VERSION);
+      assert.equal(cal.tierWeights.length, CAL_TIERS.length);
+      for (const w of [...cal.tierWeights, cal.demandWeights]) assert.equal(w.length, D);
+      for (const pOpus of [0.1, 0.5, 0.9]) {
+        const a = calibratedAnswers(cal, layaFeatures(answers(pOpus, 0.3), state)!);
+        assert.ok(a.tier.type === "choice");
+        validateAnswer("tier", questions["tier"]!, a.tier);
+        validateAnswer("reasoning_demand", questions["reasoning_demand"]!, a.reasoning_demand);
+        assert.ok(judge({ answers: a, latencyMs: 1, backendModel: "m", tokensIn: null, connection: null }, cfg).ok);
+      }
+    });
+  }
 });
