@@ -2,9 +2,10 @@ import { doctorCommand, versionCommand } from "./commands.js";
 import { launch, realLaunchIO } from "./launcher/launch.js";
 import { reportCommand } from "./report/index.js";
 import { shareCommand } from "./report/share.js";
+import { statuslineCommand } from "./statusline.js";
 
 /** Subcommands reflex owns. Everything else, including every flag, goes to claude untouched. */
-export const RESERVED_COMMANDS: ReadonlySet<string> = new Set(["doctor", "report", "share", "version"]);
+export const RESERVED_COMMANDS: ReadonlySet<string> = new Set(["doctor", "report", "share", "statusline", "version"]);
 
 export type Route = { readonly kind: "claude"; readonly args: string[] } | { readonly kind: "reflex"; readonly command: string; readonly args: string[] };
 
@@ -29,6 +30,8 @@ export async function main(argv: readonly string[]): Promise<number> {
       return reportCommand(r.args, io);
     case "share":
       return shareCommand(r.args, io);
+    case "statusline":
+      return statuslineCommand({ stdout: io.stdout, env: io.env });
     default:
       io.stderr(`reflex ${r.command}: not implemented yet\n`);
       return 2;

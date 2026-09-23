@@ -75,7 +75,7 @@ Uncalibrated, Laya keeps Opus for everything; reflex ships a calibration head fi
 
 1. `reflex` (everything you type after it goes to `claude` untouched). The default mode is `shadow`: nothing about your session changes, and `~/.reflex/decisions.jsonl` fills up.
 2. Work as usual for a few sessions, then `reflex report` (`--since 2h`, `--usd`). Read section 3, "shadow vs actual": what reflex *would* have routed where.
-3. When you are happy with that, opt in: `REFLEX_MODE=route reflex`. To route only subagent work and leave the main chat alone, add `REFLEX_MAIN_CHAT=never`.
+3. When you are happy with that, opt in: `REFLEX_MODE=route reflex`. To route only subagent work and leave the main chat alone, add `REFLEX_MAIN_CHAT=never`. The status line then shows the model reflex actually sent, e.g. `⇣ Sonnet 5 (asked Opus 5.5)` (Claude Code's own model display keeps showing the one it asked for); `REFLEX_STATUSLINE=0` turns it off, and a status line of your own is never replaced.
 4. `REFLEX_MODE=off reflex` is literally plain `claude`, with no proxy at all.
 
 Here is what the report looks like. This is real output (`reflex report` on the archived first dogfood session, sections 3 and 6), with its conditions in [`docs/observations.md`](docs/observations.md#2026-09-19--reflex-report-over-the-shadow-dogfood-session-excerpt): one shadow session, 12 decisions, nothing was routed, and "% tokens" is the token share of each cell's own request, **not a saving**.

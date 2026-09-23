@@ -4,7 +4,13 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- **A status line showing the model reflex actually sent.** Claude Code's own display shows the model it asked for,
+  so a routed turn was only visible in a one-off chat notice. `reflex statusline` (injected as Claude Code's
+  `statusLine` unless you have your own; `REFLEX_STATUSLINE=0` turns it off) shows e.g. `⇣ Sonnet 5 (asked Opus 5.5)
+  · subagents → Haiku 4.5 ×2`. It asks the session's own loopback front door (`GET /__reflex/status`, model ids only,
+  in memory) and prints an empty line on any failure.
 
 ## 0.4.2 — 2026-09-23
 

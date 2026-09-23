@@ -146,6 +146,13 @@ describe("front door + worker: passthrough fidelity", () => {
     assert.equal(stack.upstream.seen.length, 0, "internal endpoints must never reach the upstream");
   });
 
+  it("GET /__reflex/status answers the worker's view of a session and never reaches the upstream", async () => {
+    const r = await request(`${stack.url}/__reflex/status?session=unknown`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body.toString()), { worker: "up", main: null, subagents: [] });
+    assert.equal(stack.upstream.seen.length, 0);
+  });
+
   it("the hook endpoint answers 204 (empty body) and never reaches the upstream", async () => {
     const r = await request(`${stack.url}/__reflex/hook`, { method: "POST", headers: { "content-type": "application/json" }, body: '{"hook_event_name":"Stop"}' });
     assert.equal(r.status, 204);
@@ -213,6 +220,12 @@ describe("front door: the worker is optional (fail-open)", () => {
     const r = await request(`${stack.url}/__reflex/hook`, { method: "POST", body: "{}" });
     assert.equal(r.status, 204);
     assert.equal(stack.door.counters.hooksDropped, 1);
+  });
+
+  it("with no worker the status endpoint says so (the status line then reads \"passthrough\")", async () => {
+    stack = await startStack({ noWorker: true });
+    const r = await request(`${stack.url}/__reflex/status?session=s1`);
+    assert.deepEqual(JSON.parse(r.body.toString()), { worker: "down" });
   });
 
   it("the door health endpoint says the worker is down", async () => {

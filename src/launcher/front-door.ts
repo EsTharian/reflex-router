@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import { forward, relay } from "../net/forward.js";
 import { BodyTooLargeError, readBody, sendAnthropicError } from "../net/http-util.js";
 import { noopLog, type Log } from "../util/log.js";
+import { STATUS_PATH } from "../statusline.js";
 
 export interface FrontDoorOptions {
   readonly upstream: URL;
@@ -49,6 +50,22 @@ export async function startFrontDoor(opts: FrontDoorOptions): Promise<FrontDoor>
       const body = JSON.stringify({ ok: true, worker: opts.workerOrigin() !== null ? "up" : "down", counters, ...opts.status?.() });
       res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
       res.end(body);
+      return;
+    }
+
+    if (url.startsWith(STATUS_PATH + "?") && method === "GET") {
+      // `reflex statusline`: the worker's per-session view, or "down" (the session then runs straight to the upstream).
+      const worker = opts.workerOrigin();
+      if (worker) {
+        try {
+          await relay(await forward(worker, { method, url, headers: {}, body: Buffer.alloc(0) }, { connectTimeoutMs: opts.workerConnectTimeoutMs ?? 1000 }), res);
+          return;
+        } catch {
+          // fall through
+        }
+      }
+      if (res.headersSent) res.destroy();
+      else res.writeHead(200, { "content-type": "application/json" }).end('{"worker":"down"}');
       return;
     }
 

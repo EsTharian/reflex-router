@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { outcomeHooks } from "../outcome/hooks-config.js";
+import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { isReflexEnvName, loadConfig, type Config } from "../config.js";
 import { resolveEffectiveMode } from "../effective-mode.js";
 import { mergeEnvFile, type EnvFileIO } from "../env-file.js";
@@ -10,7 +13,7 @@ import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
 import { resolveBin, resolveClaude, realResolveIO, type ResolvedBin } from "./claude-bin.js";
 import { startLaya, type LayaServer } from "./laya.js";
 import { startFrontDoor } from "./front-door.js";
-import { injectSettings, realInjectIO } from "./settings-inject.js";
+import { hasOwnStatusLine, injectSettings, realInjectIO } from "./settings-inject.js";
 import { Supervisor, type Timings } from "./supervisor.js";
 import { assessVersion, describeVerdict, probeClaudeVersion } from "./version.js";
 import { openWorkerLog, spawnWorkerProcess } from "./worker-process.js";
@@ -85,6 +88,9 @@ const workerProbe = async (port: number): Promise<boolean> => {
   }
 };
 
+/** bin/reflex.js, from src/launcher or dist/launcher alike: what the injected status line runs. */
+const REFLEX_BIN = fileURLToPath(new URL("../../bin/reflex.js", import.meta.url));
+
 /** Starts claude behind the reflex proxy (or plain, per mode) and resolves with claude's exit code. */
 export async function launch(argv: readonly string[], io: LaunchIO = realLaunchIO()): Promise<number> {
   const warn = (msg: string): void => io.stderr(`reflex: ${msg}\n`);
@@ -156,7 +162,10 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
   });
 
   // http hooks for outcome capture go to the front door, which answers 204 even when the worker is down.
-  const injection = injectSettings(argv, { env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }, hooks: outcomeHooks(door.port) }, realInjectIO(io.cwd));
+  const claudeDir = io.env["CLAUDE_CONFIG_DIR"] || path.join(io.homedir ?? os.homedir(), ".claude");
+  const ownStatusLine = hasOwnStatusLine([path.join(claudeDir, "settings.json"), path.join(io.cwd, ".claude", "settings.json"), path.join(io.cwd, ".claude", "settings.local.json")], (f) => fs.readFileSync(f, "utf8"));
+  const statusLine = config.statusline && !ownStatusLine ? { type: "command", command: `"${process.execPath}" "${REFLEX_BIN}" statusline`, padding: 0 } : undefined;
+  const injection = injectSettings(argv, { env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }, hooks: outcomeHooks(door.port), ...(statusLine ? { statusLine } : {}) }, realInjectIO(io.cwd));
   if (injection.warning) warn(injection.warning);
   try {
     return await runClaude(bin, injection.args, sanitizedEnv(io.env, { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }), io);

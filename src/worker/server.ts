@@ -18,10 +18,12 @@ import { hintReply } from "../delegate/reply.js";
 import { Breaker } from "./breaker.js";
 import { Router, type Observation } from "./router.js";
 import { HOOK_PATH } from "../outcome/hooks-config.js";
+import { STATUS_PATH } from "../statusline.js";
 import { parseHookEvent, type HookEvent } from "../outcome/hooks.js";
 import { OutcomeTracker, type DecisionInfo } from "../outcome/tracker.js";
 import { RecentPrompts } from "./recent-prompts.js";
 import { ModelNotices } from "./model-notice.js";
+import { SessionStatus } from "./session-status.js";
 
 export interface WorkerOptions {
   readonly config: Config;
@@ -103,6 +105,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
     : null;
   const prompts = new RecentPrompts();
   const notices = new ModelNotices();
+  const status = new SessionStatus();
   // Keep the backend's keep-alive connection open while nothing is being decided: the first decision after an idle gap
   // otherwise pays a fresh TCP+TLS handshake (observations.md: p50 823 ms new vs 382 ms reused). Best effort and
   // fire-and-forget, exactly like the start-up warm; `connection` on each decision record measures whether it worked.
@@ -128,6 +131,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         onDecision: (d: DecisionInfo) => {
           tracker?.onDecision(d);
           notices.observe(d);
+          status.observe(d);
         },
         typedPrompts: (sessionId) => prompts.get(sessionId),
         typedPromptCount: (sessionId) => prompts.typedCount(sessionId),
@@ -143,6 +147,14 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
 
     if (url === "/__reflex/health" && method === "GET") {
       const body = JSON.stringify({ ok: true, pid: process.pid, uptimeS: Math.round((Date.now() - startedAt) / 1000), mode: opts.effectiveMode, degradedReason: opts.degradedReason, claudeVersion: opts.claudeVersion });
+      res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
+      res.end(body);
+      return;
+    }
+
+    if (url.startsWith(STATUS_PATH + "?") && method === "GET") {
+      const sessionId = new URL(url, "http://127.0.0.1").searchParams.get("session") ?? "";
+      const body = JSON.stringify({ worker: "up", ...status.get(sessionId) });
       res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
       res.end(body);
       return;

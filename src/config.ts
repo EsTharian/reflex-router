@@ -127,6 +127,8 @@ export interface Config {
   readonly switchBreakevenRequests: number;
   /** REFLEX_DELEGATE=1: add the delegation hint (src/delegate/hint.ts) to user-typed prompts via the UserPromptSubmit hook. Off by default. */
   readonly delegate: boolean;
+  /** REFLEX_STATUSLINE (default on): give claude a status line showing the model reflex sent, unless the user has their own. */
+  readonly statusline: boolean;
   /**
    * REFLEX_ESCALATE=1: let an outcome signal raise the tier of a conversation's next new turn (src/worker/escalation.ts).
    * Off by default, and the only setting that lets a past event change a future request. It may only raise, never
@@ -196,7 +198,7 @@ export const SETTING_NAMES: readonly string[] = [
   "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS", "REFLEX_LAYA_CALIBRATION", "REFLEX_COMPARE",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
-  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
+  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_STATUSLINE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
 ];
 
@@ -352,6 +354,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     maxSwitchPenaltyUsd: parseBoundedNumber(setting(env, "REFLEX_MAX_SWITCH_PENALTY_USD"), 0.01, 0, 100, "REFLEX_MAX_SWITCH_PENALTY_USD", errors),
     switchBreakevenRequests: parseBoundedInt(setting(env, "REFLEX_SWITCH_BREAKEVEN_REQUESTS"), 10, 0, 1000, "REFLEX_SWITCH_BREAKEVEN_REQUESTS", errors),
     delegate: truthy(setting(env, "REFLEX_DELEGATE")),
+    statusline: !falsy(setting(env, "REFLEX_STATUSLINE")),
     escalate: parseEscalateMode(setting(env, "REFLEX_ESCALATE"), errors),
     escalateTarget: parseEnum(setting(env, "REFLEX_ESCALATE_TARGET"), ESCALATE_TARGETS, "requested", "REFLEX_ESCALATE_TARGET", errors),
     abFraction: parseBoundedNumber(setting(env, "REFLEX_AB"), 0, 0, 1, "REFLEX_AB", errors),

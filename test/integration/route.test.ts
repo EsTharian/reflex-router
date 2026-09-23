@@ -132,6 +132,10 @@ describe("route mode", () => {
       const c = await replay(stack, inSession(fx("main-continuation"), "s-main"));
       assert.equal(c.rec.pin, "hit");
       assert.equal(sentBody(stack, n + 1)["model"], HAIKU);
+      // What `reflex statusline` reads: the model the client asked for and the one reflex sent.
+      const st = JSON.parse((await request(`${stack.url}/__reflex/status?session=s-main`)).body.toString()) as { main: { requested: string; sent: string } };
+      assert.equal(st.main.sent, HAIKU);
+      assert.notEqual(st.main.requested, HAIKU);
     });
 
     it("a later turn with unknown context is refused before the backend is asked", async () => {

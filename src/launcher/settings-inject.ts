@@ -15,6 +15,8 @@ export interface HookGroup {
 export interface InjectedSettings {
   readonly env: Readonly<Record<string, string>>;
   readonly hooks?: Readonly<Record<string, readonly HookGroup[]>>;
+  /** Only set when the user has no status line of their own (`hasOwnStatusLine`); theirs always wins. */
+  readonly statusLine?: Readonly<Record<string, unknown>>;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -100,7 +102,26 @@ export function mergeSettings(user: JsonObject | null, injected: InjectedSetting
     }
     out["hooks"] = hooks;
   }
+  if (injected.statusLine && out["statusLine"] === undefined) out["statusLine"] = { ...injected.statusLine };
   return out;
+}
+
+/**
+ * True when one of the user's settings files sets `statusLine`. reflex never replaces a user's status line: its own
+ * `--settings` would take precedence over theirs. `files` are the user and project settings files (read, never edited);
+ * one that is missing or unreadable counts as having none.
+ * ponytail: project files are looked up in the launch directory only, not its parents; a status line set further up
+ * would be hidden by reflex's (REFLEX_STATUSLINE=0 turns it off).
+ */
+export function hasOwnStatusLine(files: readonly string[], readFile: (p: string) => string): boolean {
+  return files.some((f) => {
+    try {
+      const o: unknown = JSON.parse(readFile(f));
+      return isObject(o) && o["statusLine"] !== undefined;
+    } catch {
+      return false;
+    }
+  });
 }
 
 export interface InjectIO {

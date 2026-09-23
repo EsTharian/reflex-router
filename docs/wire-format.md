@@ -475,6 +475,17 @@ One interactive capture, Claude Code 2.1.278, `opus[1m]` + effort `medium`, perm
   runtime, but `redact-fixtures.mjs` copied it verbatim and leaked the home directory into candidate fixtures; it now
   scrubs every top-level key it does not redact explicitly.
 
+## 7.2 Status line (2.1.280, interactive, $0)
+
+Observed against a local stand-in upstream in a pseudo-terminal: a `statusLine` (`{type: "command", command}`) given
+through `--settings` is used, and the command sees the session's `ANTHROPIC_BASE_URL`. Its stdin is one JSON object:
+`session_id` (**equal to the requests' `x-claude-code-session-id`**, verified), `transcript_path`, `cwd`,
+`scratchpad_dir`, `effort.level`, `model.id` / `model.display_name` (the model Claude Code asked for, e.g.
+`claude-opus-5-5[1m]` / `Opus 5.5 (1M context)`, whatever reflex sent), `workspace.*`, `version`, `output_style.name`,
+`cost.*`, `context_window.*`, `exceeds_200k_tokens`, `fast_mode`, `thinking.enabled`. reflex reads `session_id` only
+(`src/wire/statusline.ts`). A new folder's trust dialog now defaults to "No, exit", so an interactive capture must run in
+a trusted folder or select "Yes".
+
 ## 8. Things that did NOT reproduce
 
 - **MCP draft-04 normalisation** (jev-router): verified only **in scope**. The fixture `haiku-mcp-draft4.main-new-turn.request.json` contains the construct (`$schema` draft-04, `minimum:0 + exclusiveMinimum:true`, `maximum:10 + exclusiveMaximum:false`), Claude Code sent it **unchanged** through a custom base URL, and the API returned **200** (one request, `claude-haiku-4-5-20251001`, `sdk-cli`). Not tested: Sonnet/Opus/Fable as the target, other draft-04 constructs (`id`, `definitions`, type arrays), the interactive entrypoint. So the compat rewrite is *not currently required*, which is weaker than *not needed*; if routing ever retargets a request to a model that rejects the schema, the 4xx retry-with-original path is the safety net. Recorded in `manifest.json` under `findings`.
