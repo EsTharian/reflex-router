@@ -4,6 +4,10 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.4.3 — 2026-09-23
+
 ### Added
 
 - **A status line showing the model reflex actually sent.** Claude Code's own display shows the model it asked for,
