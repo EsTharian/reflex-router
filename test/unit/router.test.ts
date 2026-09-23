@@ -20,10 +20,10 @@ type Answer = Record<string, number> | "timeout" | "hang";
 const fixtures = loadFixtures();
 
 /** An interactive fixture as an Opus request in session `sid`, optionally with a prefix on the user's text. */
-function opusRequest(name: string, sid: string, prefix = ""): Fixture {
+function opusRequest(name: string, sid: string, prefix = "", model = "claude-opus-5"): Fixture {
   const f = fixtures.find((x) => x.file === `interactive.${name}.request.json`)!;
   const b = JSON.parse(f.body.toString()) as Json;
-  b["model"] = "claude-opus-5";
+  b["model"] = model;
   const md = b["metadata"] as { user_id: string };
   md.user_id = JSON.stringify({ ...(JSON.parse(md.user_id) as Json), session_id: sid });
   if (prefix) {
@@ -202,5 +202,16 @@ describe("router: main-chat pin rules (session B)", () => {
     assert.equal(h.calls(), calls, "no Jev call");
     assert.equal(a2.rec.guard?.reason, "over_limit");
     assert.equal(a2.sent["model"], "claude-opus-5");
+  });
+
+  it("a /model switch drops the pin: the loop never stays on a tier decided for the old requested model", async () => {
+    const h = harness();
+    const b1 = await h.send(opusRequest("main-new-turn", "M"), SONNETISH);
+    assert.equal(b1.sent["model"], "claude-sonnet-5");
+    // The user switches to Haiku mid-loop: the Sonnet pin sits ABOVE the new requested tier.
+    const c = await h.send(opusRequest("main-continuation", "M", "", "claude-haiku-4-5-20251001"), null);
+    assert.equal(c.sent["model"], "claude-haiku-4-5-20251001");
+    assert.equal(c.rec.pin, "miss");
+    assert.equal(c.rec.forwarded.rewritten, false);
   });
 });

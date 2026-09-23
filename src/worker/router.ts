@@ -237,6 +237,10 @@ export class Router {
     const routing = this.d.effectiveMode === "route" && s.shape.status !== "degraded" && this.#uaDegrade === null;
     const conv = v.convKey !== null && v.turn !== "side" ? this.#conv(s, v.convKey) : null;
     const requestedTier = tierOfModel(v.requestedModel);
+    // A pin belongs to the requested tier it was decided under. After the user switches models (/model) it is stale:
+    // dropped, so this request goes to the new requested model and the next new turn decides afresh. Without this a
+    // pinned subagent kept its old target, e.g. Opus while the user now asked for Sonnet (2.1.280 log, 2026-09-22).
+    if (conv?.pin && conv.pin.from !== requestedTier) conv.pin = null;
 
     let outcomeP: Promise<Outcome> = Promise.resolve({ part: NONE, target: null, reasons: [] });
     /** How long this request waited for the backend before going upstream: route mode, `new` turns only (shadow decides off the critical path). */
