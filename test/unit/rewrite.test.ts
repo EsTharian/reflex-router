@@ -87,6 +87,21 @@ describe("retarget Sonnet 5 -> Haiku 4.5", () => {
     assert.deepEqual(retarget(mk(1000), { from: "sonnet", to: "haiku", model: HAIKU }), { ok: false, reason: "thinking_budget_too_small" });
   });
 
+  it("lowers max_tokens to the target's ceiling (Opus 5.5 asks for 128000; Haiku takes 64000), and only when above it", () => {
+    const mk = (max: number): Buffer => Buffer.from(JSON.stringify({ model: "claude-opus-5-5", max_tokens: max, messages: [], thinking: { type: "adaptive" } }));
+    const r = retarget(mk(128_000), { from: "opus", to: "haiku", model: HAIKU });
+    assert.ok(r.ok);
+    const b = JSON.parse(r.body.toString()) as Json;
+    assert.equal(b["max_tokens"], 64_000);
+    assert.deepEqual(b["thinking"], { type: "enabled", budget_tokens: HAIKU_THINKING_BUDGET }, "the budget is taken below the clamped value");
+    assert.deepEqual(r.fields, ["model", "max_tokens", "thinking"]);
+    const s = retarget(mk(128_000), { from: "opus", to: "sonnet", model: "claude-sonnet-5" });
+    assert.ok(s.ok);
+    assert.deepEqual(s.fields, ["model"], "Sonnet takes 128000: untouched");
+    const small = retarget(mk(32_000), { from: "opus", to: "haiku", model: HAIKU });
+    assert.ok(small.ok && !small.fields.includes("max_tokens"));
+  });
+
   it("optionally drops another model's thinking blocks from the history, and says how many", () => {
     const r = retarget(fx("interactive.main-continuation.request.json"), { from: "sonnet", to: "haiku", model: HAIKU, dropHistoryThinking: true });
     assert.ok(r.ok);

@@ -3,6 +3,7 @@
 // route mode deliberately applies a plan. Pure: bytes in, bytes out (or a reason why not), plus the list of fields
 // it changed so every routed record can say exactly what was rewritten.
 import type { Tier } from "../config.js";
+import { MAX_OUTPUT_TOKENS } from "../tiers.js";
 
 /** How a model family takes reasoning settings, as observed in native Claude Code requests. */
 type ThinkingStyle = "adaptive" | "budget";
@@ -112,6 +113,11 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
 
   b["model"] = opts.model;
   fields.push("model");
+
+  if (typeof b["max_tokens"] === "number" && b["max_tokens"] > MAX_OUTPUT_TOKENS[opts.to]) {
+    b["max_tokens"] = MAX_OUTPUT_TOKENS[opts.to];
+    fields.push("max_tokens");
+  }
 
   const oc = b["output_config"];
   if (!ACCEPTS_EFFORT[opts.to] && isObj(oc) && "effort" in oc) {

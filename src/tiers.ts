@@ -17,6 +17,13 @@ export function tierOfModel(model: string | null): Tier | null {
 export const CONTEXT_CEILING: Readonly<Record<Tier, number | null>> = { haiku: 150_000, sonnet: null, opus: null, fable: null };
 
 /**
+ * Largest `max_tokens` each tier's model accepts (models overview, synchronous Messages API, checked 2026-09-23). A
+ * retarget lowers a larger value to this: an Opus 5.5 request asks for 128000, which Haiku 4.5 rejects with
+ * 400 "max_tokens: 128000 > 64000" (2.1.280 log, 2026-09-22).
+ */
+export const MAX_OUTPUT_TOKENS: Readonly<Record<Tier, number>> = { haiku: 64_000, sonnet: 128_000, opus: 128_000, fable: 128_000 };
+
+/**
  * Request bytes per input token, measured on the interactive 2.1.277 capture: 2.67-2.80 (JSON body, tools included).
  * 2.5 over-estimates the token count slightly on purpose, so a ceiling is hit early rather than late.
  */
