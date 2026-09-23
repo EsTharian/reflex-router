@@ -242,8 +242,10 @@ than in a footnote.
   worst case is a session on the model you already chose. Its correction rules are English and Turkish only.
 - **Fable routes are unverified and disabled.** `REFLEX_ALLOW_FABLE` exists, but no Fable retarget has been verified
   against the API, so Fable is not in the default tier set and a Fable retarget is recorded and left alone.
-- **Tested on Claude Code 2.1.277 and 2.1.278, macOS only.** Not verified on Windows or Linux beyond CI
-  (Ubuntu + macOS, Node 20/22/24). Fixtures exist only for those two Claude Code versions.
+- **Tested on Claude Code 2.1.277, 2.1.278 and 2.1.280, macOS only.** Not verified on Windows or Linux beyond CI
+  (Ubuntu + macOS, Node 20/22/24). Fixtures exist only for those three Claude Code versions (2.1.280: one `claude -p`
+  capture with a subagent). **`REFLEX_BACKEND=laya` has never been run on Windows**: the process guard that stops
+  `laya-serve` with reflex, and starting a `.cmd` shim, are untested there.
 - **The wire format is not a public contract**, and it has already broken once: 2.1.278 changed how typed prompts are
   encoded and a whole session was silently not routed. reflex checks each request's shape at runtime, warns on a
   different minor version and runs `route` as `shadow` on a different major one. It also carries a **drift check**: if

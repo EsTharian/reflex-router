@@ -185,10 +185,11 @@ describe("wire drift cross-check", () => {
 
   it("flags a requested model and a max_tokens no fixture holds, once per distinct value per session", () => {
     const d = new DriftTracker();
-    const opus55 = { requestedModel: "claude-opus-5-5", facts: { maxTokens: 128000 } } as unknown as RequestView;
-    assert.deepEqual(d.check(0, opus55), ["unseen_requested_model", "unseen_max_tokens"]);
-    assert.deepEqual(d.check(0, opus55), []);
-    assert.deepEqual(d.check(0, { requestedModel: "claude-opus-5-5", facts: { maxTokens: 96000 } } as unknown as RequestView), ["unseen_max_tokens"]);
+    // Values no fixture holds (claude-opus-5-5 and 128000 stopped being examples once 2.1.280 was captured).
+    const unseen = { requestedModel: "claude-opus-9", facts: { maxTokens: 96000 } } as unknown as RequestView;
+    assert.deepEqual(d.check(0, unseen), ["unseen_requested_model", "unseen_max_tokens"]);
+    assert.deepEqual(d.check(0, unseen), []);
+    assert.deepEqual(d.check(0, { requestedModel: "claude-opus-9", facts: { maxTokens: 48000 } } as unknown as RequestView), ["unseen_max_tokens"]);
     assert.deepEqual(d.check(0, known), []);
   });
 });

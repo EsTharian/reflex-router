@@ -54,6 +54,8 @@ REFLEX_BACKEND=laya reflex doctor      # finds laya-serve and the weights
 REFLEX_BACKEND=laya reflex             # shadow mode, as always, until you have read `reflex report`
 ```
 
+Not yet run on Windows: the guard process and a `laya-serve.cmd` shim are untested there (macOS only so far).
+
 What reflex does with it, per session:
 
 - Starts `laya-serve` on a free `127.0.0.1` port (Laya's own default is `0.0.0.0`; reflex overrides it), with a random per-session key the server requires, preloading only `REFLEX_LAYA_MODEL`, and with `HF_HUB_OFFLINE=1`: the weights come from the Hugging Face cache and nothing is fetched. Its environment has no `REFLEX_*`, `TYPESAFE_*` or `ANTHROPIC_*` variable; `LAYA_THREADS` and `LAYA_DEVICE` from your environment pass through.
