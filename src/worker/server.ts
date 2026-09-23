@@ -34,9 +34,9 @@ export interface WorkerOptions {
 }
 
 /** The launcher's own laya-serve on loopback; never the TypeSafe key. No URL: the launcher did not start one. */
-function layaFor(config: Config, calibrate: boolean): LayaBackend | null {
+function layaFor(config: Config, calibrate: boolean, deadlineMs = config.layaDeadlineMs): LayaBackend | null {
   if (config.layaBaseUrl === undefined) return null;
-  const inner = new JevBackend({ id: "laya", baseUrl: config.layaBaseUrl, apiKey: config.layaApiKey, model: config.layaModel, deadlineMs: config.layaDeadlineMs });
+  const inner = new JevBackend({ id: "laya", baseUrl: config.layaBaseUrl, apiKey: config.layaApiKey, model: config.layaModel, deadlineMs });
   return new LayaBackend(inner, calibrate ? LAYA_CALIBRATIONS[config.layaModel] : undefined);
 }
 
@@ -45,6 +45,9 @@ function backendFor(config: Config): DecisionBackend | null {
   if (config.typesafeApiKey === undefined) return null;
   return new JevBackend({ baseUrl: config.jevBaseUrl, apiKey: config.typesafeApiKey, deadlineMs: config.jevDeadlineMs });
 }
+
+/** REFLEX_COMPARE's deadline for one Laya answer; long prompts with the feature questions take seconds on CPU. */
+const COMPARE_DEADLINE_MS = 30_000;
 
 export interface WorkerServer {
   readonly port: number;
@@ -90,7 +93,8 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const startedAt = Date.now();
   const decisionLog = new DecisionLog(opts.config.home, opts.config.logPrompts, { onError: (e) => opts.log("warn", `decision log: ${e.message}`) });
   const backend = opts.backend !== undefined ? opts.backend : backendFor(opts.config);
-  const compare = opts.config.backend === "jev" && opts.config.compare === "laya" ? layaFor(opts.config, false) : null;
+  // The comparison is off the request's path: it gets a generous deadline, not the product's.
+  const compare = opts.config.backend === "jev" && opts.config.compare === "laya" ? layaFor(opts.config, false, COMPARE_DEADLINE_MS) : null;
   // The tracker is built before the router but has to reach it (escalation), so the reverse channel goes through a
   // holder. With REFLEX_ESCALATE off the router ignores every signal, so nothing about a request changes.
   let routerRef: Router | null = null;

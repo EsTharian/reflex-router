@@ -1,6 +1,10 @@
 // Fits the Laya calibration head from recorded Jev/Laya pairs and reports cross-validated results.
 //
-//   node --import tsx scripts/calibrate/fit.ts [--model typed-decisions] [--eps 0.1] [--write] <file.jsonl>...
+//   node --import tsx scripts/calibrate/fit.ts [--model typed-decisions] [--eps 0.1] [--group record|session] [--write] <file.jsonl>...
+//
+// --group: what cross-validation keeps together. `session` is the honest choice once there are many sessions; with
+// one or two long sessions it leaves nothing to validate on, so `record` (each decision on its own) is the default and
+// is optimistic by however much decisions of one session resemble each other.
 //
 // Inputs: decisions.jsonl files from sessions run with REFLEX_COMPARE=laya (a decision record with a `compare` block
 // holds Laya's feature vector next to Jev's answer), and/or harvest-history.ts output. Only numbers are read.
@@ -19,6 +23,7 @@ const opt = (name: string): string | undefined => {
 const model = (opt("--model") ?? "typed-decisions") as LayaModel;
 if (!LAYA_MODELS.includes(model)) throw new Error(`--model must be one of ${LAYA_MODELS.join(", ")}`);
 const eps = Number(opt("--eps") ?? 0.1);
+const groupBy = opt("--group") ?? "record";
 const write = args.includes("--write");
 const files = args.filter((a) => a !== "--write");
 if (files.length === 0) throw new Error("give at least one .jsonl file");
@@ -56,7 +61,7 @@ for (const file of files) {
       const probs = d.picks?.tier?.probabilities;
       const demand = num(d.vetoes?.["reasoning_demand"]);
       t = probs && demand !== null ? targetOf(probs, demand) : null;
-      group = String(r["session"]);
+      group = groupBy === "session" ? String(r["session"]) : String(r["id"]);
       source = `session:${String(r["kind"])}`;
     }
     if (x === null || t === null) continue;
