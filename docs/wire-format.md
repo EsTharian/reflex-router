@@ -376,10 +376,32 @@ Only `model` changes for Sonnet → Opus 5.5 (`thinking` too for Haiku: budget �
 the gap above: Opus 5.5 accepts a Sonnet-signed thinking block. The request the retry-with-original sends after an
 Opus 5.5 → Sonnet pin (Opus 5.5's own bytes holding Sonnet-made turns) was not sent literally. Its parts were: Opus 5.5
 accepting its own request shape, and accepting Sonnet-signed thinking. **Verified and applied:** Opus 5.5 ↔ Haiku and
-Opus 5.5 ↔ Sonnet (`VERIFIED_MODEL_RETARGETS`, `src/wire/rewrite.ts`). **Not run:** Opus 5.5 with Fable in either
-direction, and an upgrade of a main chat (as for Sonnet → Opus 5 in §5.5, the subagent request carries the same fields).
+Opus 5.5 ↔ Sonnet (`VERIFIED_MODEL_RETARGETS`, `src/wire/rewrite.ts`).
 
-Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and Opus 5.5 with Haiku or Sonnet in either direction (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
+**Opus 5.5 ↔ Fable** (same settings; est. $1.71 + $0.53 + $0.34, caps $4.00 / $3.00 / $1.50). Opus 5.5 → Fable:
+`--from opus --to fable --main fable --lean --no-main-new`. Fable → Opus 5.5: `--from fable --to opus --delay-pin
+--no-main-new`, with a native Fable subagent (the Agent tool's `model: "fable"`). Results:
+`experiment.route-opus55-to-fable.results.json`, `experiment.route-fable-to-opus55-subagent.results.json`,
+`experiment.route-fable-to-opus55-subagent-thinking.results.json`.
+
+| Probe | Opus 5.5 → Fable | Fable → Opus 5.5 |
+| --- | --- | --- |
+| subagent first request | 200 | 200 (×2, no history) |
+| subagent pinned continuation | 200 | 200 |
+| subagent un-pin to the source | 200 (no thinking block) | 200 (two **Opus 5.5-signed** thinking blocks) |
+| main continuation with an **Opus 5.5 thinking block**, then pinned | 200, 200 | — |
+| main un-pin to Opus 5.5 after Fable turns | 200 (the one thinking block is Opus 5.5's own) | — |
+| second request holding a **Fable-signed** thinking block | — | 200 (probe and routed) |
+
+Only `model` changes in either direction: both models take adaptive thinking, `effort` and a system message's
+`output_config`, and `max_tokens` 128000. Fable produced no thinking block in any turn of the first two runs, so a
+third run put a puzzle before the subagent's first tool call. Fable then thought, and Opus 5.5 accepted that
+Fable-signed block. As for Sonnet above, the un-pin after an Opus 5.5 → Fable pin was not sent literally with
+Fable-signed thinking in it: Opus 5.5 accepting its own request shape and accepting Fable-signed thinking were
+verified separately. **Verified and applied** (Fable still needs `REFLEX_ALLOW_FABLE=1`). Not run: an upgrade or
+downgrade of a main chat whose source is Fable (a Fable main chat needs `--model`).
+
+Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and every pair between Opus 5.5 and Haiku, Sonnet or Fable (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 

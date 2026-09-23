@@ -44,6 +44,7 @@ const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5"];
  */
 const VERIFIED_MODEL_RETARGETS: ReadonlySet<string> = new Set([
   "claude-opus-5-5>haiku", "claude-opus-5-5>sonnet", "haiku>claude-opus-5-5", "sonnet>claude-opus-5-5",
+  "claude-opus-5-5>fable", "fable>claude-opus-5-5",
 ]);
 const unverifiedKey = (m: string | null): string | undefined => UNVERIFIED_MODELS.find((u) => m !== null && m.toLowerCase().includes(u));
 export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean => {
