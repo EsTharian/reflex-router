@@ -13,7 +13,7 @@ import fs from "node:fs";
 import { FEATURE_VERSION, type LayaCalibration } from "../../src/backend/laya-calibration.js";
 import { LAYA_CALIBRATIONS } from "../../src/backend/laya-calibration.generated.js";
 import { LAYA_MODELS, type LayaModel } from "../../src/config.js";
-import { calibrationOf, crossValidate, rawOf, score, targetOf, withOpusMargin, type Sample, type Scores } from "./lib.js";
+import { calibrationOf, crossValidate, OPUS_MARGINS, rawOf, score, targetOf, withOpusMargin, type Sample, type Scores } from "./lib.js";
 
 const args = process.argv.slice(2);
 const opt = (name: string): string | undefined => {
@@ -102,7 +102,7 @@ const real = samples.map((s, i) => [s, i] as const).filter(([s]) => s.real);
 let margin = 0;
 let marginScores: Scores | null = null;
 if (real.length > 0) {
-  for (const delta of [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 1, 1.5, 2, 3]) {
+  for (const delta of OPUS_MARGINS) {
     const sc = score(real.map(([s, i]) => ({ p: withOpusMargin(oof[i]!.p, delta), demand: oof[i]!.demand, t: s.t })), eps);
     console.log(`margin ${String(delta).padEnd(5)} on ${real.length} real samples: ${fmt(sc)}`);
     margin = delta;

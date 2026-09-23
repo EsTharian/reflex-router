@@ -1,11 +1,18 @@
 // Pure fitting code for the Laya calibration head (src/backend/laya-calibration.ts): soft-target multinomial logistic
 // regression for the tier (distillation of Jev's tier distribution), ridge regression for the reasoning score, and a
 // grouped k-fold cross-validation that reports what the policy would do with the result. No dependencies.
+import crypto from "node:crypto";
 import { CAL_TIERS, softmax, type LayaCalibration } from "../../src/backend/laya-calibration.js";
 import type { Tier } from "../../src/config.js";
 import { massPick, MAX_REASONING_DEMAND_FOR } from "../../src/policy.js";
 import { tierRank } from "../../src/tiers.js";
 import type { Answer } from "../../src/types.js";
+
+/**
+ * Corpus items that open with the same three words are likely variations of one template: cross-validation keeps them in
+ * one fold. Only a short hash of those words is written.
+ */
+export const groupOf = (task: string): string => "c" + crypto.createHash("sha256").update(task.trim().toLowerCase().split(/\s+/).slice(0, 3).join(" ")).digest("hex").slice(0, 10);
 
 /** Jev's view of one state: its tier distribution over CAL_TIERS (renormalised) and its reasoning score. */
 export interface Target {
@@ -127,6 +134,15 @@ export function planned(p: Readonly<Record<string, number>>, demand: number, eps
   const pick = pickOf(p, eps);
   const limit = MAX_REASONING_DEMAND_FOR[pick];
   return limit !== undefined && demand > limit ? "opus" : pick;
+}
+
+/** The opus margins fit.ts and eval-checkpoint.ts try, smallest first. */
+export const OPUS_MARGINS = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 1, 1.5, 2, 3] as const;
+
+/** The smallest opus margin whose plans are cheaper than Jev's at most `maxUnder` of the time (the largest tried if none is). */
+export function pickMargin(pairs: readonly { p: Readonly<Record<string, number>>; demand: number; t: Target }[], eps: number, maxUnder: number): number {
+  for (const delta of OPUS_MARGINS) if (score(pairs.map((x) => ({ ...x, p: withOpusMargin(x.p, delta) })), eps).plan.under <= maxUnder * pairs.length) return delta;
+  return OPUS_MARGINS.at(-1)!;
 }
 
 export interface Scores {
