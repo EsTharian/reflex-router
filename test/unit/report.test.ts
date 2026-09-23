@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, buildReportJson, reportCommand, type ReportJson } from "../../src/report/index.js";
 import { parseDuration, parseRecords, sinceView } from "../../src/report/records.js";
-import { classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, escalationRows, abArms, abComparison, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { breakEvenOf, classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, escalationRows, abArms, abComparison, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
@@ -89,6 +89,11 @@ describe("report: optional harness features", () => {
 });
 
 describe("report: side-call routing estimate", () => {
+  it("break-even is null, not 2.5e9, when a warm read saves nothing (Sonnet 5 vs Opus 5.5: both $0.20/MTok)", () => {
+    assert.equal(breakEvenOf(2.5, 0), null);
+    assert.equal(breakEvenOf(2.5, -0.1), null);
+    assert.equal(breakEvenOf(2.5, 0.5), 5);
+  });
   const archiveDir = path.join(GOLDEN_DIR, "archives");
   it("golden: a synthetic log with warm clusters, a cold gap and an exposed conversation", () => {
     golden("side-routing-synthetic", s12SideRouting(ctxOf(sideCallLog(), true)).join("\n") + "\n");

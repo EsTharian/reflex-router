@@ -854,8 +854,11 @@ export interface SideRoutingEstimate {
   readonly cold: number;
   readonly usdAtRequested: number;
   readonly usdAtSide: number;
-  /** Warm calls needed per cold write before a swap pays, at the TTL that dominates the sample. */
-  readonly breakEven: number;
+  /**
+   * Warm calls needed per cold write before a swap pays, at the TTL that dominates the sample; null when a warm read on
+   * the side tier saves nothing over the requested model (Sonnet 5 vs Opus 5.5: both $0.20/MTok), so it never pays.
+   */
+  readonly breakEven: number | null;
   readonly observedWarmPerCold: number | null;
   readonly overCeiling: number;
   readonly overCeilingTokens: number;
@@ -863,6 +866,9 @@ export interface SideRoutingEstimate {
   readonly ttlAssumed: boolean;
   readonly convs: ConvExposure[];
 }
+
+/** Write cost over the per-token saving of each warm read; null when there is no saving to recover it from. */
+export const breakEvenOf = (writeRate: number, readSaving: number): number | null => (readSaving > 0 ? writeRate / readSaving : null);
 
 /**
  * Pure. What routing the go-list side kinds to one shared `SIDE_TIER` would have cost on this log, with every cold
@@ -977,7 +983,7 @@ export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRouting
     usdAtRequested,
     usdAtSide,
     tier,
-    breakEven: cacheWriteRate(tier, dominant) / Math.max(1e-9, cacheReadRate(tierOfModel(reqModel) ?? "opus", reqModel) - readRate),
+    breakEven: breakEvenOf(cacheWriteRate(tier, dominant), cacheReadRate(tierOfModel(reqModel) ?? "opus", reqModel) - readRate),
     observedWarmPerCold: cold === 0 ? null : warm / cold,
     ttlAssumed: opts.ttl === undefined && decisions.every((d) => d.cacheTtlBeta === null),
     convs: convExposure(decisions),
@@ -1053,7 +1059,7 @@ export function s12SideRouting({ rec, usd: showUsd }: Ctx): string[] {
     // price alone and quoting the rule would let a small-context kind look like a loss while it saves money.
     for (const k of withRoutable.filter((x) => x.cacheReadShare >= PREFIX_DOMINATED_SHARE)) {
       const r = k.cold === 0 ? null : k.warm / k.cold;
-      out.push(`    ${k.kind}: ${r === null ? "no cold write" : `${r.toFixed(1)} warm per cold`} against break-even ${e.breakEven.toFixed(1)}${r !== null && r < e.breakEven ? " - BELOW it" : ""}, ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
+      out.push(`    ${k.kind}: ${r === null ? "no cold write" : `${r.toFixed(1)} warm per cold`} ${e.breakEven === null ? "with no break-even (a warm read saves nothing on this model)" : `against break-even ${e.breakEven.toFixed(1)}${r !== null && r < e.breakEven ? " - BELOW it" : ""}`}, ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
     }
     for (const k of withRoutable.filter((x) => x.cacheReadShare < PREFIX_DOMINATED_SHARE)) {
       out.push(`    ${k.kind}: ${pct(k.cacheReadShare, 1)} cache read - little prefix to lose, the amortisation rule does not apply; ${k.usdAtRequested - k.usdAtSide >= 0 ? "saves" : "COSTS"} ${usd(Math.abs(k.usdAtRequested - k.usdAtSide))}`);
