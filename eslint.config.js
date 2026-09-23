@@ -5,7 +5,7 @@ export default tseslint.config(
   { ignores: ["dist/", "node_modules/", "_reference/", "_dumps/", "test/fixtures/", "scripts/spike/"] },
   js.configs.recommended,
   {
-    files: ["src/**/*.ts", "test/**/*.ts"],
+    files: ["src/**/*.ts", "test/**/*.ts", "scripts/calibrate/**/*.ts"],
     extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: {

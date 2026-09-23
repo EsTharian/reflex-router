@@ -29,6 +29,10 @@ export type EscalateTarget = (typeof ESCALATE_TARGETS)[number];
 export const LAYA_MODELS = ["english", "multilingual", "typed-decisions"] as const;
 export type LayaModel = (typeof LAYA_MODELS)[number];
 
+/** REFLEX_COMPARE: a second backend asked alongside the first, recorded only (calibration data). */
+export const COMPARE_BACKENDS = ["off", "laya"] as const;
+export type CompareBackend = (typeof COMPARE_BACKENDS)[number];
+
 export const TIERS = ["haiku", "sonnet", "opus", "fable"] as const;
 export type Tier = (typeof TIERS)[number];
 
@@ -76,6 +80,14 @@ export interface Config {
   readonly layaModel: LayaModel;
   /** Hard deadline for one Laya decision (REFLEX_LAYA_DEADLINE_MS). Expiry fails open. */
   readonly layaDeadlineMs: number;
+  /** REFLEX_LAYA_CALIBRATION (default on): apply the fitted calibration head to Laya's answers when one exists. */
+  readonly layaCalibration: boolean;
+  /**
+   * REFLEX_COMPARE=laya: with the Jev backend, also start laya-serve and put every decided state to Laya too, off the
+   * request's path, recording only numbers (the feature vector) in the decision record's `compare` block. It never
+   * changes a decision. This is how calibration data is collected (scripts/calibrate/fit.ts).
+   */
+  readonly compare: CompareBackend;
   /** How long the launcher waits for `laya-serve` to report its model loaded before stopping it (REFLEX_LAYA_READY_TIMEOUT_MS). */
   readonly layaReadyTimeoutMs: number;
   /**
@@ -175,7 +187,7 @@ export const defaultHome = (env: NodeJS.ProcessEnv, homedir: string = os.homedir
  */
 export const SETTING_NAMES: readonly string[] = [
   "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_DEADLINE_MS", "REFLEX_WARM_INTERVAL_MS",
-  "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS",
+  "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS", "REFLEX_LAYA_CALIBRATION", "REFLEX_COMPARE",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
   "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_DELEGATE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
@@ -288,6 +300,11 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
 
   const jevRaw = setting(env, "REFLEX_JEV_BASE_URL");
   const jevBaseUrl = jevRaw ? parseHttpUrl(jevRaw, "REFLEX_JEV_BASE_URL", errors) : DEFAULT_JEV_BASE_URL;
+  let compare = parseEnum(setting(env, "REFLEX_COMPARE"), COMPARE_BACKENDS, "off", "REFLEX_COMPARE", errors);
+  if (compare === backend) {
+    warnings.push(`REFLEX_COMPARE=${compare} compares against another backend, but it is already REFLEX_BACKEND; ignoring it`);
+    compare = "off";
+  }
   const allowFable = truthy(setting(env, "REFLEX_ALLOW_FABLE"));
   const tiers = parseTiers(setting(env, "REFLEX_TIERS"), allowFable, errors, warnings);
   const models = Object.fromEntries(
@@ -311,6 +328,8 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     layaModel: parseEnum(setting(env, "REFLEX_LAYA_MODEL"), LAYA_MODELS, "english", "REFLEX_LAYA_MODEL", errors),
     layaDeadlineMs: parseBoundedInt(setting(env, "REFLEX_LAYA_DEADLINE_MS"), DEFAULT_LAYA_DEADLINE_MS, 50, 60_000, "REFLEX_LAYA_DEADLINE_MS", errors),
     layaReadyTimeoutMs: parseBoundedInt(setting(env, "REFLEX_LAYA_READY_TIMEOUT_MS"), DEFAULT_LAYA_READY_TIMEOUT_MS, 1000, 600_000, "REFLEX_LAYA_READY_TIMEOUT_MS", errors),
+    layaCalibration: !falsy(setting(env, "REFLEX_LAYA_CALIBRATION")),
+    compare,
     layaBaseUrl: undefined,
     layaApiKey: undefined,
     tiers,

@@ -10,6 +10,8 @@ import { redact } from "../privacy/redact.js";
 import { errorSummary } from "../wire/anthropic.js";
 import { JevBackend } from "../backend/jev.js";
 import type { DecisionBackend } from "../backend/types.js";
+import { LayaBackend } from "../backend/laya.js";
+import { LAYA_CALIBRATIONS } from "../backend/laya-calibration.generated.js";
 import { DecisionLog, hashId, type DelegateHintRecord } from "../log/decision-log.js";
 import { HINT_VERSION } from "../delegate/hint.js";
 import { hintReply } from "../delegate/reply.js";
@@ -31,12 +33,15 @@ export interface WorkerOptions {
   readonly backend?: DecisionBackend | null;
 }
 
+/** The launcher's own laya-serve on loopback; never the TypeSafe key. No URL: the launcher did not start one. */
+function layaFor(config: Config, calibrate: boolean): LayaBackend | null {
+  if (config.layaBaseUrl === undefined) return null;
+  const inner = new JevBackend({ id: "laya", baseUrl: config.layaBaseUrl, apiKey: config.layaApiKey, model: config.layaModel, deadlineMs: config.layaDeadlineMs });
+  return new LayaBackend(inner, calibrate ? LAYA_CALIBRATIONS[config.layaModel] : undefined);
+}
+
 function backendFor(config: Config): DecisionBackend | null {
-  if (config.backend === "laya") {
-    // The launcher's own laya-serve on loopback; never the TypeSafe key. No URL: the launcher did not start one.
-    if (config.layaBaseUrl === undefined) return null;
-    return new JevBackend({ id: "laya", baseUrl: config.layaBaseUrl, apiKey: config.layaApiKey, model: config.layaModel, deadlineMs: config.layaDeadlineMs });
-  }
+  if (config.backend === "laya") return layaFor(config, config.layaCalibration);
   if (config.typesafeApiKey === undefined) return null;
   return new JevBackend({ baseUrl: config.jevBaseUrl, apiKey: config.typesafeApiKey, deadlineMs: config.jevDeadlineMs });
 }
@@ -85,6 +90,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const startedAt = Date.now();
   const decisionLog = new DecisionLog(opts.config.home, opts.config.logPrompts, { onError: (e) => opts.log("warn", `decision log: ${e.message}`) });
   const backend = opts.backend !== undefined ? opts.backend : backendFor(opts.config);
+  const compare = opts.config.backend === "jev" && opts.config.compare === "laya" ? layaFor(opts.config, false) : null;
   // The tracker is built before the router but has to reach it (escalation), so the reverse channel goes through a
   // holder. With REFLEX_ESCALATE off the router ignores every signal, so nothing about a request changes.
   let routerRef: Router | null = null;
@@ -111,6 +117,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         degradedReason: opts.degradedReason,
         claudeVersion: opts.claudeVersion,
         backend,
+        compare,
         breaker: new Breaker(),
         log: decisionLog,
         logger: opts.log,
@@ -224,6 +231,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         tracker?.flush();
         server.close(() => void decisionLog.flush().then(() => {
           backend?.close?.();
+          compare?.close();
           resolve();
         }));
         server.closeAllConnections();

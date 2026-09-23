@@ -207,3 +207,36 @@ describe("shadow mode with REFLEX_BACKEND=laya", () => {
     assert.ok(rec.decision);
   });
 });
+
+describe("REFLEX_COMPARE=laya: Laya asked alongside Jev, recorded only", () => {
+  let jev: FakeJev;
+  let laya: FakeJev;
+  let stack: Stack;
+  const newTurn = fixtures.find((f) => f.file === "interactive.main-new-turn.request.json");
+  before(async () => {
+    jev = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.9, reasoning: 0.4 });
+    laya = await startFakeJev({ kind: "answer", tier: "opus", confidence: 0.4, reasoning: 2 });
+    stack = await startStack({ config: { jevBaseUrl: jev.url, compare: "laya", layaBaseUrl: laya.url, layaApiKey: "session-key", layaModel: "typed-decisions" } });
+    stack.upstream.setHandler(sseHandler);
+  });
+  after(async () => {
+    await stack.close();
+    await jev.close();
+    await laya.close();
+  });
+
+  it("records Laya's feature vector next to Jev's decision; Jev's decision alone decides, and Jev never sees Laya's questions", async () => {
+    assert.ok(newTurn);
+    const { rec } = await replay(stack, newTurn);
+    const compare = rec["compare"] as { backend: string; model: string; feature_version: string; x: number[]; error: string | null };
+    assert.equal(compare.backend, "laya");
+    assert.equal(compare.model, "typed-decisions");
+    assert.equal(compare.error, null);
+    assert.ok(compare.x.every((v) => typeof v === "number") && compare.x.length > 10);
+    assert.equal(rec["backend"], "jev");
+    assert.equal((rec.decision as { picks: { tier: { value: string } } }).picks.tier.value, "haiku");
+    assert.ok(Object.keys(laya.calls.at(-1)!.body.questions).some((q) => q.startsWith("f_")));
+    assert.ok(!Object.keys(jev.calls.at(-1)!.body.questions).some((q) => q.startsWith("f_")));
+    assert.equal(laya.calls.at(-1)!.headers.authorization, "Bearer session-key");
+  });
+});

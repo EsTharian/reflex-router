@@ -125,13 +125,18 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
   const logFile = openWorkerLog(config.home);
   let workerConfig = config;
   let laya: LayaServer | null = null;
-  if (config.backend === "laya") {
-    const layaBin = resolveBin("laya-serve", config.layaBin, realResolveIO(io.env));
-    if (!layaBin) {
-      warn('cannot find `laya-serve` (install it with `uv tool install "laya[serve]"`, or set REFLEX_LAYA_BIN); running plain claude');
+  const wantsLaya = config.backend === "laya" || config.compare === "laya";
+  const layaBin = wantsLaya ? resolveBin("laya-serve", config.layaBin, realResolveIO(io.env)) : null;
+  if (wantsLaya && !layaBin) {
+    const missing = 'cannot find `laya-serve` (install it with `uv tool install "laya[serve]"`, or set REFLEX_LAYA_BIN)';
+    if (config.backend === "laya") {
+      warn(`${missing}; running plain claude`);
       logFile?.end();
       return plain();
     }
+    warn(`${missing}; REFLEX_COMPARE=laya is off for this session`); // it only records: the session runs on Jev alone
+  }
+  if (layaBin) {
     laya = await startLaya({ bin: layaBin, env: sanitizedEnv(io.env), model: config.layaModel, readyTimeoutMs: config.layaReadyTimeoutMs, logFile });
     workerConfig = { ...config, layaBaseUrl: laya.baseUrl, layaApiKey: laya.apiKey };
   }

@@ -148,7 +148,25 @@ export interface DecisionRecord {
    * arms - that is the whole point of the tag.
    */
   readonly ab: "control" | "routed" | null;
+  /** REFLEX_COMPARE only, on a turn the primary backend decided: the second backend's view, numbers only. */
+  readonly compare?: CompareBlock;
   readonly prompt_preview?: string;
+}
+
+/**
+ * What the comparison backend made of the same state (REFLEX_COMPARE=laya). Only numbers: `x` is Laya's feature
+ * vector (src/backend/laya-calibration.ts, `feature_version`), from which the calibration head is fitted against the
+ * primary backend's `decision` in the same record. Never read by routing.
+ */
+export interface CompareBlock {
+  readonly backend: "laya";
+  /** The checkpoint asked (REFLEX_LAYA_MODEL). */
+  readonly model: string;
+  readonly feature_version: string;
+  readonly x: readonly number[] | null;
+  readonly latency_ms: number | null;
+  /** Error category when Laya did not answer; null when it did. */
+  readonly error: string | null;
 }
 
 /** An escalation, applied (`escalation`) or recorded in shadow (`would_escalate`). */

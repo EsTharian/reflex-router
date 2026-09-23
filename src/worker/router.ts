@@ -11,13 +11,13 @@ import { decisionDeadlineMs, type Config, type Tier } from "../config.js";
 import type { EffectiveMode } from "../effective-mode.js";
 import { guard, type GuardResult } from "../guard.js";
 import { assessVersion, type VersionLevel } from "../launcher/version.js";
-import { hashId, type DecisionLog, type DecisionRecord } from "../log/decision-log.js";
+import { hashId, type CompareBlock, type DecisionLog, type DecisionRecord } from "../log/decision-log.js";
 import { parseOverride } from "../overrides.js";
 import { DECISION_GRACE_MS } from "../timing.js";
 import { buildQuestions, clampUp, judge, plan } from "../policy.js";
 import { buildState } from "../privacy/state.js";
 import { estimateTokens, fitsContext, tierOfModel, tierRank } from "../tiers.js";
-import type { ReasonCode } from "../types.js";
+import type { DecisionState, QuestionSet, ReasonCode } from "../types.js";
 import type { Log } from "../util/log.js";
 import { isPromptTooLong } from "../wire/anthropic.js";
 import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
@@ -27,6 +27,8 @@ import { ShapeTracker } from "../wire/shape.js";
 import { DRIFT_MIN_TYPED_PROMPTS, DriftTracker } from "../wire/drift.js";
 import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
 import { BackendError, type DecisionBackend } from "../backend/types.js";
+import type { LayaBackend } from "../backend/laya.js";
+import { FEATURE_VERSION } from "../backend/laya-calibration.js";
 import type { Breaker } from "./breaker.js";
 import { UsageTee } from "./usage-tee.js";
 import type { DecisionInfo } from "../outcome/tracker.js";
@@ -43,6 +45,8 @@ export interface RouterDeps {
   readonly degradedReason: string | null;
   readonly claudeVersion: string | null;
   readonly backend: DecisionBackend | null;
+  /** REFLEX_COMPARE=laya: asked the same state after the primary backend, recorded only. */
+  readonly compare?: LayaBackend | null;
   readonly breaker: Breaker;
   readonly log: DecisionLog;
   readonly logger: Log;
@@ -244,6 +248,8 @@ export class Router {
     if (conv?.pin && conv.pin.from !== requestedTier) conv.pin = null;
 
     let outcomeP: Promise<Outcome> = Promise.resolve({ part: NONE, target: null, reasons: [] });
+    /** REFLEX_COMPARE: set by #decide once the state is built; it never rejects and never delays the request. */
+    const cmp: { p?: Promise<CompareBlock> } = {};
     /** How long this request waited for the backend before going upstream: route mode, `new` turns only (shadow decides off the critical path). */
     let decisionWaitMs = 0;
     let pinState: DecisionRecord["pin"] = null;
@@ -280,7 +286,7 @@ export class Router {
     };
 
     if (v.turn === "new") {
-      outcomeP = this.#decide(v, s, conv, routing, ctx);
+      outcomeP = this.#decide(v, s, conv, routing, ctx, cmp);
       if (routing) {
         const waitStarted = this.#now();
         let outcome = await this.#bounded(outcomeP);
@@ -351,8 +357,8 @@ export class Router {
         if (finished) return;
         finished = true;
         const usageP = tee ? tee.end(complete) : Promise.resolve({ usage: null, unknownReason: "no_response" });
-        void Promise.all([outcomeP, usageP])
-          .then(([outcome, u]) => {
+        void Promise.all([outcomeP, usageP, cmp.p])
+          .then(([outcome, u, compare]) => {
             if (conv && u.usage && status === 200) {
               conv.cacheTier = tierOfModel(sentModel);
               conv.lastCtx = u.usage.input + u.usage.cacheRead + u.usage.cacheCreate;
@@ -398,6 +404,8 @@ export class Router {
               usage_unknown_reason: u.unknownReason,
               ...(fingerprint !== undefined ? { side_fingerprint: fingerprint } : {}),
               delegate_hint: this.d.config.delegate ? HINT_VERSION : null,
+              // Only next to a decision of the primary backend: a comparison needs both sides.
+              ...(compare !== undefined && outcome.part.decision !== null ? { compare } : {}),
             };
             this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, interjection: v.interjection, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
             return this.d.log.append(record, v.turn === "new" ? v.task : null);
@@ -433,7 +441,18 @@ export class Router {
   }
 
   /** Always resolves. Only positively identified `new` turns of a known kind are decided. */
-  async #decide(v: RequestView, s: SessionState, conv: ConvState | null, routing: boolean, ctx: number): Promise<Outcome> {
+  /** REFLEX_COMPARE: Laya's feature vector for the same state. Never throws; an error is recorded as its category. */
+  async #compare(laya: LayaBackend, state: DecisionState, questions: QuestionSet): Promise<CompareBlock> {
+    const base = { backend: "laya" as const, model: this.d.config.layaModel, feature_version: FEATURE_VERSION };
+    try {
+      const { decision, features } = await laya.decideWithFeatures(state, questions, { signal: new AbortController().signal });
+      return { ...base, x: features, latency_ms: decision.latencyMs, error: features === null ? "incomplete" : null };
+    } catch (e) {
+      return { ...base, x: null, latency_ms: null, error: e instanceof BackendError ? e.kind : "internal" };
+    }
+  }
+
+  async #decide(v: RequestView, s: SessionState, conv: ConvState | null, routing: boolean, ctx: number, cmp: { p?: Promise<CompareBlock> } = {}): Promise<Outcome> {
     const none = (part: Partial<DecisionPart> = {}, reasons: ReasonCode[] = []): Outcome => ({ part: { ...NONE, ...part }, target: null, reasons });
     if (v.kind === "unknown" || v.task === null) return none();
     const cfg = this.d.config;
@@ -506,7 +525,10 @@ export class Router {
     try {
       const built = buildState({ kind, task: v.task, previousAssistantText: v.previousAssistantText, requestedModel: v.requestedModel }, cfg);
       sent = built.sent;
-      const decision = await backend.decide(built.state, buildQuestions(cfg), { signal: new AbortController().signal });
+      const questions = buildQuestions(cfg);
+      // Started alongside the primary backend, awaited only when the record is written (after the response).
+      if (this.d.compare) cmp.p = this.#compare(this.d.compare, built.state, questions);
+      const decision = await backend.decide(built.state, questions, { signal: new AbortController().signal });
       this.d.breaker.success();
       const j = judge(decision, cfg);
       if (!j.ok) return failed({ backend: backend.id, sent, error: `invalid_answer:${j.error}` });
