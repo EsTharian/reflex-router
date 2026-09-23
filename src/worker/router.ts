@@ -230,9 +230,10 @@ export class Router {
     // A recognised main `new` turn consumes the newest typed prompt, so no later request can be promoted by it again.
     if (v.kind === "main" && v.turn === "new") this.d.claimTypedPrompt?.(v.sessionId);
     // Alarm only: never an input to `routing` below. See src/wire/drift.ts.
-    const drift = s.drift.check(this.d.typedPromptCount?.(v.sessionId) ?? 0);
-    if (drift !== null) {
-      this.d.logger("warn", `router: wire drift: ${drift} (typed prompts >= ${String(DRIFT_MIN_TYPED_PROMPTS)}, main new turns ${String(s.drift.newTurns)}). Classification may be stale for this Claude Code version; routing is unaffected.`);
+    const drift: string[] = s.drift.check(this.d.typedPromptCount?.(v.sessionId) ?? 0, v);
+    for (const r of drift) {
+      const detail = r === "typed_prompts_without_new_turns" ? `typed prompts >= ${String(DRIFT_MIN_TYPED_PROMPTS)}, main new turns ${String(s.drift.newTurns)}` : r === "unseen_requested_model" ? `model ${String(v.requestedModel)}` : `max_tokens ${String(v.facts.maxTokens)}`;
+      this.d.logger("warn", `router: wire drift: ${r} (${detail}). This Claude Code version may send shapes no fixture holds; routing is unaffected.`);
     }
     const routing = this.d.effectiveMode === "route" && s.shape.status !== "degraded" && this.#uaDegrade === null;
     const conv = v.convKey !== null && v.turn !== "side" ? this.#conv(s, v.convKey) : null;
@@ -338,6 +339,7 @@ export class Router {
       fallback: (st, err) => {
         fallbackStatus = st;
         fallbackError = err;
+        drift.push("rewrite_rejected");
         sentModel = v.requestedModel;
         // A request too large for the target says nothing about the tier: the size estimate let it through (dense text
         // has fewer bytes per token than the estimate assumes). Only this loop leaves the tier; its measured context,
@@ -376,7 +378,7 @@ export class Router {
               // is what lets the report group by it without reaching into the decision sub-object.
               backend_version: outcome.part.decision?.backendModel ?? null,
               ...(v.unclassifiedReason !== null ? { unclassified_reason: v.unclassifiedReason } : {}),
-              ...(drift !== null ? { drift } : {}),
+              ...(drift.length > 0 ? { drift: drift.join(",") } : {}),
               ...(v.interjection ? { interjection: true as const } : {}),
               entrypoint: v.entrypoint,
               mode_requested: this.d.config.mode,

@@ -157,20 +157,22 @@ describe("2.1.278 session replay: the 13-turn session that routed nothing", () =
 describe("wire drift cross-check", () => {
   const mainNew = { kind: "main", turn: "new" } as unknown as RequestView;
   const mainSide = { kind: "main", turn: "side" } as unknown as RequestView;
+  /** A request whose model and max_tokens the fixtures hold, so only the typed-prompt check can fire. */
+  const known = { requestedModel: "claude-sonnet-5", facts: { maxTokens: 64000 } } as unknown as RequestView;
 
   it("fires once when typed prompts pile up behind a session that found no new turns", () => {
     const d = new DriftTracker();
     d.observe(mainNew); // the opening turn, the only one recognised
     for (let i = 0; i < 9; i++) d.observe(mainSide);
-    assert.equal(d.check(DRIFT_MIN_TYPED_PROMPTS - 1), null, "below the threshold a quiet session is not drift");
-    assert.equal(d.check(10), "typed_prompts_without_new_turns");
-    assert.equal(d.check(10), null, "reported once per session");
+    assert.deepEqual(d.check(DRIFT_MIN_TYPED_PROMPTS - 1, known), [], "below the threshold a quiet session is not drift");
+    assert.deepEqual(d.check(10, known), ["typed_prompts_without_new_turns"]);
+    assert.deepEqual(d.check(10, known), [], "reported once per session");
   });
 
   it("stays silent on a healthy session, however many prompts it has", () => {
     const d = new DriftTracker();
     for (let i = 0; i < 12; i++) d.observe(mainNew);
-    assert.equal(d.check(12), null);
+    assert.deepEqual(d.check(12, known), []);
   });
 
   it("a subagent's first request is not the user typing", () => {
@@ -178,7 +180,16 @@ describe("wire drift cross-check", () => {
     d.observe(mainNew);
     for (let i = 0; i < 5; i++) d.observe({ kind: "subagent", turn: "new" } as unknown as RequestView);
     assert.equal(d.newTurns, 1);
-    assert.equal(d.check(5), "typed_prompts_without_new_turns");
+    assert.deepEqual(d.check(5, known), ["typed_prompts_without_new_turns"]);
+  });
+
+  it("flags a requested model and a max_tokens no fixture holds, once per distinct value per session", () => {
+    const d = new DriftTracker();
+    const opus55 = { requestedModel: "claude-opus-5-5", facts: { maxTokens: 128000 } } as unknown as RequestView;
+    assert.deepEqual(d.check(0, opus55), ["unseen_requested_model", "unseen_max_tokens"]);
+    assert.deepEqual(d.check(0, opus55), []);
+    assert.deepEqual(d.check(0, { requestedModel: "claude-opus-5-5", facts: { maxTokens: 96000 } } as unknown as RequestView), ["unseen_max_tokens"]);
+    assert.deepEqual(d.check(0, known), []);
   });
 });
 

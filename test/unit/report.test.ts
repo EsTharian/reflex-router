@@ -660,10 +660,18 @@ describe("report: 1. decisions by kind, turn and tier", () => {
   });
 
   it("a drift record is reported as a classifier alarm, and says routing was not changed", () => {
-    const text = toJsonl([{ ...dec({ id: "d1", t: 0 }), drift: "few_new_turns" }, dec({ id: "d2", t: 1, degraded: "version_unknown" })]);
+    const text = toJsonl([
+      { ...dec({ id: "d1", t: 0 }), drift: "typed_prompts_without_new_turns" },
+      { ...dec({ id: "d3", t: 2 }), drift: "unseen_requested_model,unseen_max_tokens" },
+      { ...dec({ id: "d4", t: 3 }), drift: "rewrite_rejected" },
+      dec({ id: "d2", t: 1, degraded: "version_unknown" }),
+    ]);
     const out = s1Decisions(ctxOf(text)).join("\n");
     assert.match(out, /degraded: version_unknown 1/);
-    assert.match(out, /drift: few_new_turns 1 - the classifier found far fewer new turns/);
+    assert.match(out, /drift: .*typed_prompts_without_new_turns 1/);
+    assert.match(out, /unseen_requested_model 1, .*unseen_max_tokens 1|unseen_max_tokens 1, .*unseen_requested_model 1/, "a record's reasons are counted one by one");
+    assert.match(out, /typed_prompts_without_new_turns: the classifier found far fewer new turns/);
+    assert.match(out, /rewrite_rejected: the upstream rejected a rewritten request/);
     assert.match(out, /routing was not changed/, "drift must never read as a routing state");
   });
 

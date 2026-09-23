@@ -300,6 +300,7 @@ describe("route mode", () => {
       assert.equal(rec.forwarded.fallback, true);
       assert.equal(rec.forwarded.fallback_status, 400);
       assert.equal(rec.forwarded.fallback_error, "invalid_request_error: nope", "the upstream's error is kept (redacted)");
+      assert.match(typeof rec["drift"] === "string" ? rec["drift"] : "", /(^|,)rewrite_rejected(,|$)/, "a rejected rewrite is wire drift in section 1");
       assert.equal(rec.forwarded.model, "claude-sonnet-5");
 
       const again = await replay(stack, inSession(fx("subagent-new-turn"), "s-rej", (b) => ((b["messages"] as Json[]).length = 1)));

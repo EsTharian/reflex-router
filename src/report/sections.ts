@@ -51,6 +51,14 @@ export interface WorkProfile {
 }
 
 /** Pure. Side calls are never rewritten, so they are never touchable; a loop is touchable when the turn that started it was. */
+/** What each drift reason (src/wire/drift.ts) says, for section 1. */
+const DRIFT_MEANING: Readonly<Record<string, string>> = {
+  typed_prompts_without_new_turns: "the classifier found far fewer new turns than the user typed prompts",
+  unseen_requested_model: "a requested model no fixture holds",
+  unseen_max_tokens: "a max_tokens value no fixture holds",
+  rewrite_rejected: "the upstream rejected a rewritten request (the original bytes were sent instead)",
+};
+
 export function workProfile(d: readonly Dec[]): WorkProfile {
   const requests: Record<WorkCategory, number> = { new: 0, continuation: 0, subagent: 0, side: 0 };
   const tok: Record<WorkCategory, number> = { new: 0, continuation: 0, subagent: 0, side: 0 };
@@ -214,8 +222,10 @@ export function s1Decisions({ rec }: Ctx): string[] {
   const deg = countBy(d.filter((x) => x.degradedReason !== null), (x) => x.degradedReason!);
   out.push(`  degraded: ${deg.length === 0 ? "none" : deg.map(([k, n]) => `${k} ${n}`).join(", ")}`);
   // Drift is an alarm about the classifier, not a routing state: it never degrades a session (src/wire/drift.ts).
-  const drift = countBy(d.filter((x) => x.drift !== null), (x) => x.drift!);
-  out.push(`  drift: ${drift.length === 0 ? "none" : `${drift.map(([k, n]) => `${k} ${n}`).join(", ")} - the classifier found far fewer new turns than the user typed prompts; routing was not changed, but this build may not recognise this Claude Code version`}`);
+  // One record may carry several reasons, comma-separated.
+  const drift = countBy(d.flatMap((x) => (x.drift ?? "").split(",").filter(Boolean).map((r) => ({ r }))), (x) => x.r);
+  out.push(`  drift: ${drift.length === 0 ? "none" : `${drift.map(([k, n]) => `${k} ${n}`).join(", ")} - routing was not changed, but this build may not recognise this Claude Code version`}`);
+  for (const [k] of drift) if (DRIFT_MEANING[k]) out.push(`    ${k}: ${DRIFT_MEANING[k]}`);
   return out;
 }
 

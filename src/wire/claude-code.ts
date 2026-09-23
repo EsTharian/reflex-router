@@ -40,6 +40,7 @@ export interface ShapeFacts {
   readonly lastNonSystemRole: string | null;
   readonly betaMidConversationSystem: boolean;
   readonly betaExtendedCacheTtl: boolean;
+  readonly maxTokens: number | null;
 }
 
 export interface RequestView {
@@ -374,6 +375,7 @@ export function parseRequest(
         lastNonSystemRole: str(nonSystem.at(-1)?.["role"]),
         betaMidConversationSystem: betas.some((x) => x.startsWith(BETA_MID_CONVERSATION_SYSTEM)),
         betaExtendedCacheTtl: betas.some((x) => x.startsWith(BETA_EXTENDED_CACHE_TTL)),
+        maxTokens: typeof b["max_tokens"] === "number" ? b["max_tokens"] : null,
       },
     },
   };
