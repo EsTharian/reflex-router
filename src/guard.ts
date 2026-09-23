@@ -8,8 +8,16 @@
 // measured from that response. Unknown context => refuse. A conversation's first request has no cache anywhere, so
 // there is nothing to lose. The guard only restricts moving AWAY from the cache holder towards a cheaper tier;
 // returning to the requested tier is never blocked (quality first).
+//
+// A switch is allowed when the penalty is at most `maxPenaltyUsd`, or when it is recovered within `breakevenRequests`
+// requests on the cheaper tier at this conversation's own measured averages:
+//
+//   saving/request = write * (writeRate(from) - writeRate(to)) + output * (out(from) - out(to)) + ctx * (readRate(from) - readRate(to))
+//
+// This counts neither the way back (a later return to `from` writes what it missed, at `from`'s rates) nor a
+// change in how many requests or tokens the cheaper model uses; both are unmeasured.
 import type { Tier } from "./config.js";
-import { cacheReadUsd, cacheWriteUsd, type CacheTtl } from "./pricing.js";
+import { cacheReadRate, cacheReadUsd, cacheWriteRate, cacheWriteUsd, priceOf, type CacheTtl } from "./pricing.js";
 
 export interface GuardInput {
   /** Tier whose cache holds this conversation (last served), or null when nothing was served yet. */
@@ -22,22 +30,34 @@ export interface GuardInput {
   /** No earlier assistant turn in the conversation: nothing is cached yet. */
   readonly fresh: boolean;
   readonly maxPenaltyUsd: number;
+  /** This conversation's mean new tokens (input + cache write) and output tokens per response after its first; null before any. */
+  readonly perRequest: { readonly write: number; readonly output: number } | null;
+  /** Requests within which the penalty must be recovered; 0 turns the break-even rule off. */
+  readonly breakevenRequests: number;
 }
 
-export type GuardReason = "fresh" | "no_switch" | "within_limit" | "over_limit" | "ctx_unknown";
+export type GuardReason = "fresh" | "no_switch" | "within_limit" | "breakeven" | "over_limit" | "ctx_unknown";
 
 export interface GuardResult {
   readonly allowed: boolean;
   readonly reason: GuardReason;
   readonly ctx: number | null;
   readonly penaltyUsd: number | null;
+  /** Estimated saving per request on the cheaper tier (null when not computed). */
+  readonly savingUsd: number | null;
 }
 
 export function guard(g: GuardInput): GuardResult {
-  if (g.cacheTier === g.to) return { allowed: true, reason: "no_switch", ctx: g.ctxTokens, penaltyUsd: 0 };
-  if (g.fresh) return { allowed: true, reason: "fresh", ctx: g.ctxTokens, penaltyUsd: null };
-  if (g.ctxTokens === null || g.cacheTier === null) return { allowed: false, reason: "ctx_unknown", ctx: null, penaltyUsd: null };
-  const penaltyUsd = cacheWriteUsd(g.to, g.ctxTokens, g.ttl) - cacheReadUsd(g.cacheTier, g.ctxTokens);
-  const allowed = penaltyUsd <= g.maxPenaltyUsd;
-  return { allowed, reason: allowed ? "within_limit" : "over_limit", ctx: g.ctxTokens, penaltyUsd };
+  if (g.cacheTier === g.to) return { allowed: true, reason: "no_switch", ctx: g.ctxTokens, penaltyUsd: 0, savingUsd: null };
+  if (g.fresh) return { allowed: true, reason: "fresh", ctx: g.ctxTokens, penaltyUsd: null, savingUsd: null };
+  if (g.ctxTokens === null || g.cacheTier === null) return { allowed: false, reason: "ctx_unknown", ctx: null, penaltyUsd: null, savingUsd: null };
+  const from = g.cacheTier;
+  const ctx = g.ctxTokens;
+  const penaltyUsd = cacheWriteUsd(g.to, ctx, g.ttl) - cacheReadUsd(from, ctx);
+  const savingUsd = g.perRequest === null ? null
+    : (g.perRequest.write * (cacheWriteRate(from, g.ttl) - cacheWriteRate(g.to, g.ttl)) + g.perRequest.output * (priceOf(from).output - priceOf(g.to).output) + ctx * (cacheReadRate(from) - cacheReadRate(g.to))) / 1_000_000;
+  const done = (allowed: boolean, reason: GuardReason): GuardResult => ({ allowed, reason, ctx, penaltyUsd, savingUsd });
+  if (penaltyUsd <= g.maxPenaltyUsd) return done(true, "within_limit");
+  if (g.breakevenRequests > 0 && savingUsd !== null && savingUsd > 0 && penaltyUsd <= g.breakevenRequests * savingUsd) return done(true, "breakeven");
+  return done(false, "over_limit");
 }

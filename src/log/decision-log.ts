@@ -88,7 +88,7 @@ export interface DecisionRecord {
     readonly would_upgrade: boolean;
   } | null;
   /** Main-chat cost guard, when it was evaluated. */
-  readonly guard: { readonly allowed: boolean; readonly reason: string; readonly ctx: number | null; readonly penalty_usd: number | null } | null;
+  readonly guard: { readonly allowed: boolean; readonly reason: string; readonly ctx: number | null; readonly penalty_usd: number | null; readonly saving_usd: number | null } | null;
   /** Manual `!tier` override in effect for this decision (main chat: from the prompt; subagent: captured at its first request). */
   readonly override: Tier | null;
   /** Continuations: whether a pin for this conversation/agent existed; `set` on a decided new turn. */

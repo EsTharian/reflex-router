@@ -32,7 +32,7 @@ export type Rec = Record<string, unknown> & {
   pin: string | null;
   override: string | null;
   mode_effective: string;
-  guard: { allowed: boolean; reason: string; ctx: number | null; penalty_usd: number | null } | null;
+  guard: { allowed: boolean; reason: string; ctx: number | null; penalty_usd: number | null; saving_usd?: number | null } | null;
   forwarded: { requested_model: string | null; model: string | null; rewritten: boolean; fields: string[]; fallback: boolean; fallback_status: number | null; fallback_error: string | null };
 };
 /**

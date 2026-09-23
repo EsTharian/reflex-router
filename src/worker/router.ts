@@ -96,6 +96,8 @@ interface ConvState {
   cacheTier: Tier | null;
   /** Prompt size (input + cache read + cache write) of that last response. */
   lastCtx: number | null;
+  /** Sums over the responses after the first (whose cache write is the whole prompt): new tokens, output tokens, count. */
+  sums: { write: number; output: number; n: number };
 }
 interface SessionState {
   readonly shape: ShapeTracker;
@@ -117,7 +119,7 @@ interface Outcome {
 
 const SEVERITY: Readonly<Record<VersionLevel, number>> = { ok: 0, warn: 1, degrade: 2 };
 const NONE: DecisionPart = { decision: null, plan: null, error: null, sent: null, backend: null, guard: null, override: null, escalation: null, would_escalate: null, ab: null };
-const guardRecord = (g: GuardResult | null): DecisionPart["guard"] => (g ? { allowed: g.allowed, reason: g.reason, ctx: g.ctx, penalty_usd: g.penaltyUsd } : null);
+const guardRecord = (g: GuardResult | null): DecisionPart["guard"] => (g ? { allowed: g.allowed, reason: g.reason, ctx: g.ctx, penalty_usd: g.penaltyUsd, saving_usd: g.savingUsd } : null);
 
 export class Router {
   readonly #sessions = new Map<string, SessionState>();
@@ -189,7 +191,7 @@ export class Router {
   #conv(s: SessionState, key: string): ConvState {
     let c = s.convs.get(key);
     if (!c) {
-      c = { pin: null, cacheTier: null, lastCtx: null };
+      c = { pin: null, cacheTier: null, lastCtx: null, sums: { write: 0, output: 0, n: 0 } };
       s.convs.set(key, c);
     }
     return c;
@@ -360,6 +362,11 @@ export class Router {
         void Promise.all([outcomeP, usageP, cmp.p])
           .then(([outcome, u, compare]) => {
             if (conv && u.usage && status === 200) {
+              if (conv.lastCtx !== null) {
+                conv.sums.write += u.usage.input + u.usage.cacheCreate;
+                conv.sums.output += u.usage.output;
+                conv.sums.n++;
+              }
               conv.cacheTier = tierOfModel(sentModel);
               conv.lastCtx = u.usage.input + u.usage.cacheRead + u.usage.cacheCreate;
             }
@@ -511,7 +518,8 @@ export class Router {
     // answer may move it above the requested tier; a downgrade still meets the guard after the decision).
     const fresh = v.facts.nonSystemMessages === 1;
     const guardFor = (to: Tier): GuardResult =>
-      guard({ cacheTier: conv?.cacheTier ?? null, to, ctxTokens: conv?.lastCtx ?? null, ttl: v.facts.betaExtendedCacheTtl ? "1h" : "5m", fresh, maxPenaltyUsd: cfg.maxSwitchPenaltyUsd });
+      guard({ cacheTier: conv?.cacheTier ?? null, to, ctxTokens: conv?.lastCtx ?? null, ttl: v.facts.betaExtendedCacheTtl ? "1h" : "5m", fresh, maxPenaltyUsd: cfg.maxSwitchPenaltyUsd,
+        perRequest: conv && conv.sums.n > 0 ? { write: conv.sums.write / conv.sums.n, output: conv.sums.output / conv.sums.n } : null, breakevenRequests: cfg.switchBreakevenRequests });
     if (kind === "main" && routing && requested !== null && !belowRequested && cfg.upgrades === "off") {
       const cheapest = cfg.tiers.find((t) => tierRank(t) < tierRank(requested));
       if (cheapest === undefined) return none({ plan: planRecord(null, ["no_enabled_tier"]) });

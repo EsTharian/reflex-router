@@ -128,7 +128,7 @@ describe("route mode", () => {
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, inSession(fx("main-new-turn"), "s-main"));
       assert.equal(sentBody(stack, n)["model"], HAIKU);
-      assert.deepEqual(rec.guard, { allowed: true, reason: "fresh", ctx: null, penalty_usd: null });
+      assert.deepEqual(rec.guard, { allowed: true, reason: "fresh", ctx: null, penalty_usd: null, saving_usd: null });
       const c = await replay(stack, inSession(fx("main-continuation"), "s-main"));
       assert.equal(c.rec.pin, "hit");
       assert.equal(sentBody(stack, n + 1)["model"], HAIKU);
@@ -165,6 +165,24 @@ describe("route mode", () => {
       assert.equal(rec.guard?.reason, "over_limit");
       assert.equal(rec.guard?.ctx, 200005);
       assert.ok((rec.guard?.penalty_usd ?? 0) > 0.3);
+    });
+
+    it("break-even: once the conversation has averages past its first response, a switch they would pay back is allowed", async () => {
+      // Every response: a 20k-token prompt and 20k output tokens. The first response's write is the whole prompt and
+      // is not averaged, so turn 2 has no averages (over_limit) and turn 3 has one response to average (breakeven).
+      stack.upstream.setHandler((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end('event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5,"cache_creation_input_tokens":20000,"cache_read_input_tokens":0,"output_tokens":1}}}\n\nevent: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":20000}}\n\n');
+      });
+      jev.set({ kind: "answer", tier: "sonnet", confidence: 0.9, reasoning: 2 });
+      await replay(stack, inSession(fx("main-new-turn"), "s-even"));
+      jev.set({ kind: "answer", tier: "haiku", confidence: 0.99, reasoning: 0.1 });
+      const second = await replay(stack, inSession(fx("main-new-turn-plain"), "s-even"));
+      assert.equal(second.rec.guard?.reason, "over_limit");
+      assert.equal(second.rec.guard?.saving_usd, null);
+      const third = await replay(stack, inSession(fx("main-new-turn-plain"), "s-even"));
+      assert.equal(third.rec.guard?.reason, "breakeven");
+      assert.ok((third.rec.guard?.saving_usd ?? 0) > 0);
     });
   });
 
