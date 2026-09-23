@@ -7,7 +7,7 @@
 // Every failure ends in "forward the original bytes"; the retry-with-original on a rejected rewrite lives in server.ts.
 import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
-import type { Config, Tier } from "../config.js";
+import { decisionDeadlineMs, type Config, type Tier } from "../config.js";
 import type { EffectiveMode } from "../effective-mode.js";
 import { guard, type GuardResult } from "../guard.js";
 import { assessVersion, type VersionLevel } from "../launcher/version.js";
@@ -393,7 +393,7 @@ export class Router {
               pin: pinState,
               forwarded: { requested_model: v.requestedModel, model: sentModel, rewritten: rewritten && fallbackStatus === null, fields: rewritten ? fields : [], fallback: fallbackStatus !== null, fallback_status: fallbackStatus, fallback_error: fallbackError },
               upstream: { status, msToHeaders },
-              timing: { decision_wait_ms: decisionWaitMs, decision_deadline_ms: this.d.config.jevDeadlineMs, upstream_first_byte_ms: upstreamFirstByteMs },
+              timing: { decision_wait_ms: decisionWaitMs, decision_deadline_ms: decisionDeadlineMs(this.d.config), upstream_first_byte_ms: upstreamFirstByteMs },
               usage: u.usage ? { input: u.usage.input, output: u.usage.output, cache_read: u.usage.cacheRead, cache_create: u.usage.cacheCreate } : null,
               usage_unknown_reason: u.unknownReason,
               ...(fingerprint !== undefined ? { side_fingerprint: fingerprint } : {}),
@@ -423,7 +423,7 @@ export class Router {
   async #bounded(p: Promise<Outcome>): Promise<Outcome> {
     let timer: NodeJS.Timeout | undefined;
     const late = new Promise<Outcome>((resolve) => {
-      timer = setTimeout(() => resolve({ part: { ...NONE, error: "decision_late" }, target: null, reasons: [] }), this.d.config.jevDeadlineMs + DECISION_GRACE_MS);
+      timer = setTimeout(() => resolve({ part: { ...NONE, error: "decision_late" }, target: null, reasons: [] }), decisionDeadlineMs(this.d.config) + DECISION_GRACE_MS);
     });
     try {
       return await Promise.race([p, late]);

@@ -185,7 +185,7 @@ describe("shadow mode with REFLEX_BACKEND=laya", () => {
   before(async () => {
     laya = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.9, reasoning: 0.4 });
     // What the launcher hands the worker after starting laya-serve; the TypeSafe key is present and must stay unused.
-    stack = await startStack({ config: { backend: "laya", layaBaseUrl: laya.url, layaApiKey: "session-key", layaModel: "multilingual", jevBaseUrl: "http://127.0.0.1:1" } });
+    stack = await startStack({ config: { backend: "laya", layaBaseUrl: laya.url, layaApiKey: "session-key", layaModel: "multilingual", layaDeadlineMs: 900, jevBaseUrl: "http://127.0.0.1:1" } });
     stack.upstream.setHandler(sseHandler);
   });
   after(async () => {
@@ -202,6 +202,7 @@ describe("shadow mode with REFLEX_BACKEND=laya", () => {
     assert.equal(call.body.model, "multilingual");
     assert.ok(!JSON.stringify(call.headers).includes("apikey_test"));
     assert.equal(rec["backend"], "laya");
+    assert.equal((rec as unknown as { timing: { decision_deadline_ms: number } }).timing.decision_deadline_ms, 900, "Laya's deadline, not Jev's");
     assert.equal(rec.error, null);
     assert.ok(rec.decision);
   });

@@ -137,6 +137,9 @@ export interface Config {
   readonly escalateWindowTurns: number;
 }
 
+/** The hard deadline of the configured decision backend's one decision. */
+export const decisionDeadlineMs = (c: Pick<Config, "backend" | "jevDeadlineMs" | "layaDeadlineMs">): number => (c.backend === "laya" ? c.layaDeadlineMs : c.jevDeadlineMs);
+
 export type ConfigResult =
   | { readonly ok: true; readonly config: Config; readonly warnings: readonly string[] }
   | { readonly ok: false; readonly errors: readonly string[] };
