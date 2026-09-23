@@ -170,6 +170,14 @@ describe("retarget from Fable 5.1: per-message output_config", () => {
     assert.deepEqual(b["output_config"], { effort: "high" });
     assert.deepEqual(r.fields, ["model", "messages.output_config_dropped:1"]);
   });
+  it("Sonnet: only the effort key goes; any other key of the message's output_config stays", () => {
+    const b0 = JSON.parse(fable.toString()) as { messages: Json[] };
+    b0.messages[1]!["output_config"] = { effort: "high", format: { type: "json_schema" } };
+    const r = retarget(Buffer.from(JSON.stringify(b0)), { from: "fable", to: "sonnet", model: "claude-sonnet-5" });
+    assert.ok(r.ok);
+    assert.deepEqual((JSON.parse(r.body.toString()) as { messages: Json[] }).messages[1]!["output_config"], { format: { type: "json_schema" } });
+    assert.deepEqual(r.fields, ["model", "messages.output_config.effort:1"]);
+  });
   it("Opus keeps it: only the model changes", () => {
     const r = retarget(fable, { from: "fable", to: "opus", model: "claude-opus-5" });
     assert.ok(r.ok);

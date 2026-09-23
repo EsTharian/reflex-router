@@ -302,7 +302,35 @@ So a request made mostly of numeric or symbol-heavy text (data files, minified o
 
 **Not tested:** histories near the 1M window of Sonnet, Opus or Fable, and Fable → Haiku with a thinking budget too small for `max_tokens` (retarget refuses that case itself: `thinking_budget_too_small`).
 
-Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus and Fable** (§5.1–5.6). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
+### 5.7 Opus 5.5 as the source (experiment, 2.1.280, capped at $0.50)
+
+One `-p` session under the user's own settings, **no override**: model setting `opus[1m]`, effort `medium`, requested
+model `claude-opus-5-5`, entrypoint `sdk-cli`, betas include `context-1m-2025-08-07` and `per-turn-control-2026-07-01`.
+Flags `--to haiku,sonnet --main sonnet --lean --probe-message-oc --cap-usd 0.50`. Estimated cost **$0.52**: the cap
+reserved 4 bytes/token for each request, the Opus 5.5 first request (35k tokens, all a 1-hour cache write, $0.29) needed
+more, and the proxies now reserve at 2.5 bytes/token (`estimateTokens`). Results:
+`test/fixtures/experiments/2.1.280/experiment.route-opus55-down.results.json`.
+
+| Probe | Status | Rewritten fields |
+| --- | --- | --- |
+| first request → Haiku | 200 | `model`, `max_tokens` (128000 → 64000), `output_config.effort`, `thinking`, `messages.system_folded:1`, `anthropic-beta:-context-1m-…` |
+| first request → Haiku, betas untouched | **400** `The long context beta is not yet available for this subscription.` | — |
+| first request → Sonnet | 200 | `model`, `messages.output_config_dropped:1` |
+| first request → Sonnet, system message's `output_config` kept | **400** `output_config.effort requires a model that supports per-turn effort; this model does not` | `model` |
+| subagent first request → Haiku | 200 | as the first request |
+| subagent → Sonnet, main and subagent continuations, un-pin | not run: refused by the cap | |
+
+**What this settles.** An Opus 5.5 request asks for `max_tokens` 128000, which Haiku 4.5 rejects (`max_tokens: 128000 >
+64000`, seen in the maintainer's route-mode log of 2026-09-22); `retarget` now lowers it to the target's
+`MAX_OUTPUT_TOKENS` (`src/tiers.ts`). Like Fable 5.1, Opus 5.5 puts a per-turn `output_config` on its trailing system
+message; Sonnet rejects its `effort`, so that key must go, and `retarget` removes only that key (the object goes when
+effort was all it held, as in every request seen).
+
+**What it does not.** No continuation with Opus 5.5 thinking in the history, no pinned loop and no un-pin were sent, so
+**every pair with `claude-opus-5-5` on either side stays `rewrite_unverified`** (`UNVERIFIED_MODELS`,
+`src/wire/rewrite.ts`) until a run covers them.
+
+Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and none with Opus 5.5 yet (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 

@@ -13,8 +13,10 @@ const ACCEPTS_SYSTEM_MESSAGES: Readonly<Record<Tier, boolean>> = { haiku: false,
 const ACCEPTS_EFFORT: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: true, opus: true, fable: true };
 /**
  * Families that take a per-message `output_config` on a `role:"system"` message (per-turn effort; Fable 5.1 requests
- * carry one). Sonnet 5 rejects it: "messages.1.output_config: Extra inputs are not permitted" (2.1.278
- * experiment.route-fable-to-sonnet). Haiku never sees it: its system messages are folded into user messages.
+ * carry one; so do Opus 5.5 requests on 2.1.280). Sonnet 5 rejects its effort: "messages.1.output_config: Extra inputs
+ * are not permitted" (2.1.278 experiment.route-fable-to-sonnet), and on 2026-09-23 "output_config.effort requires a
+ * model that supports per-turn effort; this model does not" (2.1.280 experiment.route-opus55-down). Haiku never sees
+ * it: its system messages are folded into user messages.
  */
 const ACCEPTS_MESSAGE_OUTPUT_CONFIG: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: false, opus: true, fable: true };
 
@@ -155,14 +157,25 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
     messages = r.messages;
     fields.push(`messages.system_folded:${r.folded}`);
   }
-  if (!ACCEPTS_MESSAGE_OUTPUT_CONFIG[opts.to] && messages.some((m) => m["role"] === "system" && "output_config" in m)) {
+  if (!ACCEPTS_MESSAGE_OUTPUT_CONFIG[opts.to] && messages.some((m) => m["role"] === "system" && isObj(m["output_config"]) && "effort" in m["output_config"])) {
+    // Only the per-turn effort goes (the key the target rejects); any other key stays, and the object goes only when
+    // effort was all it held (every observed request so far).
     let dropped = 0;
+    let stripped = 0;
     messages = messages.map((m) => {
-      if (m["role"] !== "system" || !("output_config" in m)) return m;
-      dropped++;
-      return Object.fromEntries(Object.entries(m).filter(([k]) => k !== "output_config"));
+      const moc = m["output_config"];
+      if (m["role"] !== "system" || !isObj(moc) || !("effort" in moc)) return m;
+      const rest = Object.fromEntries(Object.entries(moc).filter(([k]) => k !== "effort"));
+      const { output_config: _, ...without } = m;
+      if (Object.keys(rest).length === 0) {
+        dropped++;
+        return without;
+      }
+      stripped++;
+      return { ...without, output_config: rest };
     });
-    fields.push(`messages.output_config_dropped:${dropped}`);
+    if (dropped > 0) fields.push(`messages.output_config_dropped:${dropped}`);
+    if (stripped > 0) fields.push(`messages.output_config.effort:${stripped}`);
   }
   if (opts.dropHistoryThinking) {
     let dropped = 0;
