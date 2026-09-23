@@ -214,4 +214,14 @@ describe("router: main-chat pin rules (session B)", () => {
     assert.equal(c.rec.pin, "miss");
     assert.equal(c.rec.forwarded.rewritten, false);
   });
+
+  it("an Opus 5.5 main chat is decided but not rewritten while its pairs are unverified", async () => {
+    const h = harness();
+    const r = await h.send(opusRequest("main-new-turn", "U", "", "claude-opus-5-5"), SONNETISH);
+    assert.equal(r.sent["model"], "claude-opus-5-5");
+    assert.ok(r.rec.plan?.reasons.includes("rewrite_unverified"));
+    assert.equal(r.rec.forwarded.rewritten, false);
+    const c = await h.send(opusRequest("main-continuation", "U", "", "claude-opus-5-5"), null);
+    assert.equal(c.sent["model"], "claude-opus-5-5");
+  });
 });

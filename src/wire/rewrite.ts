@@ -30,7 +30,14 @@ const MIN_THINKING_BUDGET = 1024;
  */
 const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>sonnet", "opus>haiku", "haiku>sonnet", "haiku>opus", "sonnet>opus",
   "fable>haiku", "fable>sonnet", "fable>opus", "haiku>fable", "sonnet>fable", "opus>fable"]);
-export const isVerifiedRetarget = (from: Tier, to: Tier): boolean => VERIFIED_RETARGETS.has(`${from}>${to}`);
+/**
+ * Models no retarget has been verified for yet, on either side: a pair whose source or target model matches one is
+ * unverified whatever its tiers are. A new model in a verified family is not the model that was verified.
+ */
+const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5"];
+const unverifiedModel = (m: string | null): boolean => m !== null && UNVERIFIED_MODELS.some((u) => m.toLowerCase().includes(u));
+export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean =>
+  VERIFIED_RETARGETS.has(`${from}>${to}`) && !unverifiedModel(fromModel) && !unverifiedModel(toModel);
 
 /**
  * `anthropic-beta` values a target model rejects, removed from the header when a request is retargeted to it (the

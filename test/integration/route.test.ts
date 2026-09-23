@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import zlib from "node:zlib";
+import { DEFAULT_MODELS } from "../../src/config.js";
 import { DECISION_GRACE_MS } from "../../src/timing.js";
 import { startFakeJev, type FakeJev } from "../support/fake-jev.js";
 import { loadFixtures, type Fixture } from "../support/fixtures.js";
@@ -268,13 +269,13 @@ describe("route mode", () => {
       assert.equal(sentBody(stack, n)["model"], HAIKU);
     });
 
-    it("an override up to a verified pair (Sonnet -> Opus) is applied: only the model changes", async () => {
+    it("an override up to Opus 5.5 (the opus default) is not applied while its pairs are unverified", async () => {
       const f = inSession(fx("main-new-turn"), "s-ovr2", prefixTask("reflex:opus "));
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, f);
-      assert.equal(sentBody(stack, n)["model"], "claude-opus-5-5");
-      assert.deepEqual(rec.plan?.reasons, ["override"]);
-      assert.deepEqual(rec.forwarded.fields, ["model"]);
+      assert.equal(sentBody(stack, n)["model"], "claude-sonnet-5");
+      assert.deepEqual(rec.plan?.reasons, ["override", "rewrite_unverified"]);
+      assert.equal(rec.forwarded.rewritten, false);
     });
   });
 
@@ -371,7 +372,8 @@ describe("route mode: upgrades (REFLEX_UPGRADES=on, verified Haiku -> Opus)", ()
   let stack: Stack;
   before(async () => {
     jev = await startFakeJev({ kind: "answer", tier: "opus", confidence: 0.9, reasoning: 4 });
-    stack = await startStack({ effectiveMode: "route", config: { mode: "route", upgrades: "on", jevBaseUrl: jev.url, jevDeadlineMs: 500 } });
+    // Opus 5 (verified), not the Opus 5.5 default (unverified): this suite is about the upgrade path itself.
+    stack = await startStack({ effectiveMode: "route", config: { mode: "route", upgrades: "on", jevBaseUrl: jev.url, jevDeadlineMs: 500, models: { ...DEFAULT_MODELS, opus: "claude-opus-5" } } });
     stack.upstream.setHandler(sseHandler);
   });
   after(async () => {
@@ -384,11 +386,11 @@ describe("route mode: upgrades (REFLEX_UPGRADES=on, verified Haiku -> Opus)", ()
     const n = stack.upstream.seen.length;
     const { rec } = await replay(stack, f);
     const b = sentBody(stack, n);
-    assert.equal(b["model"], "claude-opus-5-5");
+    assert.equal(b["model"], "claude-opus-5");
     assert.equal((b["thinking"] as Json)["type"], "adaptive");
     assert.deepEqual(rec.plan?.reasons, ["upgrade"]);
     assert.equal(rec.forwarded.rewritten, true);
     const r = await request(`${stack.url}/__reflex/hook`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: "s-up", hook_event_name: "Stop" }) });
-    assert.deepEqual(JSON.parse(r.body.toString()), { systemMessage: "reflex upgraded the model: claude-haiku-4-5-20251001 → claude-opus-5-5" });
+    assert.deepEqual(JSON.parse(r.body.toString()), { systemMessage: "reflex upgraded the model: claude-haiku-4-5-20251001 → claude-opus-5" });
   });
 });

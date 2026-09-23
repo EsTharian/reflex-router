@@ -262,6 +262,11 @@ export class Router {
     };
     /** Retargets body and beta header to `to`; false when the body cannot be rewritten. */
     const applyRetarget = (from: Tier, to: Tier, model: string): boolean => {
+      // Every path that rewrites passes here, including a pin raised by the context ceiling: an unverified pair never goes out.
+      if (!isVerifiedRetarget(from, to, v.requestedModel, model)) {
+        extraReasons = [...extraReasons, "rewrite_unverified"];
+        return false;
+      }
       const r = retarget(body, { from, to, model });
       if (!r.ok) return false;
       const beta = headers["anthropic-beta"];
@@ -291,7 +296,7 @@ export class Router {
           pinState = "set";
         }
         if (outcome.target && requestedTier && !applyRetarget(requestedTier, outcome.target.tier, outcome.target.model)) {
-          extraReasons = ["rewrite_failed"];
+          if (!extraReasons.includes("rewrite_unverified")) extraReasons = ["rewrite_failed"];
           if (conv) conv.pin = { target: null, from: requestedTier };
         }
         outcomeP = Promise.resolve(outcome);
@@ -304,7 +309,7 @@ export class Router {
         t = fit(t);
         conv.pin = { target: t, from: requestedTier };
       }
-      if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier) && !applyRetarget(requestedTier, t.tier, t.model)) extraReasons = ["rewrite_failed"];
+      if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier) && !applyRetarget(requestedTier, t.tier, t.model) && !extraReasons.includes("rewrite_unverified")) extraReasons = ["rewrite_failed"];
     }
 
     let status: number | null = null;
@@ -451,7 +456,7 @@ export class Router {
         why.push("tier_disabled");
         routeTo = null;
       }
-      if (routeTo !== null && (requested === null || !isVerifiedRetarget(requested, routeTo))) {
+      if (routeTo !== null && (requested === null || !isVerifiedRetarget(requested, routeTo, v.requestedModel, cfg.models[routeTo]))) {
         why.push("rewrite_unverified");
         routeTo = null;
       }

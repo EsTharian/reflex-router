@@ -70,8 +70,15 @@ describe("overrides", () => {
 });
 
 describe("verified retargets", () => {
-  it("only the downgrades verified against the API are applied: Sonnet -> Haiku, Opus -> Sonnet, Opus -> Haiku", () => {
-    for (const [f, t] of [["sonnet", "haiku"], ["opus", "sonnet"], ["opus", "haiku"], ["haiku", "sonnet"], ["haiku", "opus"], ["sonnet", "opus"], ["fable", "haiku"], ["fable", "sonnet"], ["fable", "opus"], ["haiku", "fable"], ["sonnet", "fable"], ["opus", "fable"]] as const) assert.equal(isVerifiedRetarget(f, t), true);
-    for (const [f, t] of [["haiku", "haiku"], ["opus", "opus"]] as const) assert.equal(isVerifiedRetarget(f, t), false);
+  const M = { haiku: "claude-haiku-4-5-20251001", sonnet: "claude-sonnet-5", opus: "claude-opus-5", fable: "claude-fable-5-1" } as const;
+  it("every pair among Haiku, Sonnet, Opus 5 and Fable was verified against the API", () => {
+    for (const [f, t] of [["sonnet", "haiku"], ["opus", "sonnet"], ["opus", "haiku"], ["haiku", "sonnet"], ["haiku", "opus"], ["sonnet", "opus"], ["fable", "haiku"], ["fable", "sonnet"], ["fable", "opus"], ["haiku", "fable"], ["sonnet", "fable"], ["opus", "fable"]] as const) assert.equal(isVerifiedRetarget(f, t, M[f], M[t]), true);
+    for (const [f, t] of [["haiku", "haiku"], ["opus", "opus"]] as const) assert.equal(isVerifiedRetarget(f, t, M[f], M[t]), false);
+  });
+
+  it("a pair with Opus 5.5 on either side is not, whatever its tiers", () => {
+    assert.equal(isVerifiedRetarget("opus", "sonnet", "claude-opus-5-5", M.sonnet), false);
+    assert.equal(isVerifiedRetarget("opus", "haiku", "claude-opus-5-5[1m]", M.haiku), false);
+    assert.equal(isVerifiedRetarget("sonnet", "opus", M.sonnet, "claude-opus-5-5"), false);
   });
 });
