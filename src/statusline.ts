@@ -1,6 +1,7 @@
 // `reflex statusline`: the `statusLine` command reflex injects into the claude it launches (unless the user has their
 // own). Claude Code shows the model it asked for; this line shows the one reflex actually sent. It asks the session's
-// own front door (ANTHROPIC_BASE_URL, loopback only) and prints one line; any failure prints an empty line.
+// own front door (ANTHROPIC_BASE_URL, loopback only) and prints one line; any failure prints an empty line. The dollar
+// figures are estimates at list prices, computed as `reflex report` section 8 does (src/worker/session-status.ts).
 import http from "node:http";
 import { tierOfModel, tierRank } from "./tiers.js";
 import { parseStatusInput } from "./wire/statusline.js";
@@ -16,6 +17,8 @@ export interface StatusBody {
   readonly worker: "up" | "down";
   readonly main?: Pair | null;
   readonly subagents?: readonly Pair[];
+  /** Estimated $ saved (list prices; negative when routing cost more): this session, and all logged sessions. */
+  readonly saved?: { readonly session: number; readonly total: number | null };
 }
 
 /** `claude-opus-5-5[1m]` -> `Opus 5.5`, `claude-haiku-4-5-20251001` -> `Haiku 4.5`; anything else unchanged. */
@@ -32,6 +35,8 @@ const arrow = (p: Pair): string => {
   const b = tierOfModel(p.sent);
   return a === null || b === null || a === b ? "⇄" : tierRank(b) < tierRank(a) ? "⇣" : "⇡";
 };
+/** `$0.42`, `−$0.20`: cents, a real minus sign. */
+export const money = (usd: number): string => `${usd < -0.005 ? "−" : ""}$${Math.abs(usd).toFixed(2)}`;
 const YELLOW = "\x1b[33m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
@@ -44,10 +49,14 @@ export function formatStatus(s: StatusBody | null): string | null {
   const main = s.main ?? null;
   if (main !== null && routed(main)) parts.push(`${YELLOW}${arrow(main)} ${shortModel(main.sent)}${RESET} ${DIM}(asked ${shortModel(main.requested as string)})${RESET}`);
   else if (main !== null) parts.push(`${DIM}reflex:${RESET} ${shortModel(main.sent)}`);
+  else parts.push(`${DIM}reflex${RESET}`); // nothing decided yet: still say whose line this is
   const subs = new Map<string, number>();
   for (const p of s.subagents ?? []) if (routed(p)) subs.set(p.sent, (subs.get(p.sent) ?? 0) + 1);
   if (subs.size > 0) parts.push(`${DIM}subagents${RESET} ${[...subs].map(([m, n]) => `${YELLOW}→ ${shortModel(m)}${n > 1 ? ` ×${n}` : ""}${RESET}`).join(", ")}`);
-  if (parts.length === 0) return `${DIM}reflex${RESET}`;
+  const saved = s.saved;
+  if (saved !== undefined && (Math.abs(saved.session) >= 0.005 || Math.abs(saved.total ?? 0) >= 0.005)) {
+    parts.push(`${DIM}est. saved${RESET} ${money(saved.session)}${saved.total === null ? "" : ` ${DIM}(total ${money(saved.total)})${RESET}`}`);
+  }
   return parts.join(` ${DIM}·${RESET} `);
 }
 

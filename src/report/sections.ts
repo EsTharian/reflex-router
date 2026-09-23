@@ -550,6 +550,12 @@ export function costOf(d: readonly Dec[]): CostRow {
   return { n, tokens: tok, atSentUsd: sent, atRequestedUsd: requested };
 }
 
+/** Section 8's "routed only" difference: $ at requested minus $ at sent (negative when routing cost more). Estimate. */
+export function savedUsd(d: readonly Dec[]): number {
+  const c = costOf(d.filter((x) => x.turn !== "side" && x.routed));
+  return c.atRequestedUsd - c.atSentUsd;
+}
+
 /** 8. Cost at list prices (estimate). */
 export function s8Cost({ rec, usd: showUsd }: Ctx): string[] {
   const work = rec.decisions.filter((x) => x.turn !== "side");

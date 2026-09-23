@@ -54,6 +54,8 @@ export interface RouterDeps {
   readonly newId?: () => string;
   /** Outcome capture: told about every classified request (raw ids stay in memory). */
   readonly onDecision?: (d: DecisionInfo) => void;
+  /** Every decision record as it is written, with the raw session id (the record only holds its hash). */
+  readonly onRecord?: (record: DecisionRecord, sessionId: string | null) => void;
   /** Uniform [0,1) source for REFLEX_AB's randomisation. Injected so the experiment is testable. */
   readonly random?: () => number;
   /** How many prompts the user typed in a session, for the wire-drift cross-check only (src/wire/drift.ts). */
@@ -415,6 +417,7 @@ export class Router {
               ...(compare !== undefined && outcome.part.decision !== null ? { compare } : {}),
             };
             this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, interjection: v.interjection, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
+            this.d.onRecord?.(record, v.sessionId);
             return this.d.log.append(record, v.turn === "new" ? v.task : null);
           })
           .catch((e: unknown) => this.d.logger("error", `router: record failed: ${e instanceof Error ? e.message : String(e)}`));

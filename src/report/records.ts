@@ -137,7 +137,8 @@ const toEscalation = (e: unknown): EscalationRec | null => {
   return signal === null ? null : { signal, from: tierOf(e["from"]), to: tierOf(e["to"]), decisionId: str(e["decision_id"]), turnSeq: num(e["turn_seq"]) };
 };
 
-function toDec(o: J): Dec | null {
+/** One decision record as the report reads it; null when it is not one. */
+export function toDec(o: J): Dec | null {
   const id = str(o["id"]);
   const atStr = str(o["at"]);
   const atMs = atStr === null ? NaN : Date.parse(atStr);

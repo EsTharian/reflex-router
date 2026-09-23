@@ -4,7 +4,12 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- **The status line shows an estimated saving**, for the session and in total: `est. saved $0.42 (total $3.10)`. It is
+  the same figure as `reflex report --usd` section 8's "routed only" difference (token counts priced at the requested
+  model minus at the model sent, list prices; negative when routing cost more), so it is an estimate with that
+  section's caveats, not a bill. The total is read from `~/.reflex/decisions.jsonl` when the session starts.
 
 ## 0.4.3 — 2026-09-23
 
