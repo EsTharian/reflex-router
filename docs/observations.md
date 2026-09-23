@@ -422,3 +422,32 @@ every Opus 5.5 pair stays unapplied.
 **Latency, one calibrated decision (9 questions), idle M4, CPU.** `english` p50/p95 678/754 ms on short tasks and 1,474/1,478 ms on long ones; `typed-decisions` 864/946 and 1,763/2,223; `multilingual` 348/378 and 786/1,087. With the machine busy (inside the sessions) `typed-decisions` took p50 1,741 ms, p95 3,104 ms. `REFLEX_LAYA_DEADLINE_MS` now defaults to 2,500 ms.
 
 **What it means.** The head turns Laya from "Opus for everything" into "Sonnet by default, Opus when it looks hard": it keeps most of what Jev keeps on Opus and almost never picks Haiku. It is not Jev: 3–4% of plans cheaper than Jev's on the corpora, about 10% (3/31) in the real sessions. Laya's own README says the real gain needs fine-tuning. The Jev-labelled data these tools now produce is exactly what that would need, and a shared-nothing way to grow it is `REFLEX_COMPARE=laya` in shadow mode.
+
+## 2026-09-23 — the shipped Laya head, tested on 190 real prompts: 15% cheaper than Jev; refit with a safety margin
+
+**Setup.** `scripts/calibrate/harvest-history.ts`, with the owner's consent: 190 prompts the owner typed in 41 past Claude Code transcripts (seven projects; agent-driven experiment directories excluded), each with its previous assistant reply and the model that answered it, put to Jev and to every Laya checkpoint. Only numbers were written. The same harvest measured one calibrated decision on these real prompts, machine idle: `english` p50/p95 1,491/1,585 ms, `multilingual` 772/977 ms, `typed-decisions` 2,265/2,923 ms. `typed-decisions` is above the 2,500 ms default deadline at p95.
+
+**This distribution is not the corpora's.** Jev planned 3 Haiku, 93 Sonnet and 94 Opus for these prompts; for the corpora it was 129, 251 and 60.
+
+**The head shipped in 0.4.0 (`cal-20260923`, fitted on corpora only) on these prompts** (plan with Opus requested):
+
+| | agree with Jev | cheaper than Jev |
+| --- | --- | --- |
+| raw Laya | 94/190 | 0 |
+| `english` + 0.4.0 head (the default) | 106/190 | **28 (14.7%)** |
+| `typed-decisions` + 0.4.0 head | 104/190 | 10 (5.3%) |
+| `multilingual` + 0.4.0 head | 103/190 | 63 (33%) |
+
+The corpora had put the cheaper-than-Jev rate at 3–4%. On real prompts the default was four times worse. That is a quality risk in route mode: 15% of the turns Jev keeps on Opus went to Sonnet.
+
+**Refit (`cal-20260923.2`).** Now fitted on corpora + history (+ the recorded sessions for `typed-decisions`). `fit.ts` also adds an **opus margin**, a constant added to the opus logit and folded into the head's bias. It picks the smallest margin whose cross-validated plans on *real* samples are cheaper than Jev's at most 3% of the time (`--max-under`). The margin is tuned on the same real samples it is scored on, so the rates below are somewhat optimistic.
+
+| real prompts, cross-validated | margin | agree with Jev | cheaper than Jev | moved below Opus |
+| --- | --- | --- | --- | --- |
+| `english` | 0.75 | 110/190 | 3 (1.6%) | 24 |
+| `typed-decisions` (221 incl. sessions) | 0.375 | 123/221 | 5 (2.3%) | 23 |
+| `multilingual` | 0.5 | 102/190 | 5 (2.6%) | 19 |
+
+**Held out, the 30-prompt author set.** `english` gets 15/30 exact with **0** cheaper than the label; the 0.4.0 head got 17/30 with 4, all short-but-hard. `typed-decisions` gets 15/30 with 1 cheaper; Jev gets 27/30 with 2.
+
+**What it means.** With the margin, calibrated Laya is conservative. On the owner's real prompts it moves about one turn in eight off Opus, and it rarely moves one that Jev would keep. It saves less than Jev: Jev moves half of them. The synthetic corpora are useful for shape, but they cannot set the safety margin. Every refit has to be scored on real traffic.

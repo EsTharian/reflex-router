@@ -4,7 +4,19 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
-_Nothing yet._
+### Fixed
+
+- **The Laya calibration head of 0.4.0 routed too low on real prompts.** Tested on 190 prompts the maintainer had
+  typed, 15% of its plans with `english` (the default) were cheaper than Jev's; the synthetic training tasks had put
+  that at 3–4%. The refit `cal-20260923.2` adds real prompts to the training data and a margin towards Opus, tuned on
+  real prompts: 1.6% cheaper than Jev (cross-validated), and none of the held-out author set cheaper than the label.
+  It routes less: 24 of 190 real prompts moved off Opus.
+
+### Added
+
+- Claude Code 2.1.280 fixtures (`claude -p` with an Explore subagent); 2.1.280 is a tested version.
+- `scripts/calibrate/harvest-history.ts` (your own typed prompts, numbers only written; the prompts go to Jev) and
+  `fit.ts --max-under` / `--version`.
 
 ## 0.4.0 — 2026-09-23
 

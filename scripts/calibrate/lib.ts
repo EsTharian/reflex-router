@@ -18,6 +18,15 @@ export interface Sample {
   readonly t: Target;
   /** Samples in one group are correlated (one session); cross-validation never splits a group. */
   readonly group: string;
+  /** Real traffic (typed prompts or recorded sessions), not a synthetic corpus: the safety margin is tuned on these. */
+  readonly real?: boolean;
+}
+
+/** Adds `delta` to the opus logit: every plan leans that much towards keeping the dearer tier. */
+export function withOpusMargin(p: Readonly<Record<string, number>>, delta: number): Record<string, number> {
+  const opus = (p["opus"] ?? 0) * Math.exp(delta);
+  const s = (p["haiku"] ?? 0) + (p["sonnet"] ?? 0) + opus;
+  return { haiku: (p["haiku"] ?? 0) / s, sonnet: (p["sonnet"] ?? 0) / s, opus: opus / s };
 }
 
 export function jevTarget(answers: Readonly<Record<string, Answer>>): Target | null {
@@ -192,7 +201,11 @@ export function crossValidate(samples: readonly Sample[], lambda: number, folds 
   return out;
 }
 
-export function calibrationOf(version: string, featureVersion: string, samples: readonly Sample[], lambda: number, fit: Record<string, number | string>): LayaCalibration {
+/** The fitted head; `opusMargin` is folded into the opus row's bias (withOpusMargin, in weight form). */
+export function calibrationOf(version: string, featureVersion: string, samples: readonly Sample[], lambda: number, fit: Record<string, number | string>, opusMargin = 0): LayaCalibration {
   const round = (w: readonly number[]): number[] => w.map((v) => Math.round(v * 1e6) / 1e6);
-  return { version, featureVersion, tierWeights: fitTier(samples, lambda).map(round), demandWeights: round(fitDemand(samples, lambda)), fit };
+  const tier = fitTier(samples, lambda);
+  const opus = tier[CAL_TIERS.indexOf("opus")]!;
+  opus[opus.length - 1]! += opusMargin;
+  return { version, featureVersion, tierWeights: tier.map(round), demandWeights: round(fitDemand(samples, lambda)), fit };
 }

@@ -1,6 +1,6 @@
 // Fits the Laya calibration head from recorded Jev/Laya pairs and reports cross-validated results.
 //
-//   node --import tsx scripts/calibrate/fit.ts [--model typed-decisions] [--eps 0.1] [--group record|session] [--write] <file.jsonl>...
+//   node --import tsx scripts/calibrate/fit.ts [--model typed-decisions] [--eps 0.1] [--group record|session] [--max-under 0.03] [--version cal-…] [--write] <file.jsonl>...
 //
 // --group: what cross-validation keeps together. `session` is the honest choice once there are many sessions; with
 // one or two long sessions it leaves nothing to validate on, so `record` (each decision on its own) is the default and
@@ -13,7 +13,7 @@ import fs from "node:fs";
 import { FEATURE_VERSION, type LayaCalibration } from "../../src/backend/laya-calibration.js";
 import { LAYA_CALIBRATIONS } from "../../src/backend/laya-calibration.generated.js";
 import { LAYA_MODELS, type LayaModel } from "../../src/config.js";
-import { calibrationOf, crossValidate, rawOf, score, targetOf, type Sample, type Scores } from "./lib.js";
+import { calibrationOf, crossValidate, rawOf, score, targetOf, withOpusMargin, type Sample, type Scores } from "./lib.js";
 
 const args = process.argv.slice(2);
 const opt = (name: string): string | undefined => {
@@ -24,6 +24,10 @@ const model = (opt("--model") ?? "typed-decisions") as LayaModel;
 if (!LAYA_MODELS.includes(model)) throw new Error(`--model must be one of ${LAYA_MODELS.join(", ")}`);
 const eps = Number(opt("--eps") ?? 0.1);
 const groupBy = opt("--group") ?? "record";
+/** The most cheaper-than-Jev plans allowed on real traffic (cross-validated); the opus margin is raised until it holds. */
+const maxUnder = Number(opt("--max-under") ?? 0.03);
+/** Names the parameters in every decision's backend_version: a refit must not reuse an earlier name. */
+const versionName = opt("--version");
 const write = args.includes("--write");
 const files = args.filter((a) => a !== "--write");
 if (files.length === 0) throw new Error("give at least one .jsonl file");
@@ -65,7 +69,7 @@ for (const file of files) {
       source = `session:${String(r["kind"])}`;
     }
     if (x === null || t === null) continue;
-    samples.push({ x, t, group });
+    samples.push({ x, t, group, real: source.startsWith("history") || source.startsWith("session") });
     bySource[source] = (bySource[source] ?? 0) + 1;
   }
 }
@@ -90,9 +94,27 @@ for (const lambda of [0.001, 0.01, 0.03, 0.1, 0.3, 1]) {
 }
 console.log(`chosen lambda ${best!.lambda} (lowest cross-validated cross-entropy)`);
 
+// Safety margin: the smallest lean towards opus whose cross-validated plans on REAL traffic are cheaper than Jev's at
+// most maxUnder of the time. Synthetic corpora understated this rate four-fold (docs/observations.md), so they do not
+// set it; without real samples the margin stays 0 and says so.
+const oof = crossValidate(samples, best!.lambda);
+const real = samples.map((s, i) => [s, i] as const).filter(([s]) => s.real);
+let margin = 0;
+let marginScores: Scores | null = null;
+if (real.length > 0) {
+  for (const delta of [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 1, 1.5, 2, 3]) {
+    const sc = score(real.map(([s, i]) => ({ p: withOpusMargin(oof[i]!.p, delta), demand: oof[i]!.demand, t: s.t })), eps);
+    console.log(`margin ${String(delta).padEnd(5)} on ${real.length} real samples: ${fmt(sc)}`);
+    margin = delta;
+    marginScores = sc;
+    if (sc.plan.under / sc.n <= maxUnder) break;
+  }
+  console.log(`chosen opus margin ${margin} (cheaper-than-Jev on real traffic ${marginScores!.plan.under}/${marginScores!.n}, target <= ${maxUnder})`);
+} else console.log("no real samples: opus margin 0 (not tuned; synthetic corpora understate the cheaper-than-Jev rate)");
+
 if (write) {
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const cal: LayaCalibration = calibrationOf(`cal-${day}`, FEATURE_VERSION, samples, best!.lambda, {
+  const cal: LayaCalibration = calibrationOf(versionName ?? `cal-${day}`, FEATURE_VERSION, samples, best!.lambda, {
     samples: samples.length,
     groups: new Set(samples.map((s) => s.group)).size,
     lambda: best!.lambda,
@@ -102,8 +124,12 @@ if (write) {
     cv_over: Math.round((1000 * best!.s.over) / best!.s.n) / 1000,
     cv_plan_agree: Math.round((1000 * best!.s.plan.agree) / best!.s.n) / 1000,
     cv_plan_under: Math.round((1000 * best!.s.plan.under) / best!.s.n) / 1000,
+    opus_margin: margin,
+    real_samples: real.length,
+    real_cv_plan_agree: marginScores ? Math.round((1000 * marginScores.plan.agree) / marginScores.n) / 1000 : "n/a",
+    real_cv_plan_under: marginScores ? Math.round((1000 * marginScores.plan.under) / marginScores.n) / 1000 : "n/a",
     sources: JSON.stringify(bySource),
-  });
+  }, margin);
   const all = { ...LAYA_CALIBRATIONS, [model]: cal };
   const file = new URL("../../src/backend/laya-calibration.generated.ts", import.meta.url);
   fs.writeFileSync(
