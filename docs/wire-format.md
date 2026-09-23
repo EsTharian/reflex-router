@@ -154,7 +154,17 @@ fingerprint), so `plain_string_no_typed_match` can be told from an unknown harne
 `UserPromptSubmit` prompts but the classifier has found at most 1 main `new` turn, the worker logs a warning and the
 decision record carries `drift`, counted in report section 1. It changes nothing — not routing, not classification, not
 the session's degraded state — it only makes the next format change visible on day one. Had it existed, session
-`399c485e` would have raised it on its third prompt.
+`399c485e` would have raised it on its third prompt. Since 0.3.8 it also flags, once per session and value, a requested
+model or a `max_tokens` value that no fixture request holds (`unseen_requested_model`, `unseen_max_tokens`; the lists
+are generated beside the tested versions by `npm run gen:versions`), and every upstream rejection of a rewritten request
+(`rewrite_rejected`). A record can carry several reasons, comma-separated.
+
+**A main new turn needs a typed prompt once hooks arrive (2.1.280).** Session `999c1b7f` got four array-encoded
+main-chat requests within 50 s with no `UserPromptSubmit` behind any of them (11k–38k input, no cache), and they were
+decided as user turns. Since 0.3.8, once any `UserPromptSubmit` has reached the worker for a session, a main-chat
+message that is not the newest unclaimed typed prompt is `side` / `unclassified` with `unclassified_reason:
+no_typed_prompt`, whatever its encoding, and gets a fingerprint. Without a hook stream the structural rule stands
+alone. **No body of these calls was captured**, so their shape and side kind are still unnamed.
 
 **Fixture.** `2.1.278/ultracode.main-new-turn-plain-string.request.json` is **derived**, not captured: the real
 `ultracode#004` request with its last user message re-encoded as a plain string. The capture of 2026-09-19 did **not**
