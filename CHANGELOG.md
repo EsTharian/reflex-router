@@ -4,6 +4,10 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.4.4 — 2026-09-23
+
 ### Added
 
 - **The status line shows an estimated saving**, for the session and in total: `est. saved $0.42 (total $3.10)`. It is
