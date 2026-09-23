@@ -37,17 +37,21 @@ const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>s
  * unverified whatever its tiers are. A new model in a verified family is not the model that was verified.
  */
 const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5"];
-const unverifiedModel = (m: string | null): boolean => m !== null && UNVERIFIED_MODELS.some((u) => m.toLowerCase().includes(u));
 /**
- * `<unverified model>><target tier>` pairs verified since (docs/wire-format.md §5.7,
- * test/fixtures/experiments/2.1.280/experiment.route-opus55-*): first request, subagent pin, a continuation holding
- * Opus 5.5 thinking, and un-pin with target-signed thinking back to Opus 5.5.
+ * Pairs with such a model verified since, written with the model id in place of its tier (docs/wire-format.md §5.7,
+ * test/fixtures/experiments/2.1.280/experiment.route-*opus55*): first request, subagent pin, a continuation holding
+ * source-signed thinking, and un-pin with target-signed thinking back to the source.
  */
-const VERIFIED_MODEL_RETARGETS: ReadonlySet<string> = new Set(["claude-opus-5-5>haiku"]);
-const sourceVerified = (m: string | null, to: Tier): boolean =>
-  !unverifiedModel(m) || UNVERIFIED_MODELS.some((u) => m!.toLowerCase().includes(u) && VERIFIED_MODEL_RETARGETS.has(`${u}>${to}`));
-export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean =>
-  VERIFIED_RETARGETS.has(`${from}>${to}`) && sourceVerified(fromModel, to) && !unverifiedModel(toModel);
+const VERIFIED_MODEL_RETARGETS: ReadonlySet<string> = new Set([
+  "claude-opus-5-5>haiku", "claude-opus-5-5>sonnet", "haiku>claude-opus-5-5", "sonnet>claude-opus-5-5",
+]);
+const unverifiedKey = (m: string | null): string | undefined => UNVERIFIED_MODELS.find((u) => m !== null && m.toLowerCase().includes(u));
+export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean => {
+  if (!VERIFIED_RETARGETS.has(`${from}>${to}`)) return false;
+  const f = unverifiedKey(fromModel);
+  const t = unverifiedKey(toModel);
+  return (f === undefined && t === undefined) || VERIFIED_MODEL_RETARGETS.has(`${f ?? from}>${t ?? to}`);
+};
 
 /**
  * `anthropic-beta` values a target model rejects, removed from the header when a request is retargeted to it (the

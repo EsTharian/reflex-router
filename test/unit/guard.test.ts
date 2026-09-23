@@ -93,10 +93,12 @@ describe("verified retargets", () => {
     for (const [f, t] of [["haiku", "haiku"], ["opus", "opus"]] as const) assert.equal(isVerifiedRetarget(f, t, M[f], M[t]), false);
   });
 
-  it("Opus 5.5 -> Haiku is verified; every other pair with Opus 5.5 on either side is not", () => {
+  it("Opus 5.5 to and from Haiku and Sonnet is verified; Opus 5.5 with Fable is not", () => {
     assert.equal(isVerifiedRetarget("opus", "haiku", "claude-opus-5-5[1m]", M.haiku), true);
-    assert.equal(isVerifiedRetarget("opus", "sonnet", "claude-opus-5-5", M.sonnet), false);
-    assert.equal(isVerifiedRetarget("sonnet", "opus", M.sonnet, "claude-opus-5-5"), false);
-    assert.equal(isVerifiedRetarget("haiku", "opus", M.haiku, "claude-opus-5-5"), false);
+    assert.equal(isVerifiedRetarget("opus", "sonnet", "claude-opus-5-5", M.sonnet), true);
+    assert.equal(isVerifiedRetarget("sonnet", "opus", M.sonnet, "claude-opus-5-5"), true);
+    assert.equal(isVerifiedRetarget("haiku", "opus", M.haiku, "claude-opus-5-5"), true);
+    assert.equal(isVerifiedRetarget("opus", "fable", "claude-opus-5-5", M.fable), false);
+    assert.equal(isVerifiedRetarget("fable", "opus", M.fable, "claude-opus-5-5"), false);
   });
 });

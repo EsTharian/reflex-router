@@ -4,7 +4,15 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
-_Nothing yet._
+### Changed
+
+- **Opus 5.5 ↔ Haiku and Opus 5.5 ↔ Sonnet are applied in route mode.** Three capped runs under the user's own
+  settings (`opus[1m]`, no `--model`) covered subagent pins, continuations holding Opus 5.5-, Haiku- or Sonnet-signed
+  thinking, and un-pin in both directions (`docs/wire-format.md` §5.7). Opus 5.5 with Fable stays `rewrite_unverified`.
+- **The main-chat cost guard also allows a switch that pays for itself.** `REFLEX_SWITCH_BREAKEVEN_REQUESTS` (default
+  10): a switch over `REFLEX_MAX_SWITCH_PENALTY_USD` is allowed when that many requests on the cheaper model would
+  recover the lost cache at the conversation's own measured averages. Replayed on the maintainer's five real Opus 5.5
+  refusals, it still refuses all five (33–111 requests to break even; `docs/observations.md`).
 
 ## 0.4.1 — 2026-09-23
 

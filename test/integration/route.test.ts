@@ -287,13 +287,13 @@ describe("route mode", () => {
       assert.equal(sentBody(stack, n)["model"], HAIKU);
     });
 
-    it("an override up to Opus 5.5 (the opus default) is not applied while its pairs are unverified", async () => {
+    it("an override up to Opus 5.5 (the opus default) is applied: Sonnet -> Opus 5.5 is verified", async () => {
       const f = inSession(fx("main-new-turn"), "s-ovr2", prefixTask("reflex:opus "));
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, f);
-      assert.equal(sentBody(stack, n)["model"], "claude-sonnet-5");
-      assert.deepEqual(rec.plan?.reasons, ["override", "rewrite_unverified"]);
-      assert.equal(rec.forwarded.rewritten, false);
+      assert.equal(sentBody(stack, n)["model"], "claude-opus-5-5");
+      assert.deepEqual(rec.plan?.reasons, ["override"]);
+      assert.equal(rec.forwarded.rewritten, true);
     });
   });
 

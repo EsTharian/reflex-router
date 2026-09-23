@@ -356,12 +356,30 @@ attempts (est. $0.59 together, not kept) tried to make Sonnet think before a too
 | history made by Opus 5.5 and Sonnet, sent to Haiku | 200 | — |
 
 So **Opus 5.5 → Haiku is verified** (first request, subagent pin, a continuation holding Opus 5.5 thinking, un-pin
-with Haiku-signed thinking) and route mode applies it (`VERIFIED_MODEL_RETARGETS`, `src/wire/rewrite.ts`). **Opus 5.5
-→ Sonnet is not yet**: Sonnet produced no thinking block in any routed turn (6 of 6 at `effort: "medium"` before a
-tool call), so un-pin with **Sonnet-signed** thinking back to Opus 5.5, the request the retry-with-original would
-send, has not been sent. Upgrades into Opus 5.5 were not run.
+with Haiku-signed thinking). Sonnet produced no thinking block in any routed turn of these runs, so the Sonnet-signed
+case was taken up by the next run.
 
-Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and of those with Opus 5.5 only Opus 5.5 → Haiku (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
+**Upgrades into Opus 5.5, and Sonnet-signed thinking sent to it** (same settings, `--from sonnet|haiku --to opus
+--delay-pin --no-main-new`, cap $1.50 each; est. $0.55 and $0.48). The Opus 5.5 main chat started a native Sonnet or
+Haiku subagent through the Agent tool (its `model` parameter); `--delay-pin` let that subagent's first request through
+unchanged, so its second request held the subagent model's own signed thinking. Results:
+`experiment.route-sonnet-to-opus55-subagent.results.json`, `experiment.route-haiku-to-opus55-subagent.results.json`.
+
+| Probe | Sonnet → Opus 5.5 | Haiku → Opus 5.5 |
+| --- | --- | --- |
+| subagent first request (no history) | 200 | 200 |
+| second request, **source-signed thinking** in the history | 200 | 200 |
+| pinned Opus 5.5 continuation (source- and Opus 5.5-signed thinking) | 200 | 200 |
+| un-pin to the source with Opus 5.5-made thinking | 200 | 200 |
+
+Only `model` changes for Sonnet → Opus 5.5 (`thinking` too for Haiku: budget → adaptive). The Sonnet row closes
+the gap above: Opus 5.5 accepts a Sonnet-signed thinking block. The request the retry-with-original sends after an
+Opus 5.5 → Sonnet pin (Opus 5.5's own bytes holding Sonnet-made turns) was not sent literally. Its parts were: Opus 5.5
+accepting its own request shape, and accepting Sonnet-signed thinking. **Verified and applied:** Opus 5.5 ↔ Haiku and
+Opus 5.5 ↔ Sonnet (`VERIFIED_MODEL_RETARGETS`, `src/wire/rewrite.ts`). **Not run:** Opus 5.5 with Fable in either
+direction, and an upgrade of a main chat (as for Sonnet → Opus 5 in §5.5, the subagent request carries the same fields).
+
+Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and Opus 5.5 with Haiku or Sonnet in either direction (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 
