@@ -9,7 +9,6 @@ import type { Log } from "../util/log.js";
 import { redact } from "../privacy/redact.js";
 import { errorSummary } from "../wire/anthropic.js";
 import { JevBackend } from "../backend/jev.js";
-import { LocalBackend } from "../backend/local.js";
 import type { DecisionBackend } from "../backend/types.js";
 import { DecisionLog, hashId, type DelegateHintRecord } from "../log/decision-log.js";
 import { HINT_VERSION } from "../delegate/hint.js";
@@ -33,7 +32,11 @@ export interface WorkerOptions {
 }
 
 function backendFor(config: Config): DecisionBackend | null {
-  if (config.backend === "local") return new LocalBackend();
+  if (config.backend === "laya") {
+    // The launcher's own laya-serve on loopback; never the TypeSafe key. No URL: the launcher did not start one.
+    if (config.layaBaseUrl === undefined) return null;
+    return new JevBackend({ id: "laya", baseUrl: config.layaBaseUrl, apiKey: config.layaApiKey, model: config.layaModel, deadlineMs: config.layaDeadlineMs });
+  }
   if (config.typesafeApiKey === undefined) return null;
   return new JevBackend({ baseUrl: config.jevBaseUrl, apiKey: config.typesafeApiKey, deadlineMs: config.jevDeadlineMs });
 }

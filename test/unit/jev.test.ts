@@ -179,4 +179,34 @@ describe("JevBackend", () => {
     const dead = new JevBackend({ baseUrl: "http://127.0.0.1:9", apiKey: "apikey_unit", deadlineMs: 500 });
     await rejectsWith(dead.decide(state, questions, { signal }), "network");
   });
+
+  it("as laya: no key means no Authorization header, and the checkpoint name goes in `model`", async () => {
+    const laya = new JevBackend({ id: "laya", baseUrl: jev.url, model: "english", deadlineMs: 500 });
+    assert.equal(laya.id, "laya");
+    await laya.decide(state, questions, { signal });
+    const call = jev.calls.at(-1);
+    assert.equal(call?.headers.authorization, undefined);
+    assert.equal(call?.body.model, "english");
+    laya.close();
+  });
+
+  it("accepts an answer shaped like laya-serve's (agent.py: 4-decimal rounding, extra fields)", async () => {
+    // What Laya 0.3.5's agent.predict() returns for these two questions, plus the `routing` block of its Router.
+    jev.set({
+      kind: "raw",
+      body: {
+        model: "convaiinnovations/laya",
+        answers: {
+          tier: { type: "choice", choice: "sonnet", probabilities: { haiku: 0.2113, sonnet: 0.5021, opus: 0.2866 }, confidence: 0.3127 },
+          reasoning_demand: { type: "score", score: 1.8342, probabilities: { "0": 0.1, "1": 0.2501, "2": 0.3333, "3": 0.2166, "4": 0.1 }, confidence: 0.1402 },
+        },
+        usage: { input_tokens: 187, output_tokens: 0 },
+        routing: { model: "english", repo: "convaiinnovations/laya", reason: "latin script" },
+      },
+    });
+    const d = await backend.decide(state, questions, { signal });
+    assert.equal(d.backendModel, "convaiinnovations/laya");
+    assert.equal(d.tokensIn, 187);
+    assert.equal(d.answers["tier"]?.type === "choice" && d.answers["tier"].choice, "sonnet");
+  });
 });

@@ -1,5 +1,5 @@
 // TypeSafe Jev (System One) over node:http(s) with a keep-alive agent: POST {base}/v1/systemone, Bearer key,
-// {state, model, questions}. No semantic retries (an SDK's default retries would add seconds); the only second attempt
+// {state, model, questions}. Laya's `laya-serve` speaks the same wire format, so the same client serves both. No semantic retries (an SDK's default retries would add seconds); the only second attempt
 // is for a keep-alive socket the server had silently closed, inside the same hard deadline. Strict validation: any
 // odd or partial answer is an error, so the caller fails open. Errors never include the response body or the key.
 import http from "node:http";
@@ -13,8 +13,11 @@ export const JEV_PATH = "/v1/systemone";
 const SUM_TOLERANCE = 0.02;
 
 export interface JevOptions {
+  /** Which backend this client talks to; the wire format is the same. Default `jev`. */
+  readonly id?: "jev" | "laya";
   readonly baseUrl: string;
-  readonly apiKey: string;
+  /** Sent as a Bearer token; no `authorization` header at all when absent. */
+  readonly apiKey?: string | undefined;
   /** Hard deadline for one decision, connection setup included. On expiry the caller fails open. */
   readonly deadlineMs: number;
   readonly model?: string;
@@ -109,11 +112,12 @@ function post(url: URL, agent: http.Agent, headers: http.OutgoingHttpHeaders, bo
 }
 
 export class JevBackend implements DecisionBackend {
-  readonly id = "jev" as const;
+  readonly id: "jev" | "laya";
   readonly #url: URL;
   readonly #agent: http.Agent;
 
   constructor(private readonly opts: JevOptions) {
+    this.id = opts.id ?? "jev";
     this.#url = new URL(opts.baseUrl.replace(/\/+$/, "") + JEV_PATH);
     const agentOpts = { keepAlive: true, maxSockets: 4, maxFreeSockets: 2, scheduling: "lifo" as const };
     this.#agent = this.#url.protocol === "https:" ? new https.Agent(agentOpts) : new http.Agent(agentOpts);
@@ -161,7 +165,7 @@ export class JevBackend implements DecisionBackend {
     if (signal.aborted) ac.abort();
     else signal.addEventListener("abort", onAbort, { once: true });
 
-    const headers = { authorization: `Bearer ${this.opts.apiKey}`, "content-type": "application/json", accept: "application/json" };
+    const headers = { ...(this.opts.apiKey !== undefined ? { authorization: `Bearer ${this.opts.apiKey}` } : {}), "content-type": "application/json", accept: "application/json" };
     const payload = JSON.stringify({ state, model: this.opts.model ?? JEV_MODEL, questions });
     const fail = (): never => {
       if (timedOut) throw new BackendError("timeout", `no answer within ${this.opts.deadlineMs} ms`);

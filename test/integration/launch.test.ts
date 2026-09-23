@@ -260,9 +260,9 @@ describe("launcher end to end (fake claude)", () => {
       assert.match(o.stderr, /running plain claude/);
     });
 
-    it("the local backend is a stub: plain claude with an explanation", async () => {
+    it("the removed `local` backend is a configuration error: plain claude with an explanation", async () => {
       const o = await run(["-p", "x"], { REFLEX_BACKEND: "local" });
-      assert.match(o.stderr, /backend_local_not_implemented/);
+      assert.match(o.stderr, /invalid configuration: REFLEX_BACKEND/);
       assert.equal(o.report.baseUrl, upstream.url);
     });
   });

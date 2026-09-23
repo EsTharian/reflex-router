@@ -22,8 +22,8 @@ describe("resolveEffectiveMode", () => {
     }
   });
 
-  it("the local backend is a stub for now: passthrough", () => {
-    assert.equal(resolveEffectiveMode(cfg({ backend: "local", typesafeApiKey: undefined }), null).degradedReason, "backend_local_not_implemented");
+  it("laya needs no TypeSafe key", () => {
+    assert.deepEqual(resolveEffectiveMode(cfg({ backend: "laya", typesafeApiKey: undefined }), null), { mode: "route", degradedReason: null });
   });
 
   it("a major-version mismatch turns route into shadow, and says why", () => {

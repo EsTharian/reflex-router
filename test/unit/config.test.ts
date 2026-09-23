@@ -29,12 +29,13 @@ describe("loadConfig", () => {
   it("parses mode and backend case-insensitively", () => {
     assert.equal(load({ REFLEX_MODE: "ROUTE" }).config.mode, "route");
     assert.equal(load({ REFLEX_MODE: " off " }).config.mode, "off");
-    assert.equal(load({ REFLEX_BACKEND: "Local" }).config.backend, "local");
+    assert.equal(load({ REFLEX_BACKEND: "Laya" }).config.backend, "laya");
   });
 
   it("rejects unknown mode/backend values with the offending name in the message", () => {
     assert.match(errors({ REFLEX_MODE: "turbo" }).join(), /REFLEX_MODE/);
     assert.match(errors({ REFLEX_BACKEND: "gpt" }).join(), /REFLEX_BACKEND/);
+    assert.match(errors({ REFLEX_BACKEND: "local" }).join(), /REFLEX_BACKEND/); // the placeholder is gone
     assert.equal(errors({ REFLEX_MODE: "x", REFLEX_BACKEND: "y" }).length, 2);
   });
 

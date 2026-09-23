@@ -6,7 +6,7 @@ import { CORRECTION_SCORE_CAP } from "./outcome/heuristics.js";
 export const MODES = ["route", "shadow", "off"] as const;
 export type Mode = (typeof MODES)[number];
 
-export const BACKENDS = ["jev", "local"] as const;
+export const BACKENDS = ["jev", "laya"] as const;
 export type BackendId = (typeof BACKENDS)[number];
 
 /**
@@ -24,6 +24,10 @@ export type EscalateMode = (typeof ESCALATE_MODES)[number];
 /** REFLEX_ESCALATE_TARGET: where an escalation sends the turn (src/worker/escalation.ts explains the measurement). */
 export const ESCALATE_TARGETS = ["requested", "next"] as const;
 export type EscalateTarget = (typeof ESCALATE_TARGETS)[number];
+
+/** Laya checkpoints `laya-serve` can preload and answer with (REFLEX_LAYA_MODEL). */
+export const LAYA_MODELS = ["english", "multilingual", "typed-decisions"] as const;
+export type LayaModel = (typeof LAYA_MODELS)[number];
 
 export const TIERS = ["haiku", "sonnet", "opus", "fable"] as const;
 export type Tier = (typeof TIERS)[number];
@@ -66,6 +70,20 @@ export interface Config {
   readonly jevDeadlineMs: number;
   /** Interval of the decision backend's keep-alive ping; 0 disables it. */
   readonly warmIntervalMs: number;
+  /** REFLEX_LAYA_BIN override; undefined means "find `laya-serve` on PATH". */
+  readonly layaBin: string | undefined;
+  /** Checkpoint `laya-serve` preloads and every decision asks for (REFLEX_LAYA_MODEL). */
+  readonly layaModel: LayaModel;
+  /** Hard deadline for one Laya decision (REFLEX_LAYA_DEADLINE_MS). Expiry fails open. */
+  readonly layaDeadlineMs: number;
+  /** How long the launcher waits for `laya-serve` to report its model loaded before stopping it (REFLEX_LAYA_READY_TIMEOUT_MS). */
+  readonly layaReadyTimeoutMs: number;
+  /**
+   * Where the `laya-serve` this session started listens, and the per-session key it requires. Never read from the
+   * environment: only the launcher fills them in, after starting the server, in the config it hands the worker.
+   */
+  readonly layaBaseUrl: string | undefined;
+  readonly layaApiKey: string | undefined;
   /** Tiers a request may be routed to (REFLEX_TIERS). Fable is only present when REFLEX_ALLOW_FABLE=1. */
   readonly tiers: readonly Tier[];
   readonly allowFable: boolean;
@@ -133,6 +151,10 @@ export const DEFAULT_JEV_DEADLINE_MS = 1500;
  * decided. 0 disables it. The first decision after an idle gap otherwise pays a fresh TCP+TLS handshake
  * (docs/observations.md: p50 823 ms on a new connection vs 382 ms reused).
  */
+/** Laya on CPU answers one question in 193-464 ms (its README); the Jev default leaves room above that. */
+export const DEFAULT_LAYA_DEADLINE_MS = 1500;
+/** Importing torch and loading a checkpoint on CPU; generous, since the session runs unrouted meanwhile anyway. */
+export const DEFAULT_LAYA_READY_TIMEOUT_MS = 60_000;
 export const DEFAULT_WARM_INTERVAL_MS = 60_000;
 
 /** A setting's trimmed value, or undefined when it is unset, empty or only whitespace: `export X=""` means "not set", never "set to nothing". */
@@ -150,6 +172,7 @@ export const defaultHome = (env: NodeJS.ProcessEnv, homedir: string = os.homedir
  */
 export const SETTING_NAMES: readonly string[] = [
   "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_DEADLINE_MS", "REFLEX_WARM_INTERVAL_MS",
+  "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
   "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_DELEGATE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
@@ -281,6 +304,12 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     jevBaseUrl,
     jevDeadlineMs: parseBoundedInt(setting(env, "REFLEX_JEV_DEADLINE_MS"), DEFAULT_JEV_DEADLINE_MS, 50, 60_000, "REFLEX_JEV_DEADLINE_MS", errors),
     warmIntervalMs: parseBoundedInt(setting(env, "REFLEX_WARM_INTERVAL_MS"), DEFAULT_WARM_INTERVAL_MS, 0, 3_600_000, "REFLEX_WARM_INTERVAL_MS", errors),
+    layaBin: setting(env, "REFLEX_LAYA_BIN"),
+    layaModel: parseEnum(setting(env, "REFLEX_LAYA_MODEL"), LAYA_MODELS, "english", "REFLEX_LAYA_MODEL", errors),
+    layaDeadlineMs: parseBoundedInt(setting(env, "REFLEX_LAYA_DEADLINE_MS"), DEFAULT_LAYA_DEADLINE_MS, 50, 60_000, "REFLEX_LAYA_DEADLINE_MS", errors),
+    layaReadyTimeoutMs: parseBoundedInt(setting(env, "REFLEX_LAYA_READY_TIMEOUT_MS"), DEFAULT_LAYA_READY_TIMEOUT_MS, 1000, 600_000, "REFLEX_LAYA_READY_TIMEOUT_MS", errors),
+    layaBaseUrl: undefined,
+    layaApiKey: undefined,
     tiers,
     allowFable,
     upgrades: parseEnum(setting(env, "REFLEX_UPGRADES"), UPGRADE_POLICIES, "off", "REFLEX_UPGRADES", errors),
