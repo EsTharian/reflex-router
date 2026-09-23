@@ -6,6 +6,28 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.3.7 — 2026-09-23
+
+A hotfix from a 15-hour route-mode log on Claude Code 2.1.280 with Opus 5.5, where routing cost more than it saved
+(section 8: −$0.95).
+
+### Fixed
+
+- **A pin could hold a conversation above the model you asked for.** After a `/model` switch a pinned subagent kept
+  its old target (15 Sonnet → Opus records after a switch from Haiku to Sonnet). A pin now belongs to the requested
+  model it was decided under: when the request asks for a different tier, the pin is dropped, the request goes to the
+  new requested model, and the next new turn decides afresh. Upgrades stay opt-in and off by default
+  (`REFLEX_UPGRADES`); the Haiku → Opus records in that log were made with it set to `on`.
+- **Opus 5.5 → Haiku was rejected** with `max_tokens: 128000 > 64000`. Each tier now carries its model's maximum output
+  (Haiku 64000; Sonnet, Opus, Fable 128000; models overview, checked 2026-09-23) and a retarget lowers a larger
+  `max_tokens` to it.
+- **Opus 5.5 pairs were applied without being tested** (0.3.6), and Opus 5.5 → Sonnet removed the whole per-message
+  `output_config`. A retarget now removes only the key the target rejects (the per-turn `effort`) and keeps any other.
+  Every pair with `claude-opus-5-5` on either side is `rewrite_unverified` and forwarded unchanged until a real run
+  covers it: one capped run under the user's own settings (`opus[1m]`, no `--model`) accepted Opus 5.5 → Haiku and
+  → Sonnet on first requests, but its continuation probes were cut by the $0.50 cap (estimated spend $0.52; the
+  experiment proxies now reserve at 2.5 bytes/token, not 4). `docs/wire-format.md` §5.7.
+
 ## 0.3.6 — 2026-09-22
 
 ### Added
