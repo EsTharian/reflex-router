@@ -107,7 +107,8 @@ export async function startLaya(opts: StartLayaOptions): Promise<LayaServer> {
         log(`${opts.model} loaded after ${Date.now() - started} ms on ${baseUrl}`);
         return true;
       }
-      await new Promise((r) => setTimeout(r, opts.pollMs ?? 500).unref());
+      // The unref'd timer alone would let the event loop drain once the guard has exited, leaving `ready` pending.
+      await Promise.race([new Promise((r) => setTimeout(r, opts.pollMs ?? 500).unref()), exited]);
     }
     if (stopped) return false;
     log(gone ? "laya-serve exited before it was ready; this session runs without decisions" : `not ready after ${opts.readyTimeoutMs} ms; stopping it`);
