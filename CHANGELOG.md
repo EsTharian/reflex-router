@@ -6,6 +6,17 @@
 
 _Nothing yet._
 
+## 0.5.4 — 2026-09-24
+
+### Added
+
+- The status line shows the session's estimated cost: `Est. Cost: $1.80`, every recorded request (side calls too) at
+  list prices for the model sent. It reflects effort changes directly, which `Est. Saved` (model switches only) does not.
+
+### Fixed
+
+- A finished subagent stayed on the status line for the rest of the session; its line now goes at `SubagentStop`.
+
 ## 0.5.3 — 2026-09-24
 
 ### Fixed
