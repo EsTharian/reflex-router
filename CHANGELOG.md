@@ -4,7 +4,20 @@
 
 ## Unreleased
 
-_Nothing yet._
+### Fixed
+
+- MCP tool search was off in every reflex session: Claude Code disables it behind a non-first-party
+  `ANTHROPIC_BASE_URL`, so every MCP tool schema went out on every request. reflex now starts `claude` with
+  `ENABLE_TOOL_SEARCH=true` unless you set it yourself. `/context` at session start on one machine: 66.9k tokens behind
+  0.5.5, 32.4k now (32.5k without reflex). `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` still keeps it off, with a warning.
+- With tool search on, routing kept working: the step after a ToolSearch (`Tool loaded.` beside `tool_reference`
+  results) is a tool-loop continuation, not a side call, so a pinned loop stays on its model; and a request routed to
+  Haiku or Sonnet no longer carries `tool_addition` blocks those models reject (400, then a fallback): each becomes its
+  tool without `defer_loading`.
+
+### Added
+
+- Claude Code 2.1.282 fixtures with tool search on; 2.1.282 is a tested version.
 
 ## 0.5.5 — 2026-09-24
 

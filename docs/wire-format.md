@@ -92,6 +92,11 @@ and by the fingerprint's `typed_prompt` head omission so the two can never disag
 hook stream (no prompt seen yet, hooks not installed) an interjection is never claimed and the request stays
 `tool_result_text` — the fail-open direction, since neither outcome routes anything.
 
+One harness text is recognised by shape instead: `Tool loaded.` beside a `tool_result` whose content holds
+`tool_reference` blocks is the tool-loop step after a ToolSearch (2.1.282, §5.10), so it is a `continuation`. Before
+this rule, with tool search on, that step went out as `side` / `tool_result_text`: to the requested model, off the pin
+(two real sessions, 2026-09-25).
+
 ### 4.3 Content shape does not identify the writer (2.1.277 -> 2.1.278)
 
 **Proven, from a capture (`_dumps/plain-string`, 2.1.278.85b, 2026-09-19).** A typed prompt is sent as an **array** of
@@ -545,6 +550,66 @@ model back into `message_start` (`ModelRestorer`, src/wire/anthropic.ts), only f
 with no `content-encoding` and no `content-length`; every other byte is relayed unchanged. End to end through the built
 `reflex` (fake upstream and Jev, `reflex:haiku`): the turn went out as Haiku, and `claude -p --continue` without
 reflex then asked for `claude-opus-5-5`.
+
+### 5.10 MCP tool search behind reflex (2.1.282)
+
+Claude Code turns MCP tool search off when `ANTHROPIC_BASE_URL` is not a first-party host ("[ToolSearch:optimistic]
+disabled: ANTHROPIC_BASE_URL=… is not a first-party Anthropic host. Set ENABLE_TOOL_SEARCH=true (or auto / auto:N) if
+your proxy forwards tool_reference blocks", in the 2.1.282 binary), so every reflex session up to 0.5.5 sent every MCP
+tool schema, and every deferrable built-in, on every request. reflex now starts `claude` with `ENABLE_TOOL_SEARCH=true`
+unless the user set it (src/launcher/launch.ts `proxyEnv`). The same binary turns it off for
+`CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` whatever `ENABLE_TOOL_SEARCH` says; reflex warns at start. Per-model gating is
+Claude Code's own: its default unsupported list is `claude-3-5-haiku`, `claude-3-haiku` (a remote flag may replace it).
+
+What a request carries with tool search on (captures toolsearch-2.1.282, toolsearch-haiku-native,
+toolsearch-fable-native; fixtures `2.1.282/toolsearch.*`):
+
+- `anthropic-beta` gains `advanced-tool-use-2025-11-20` (first party; the binary names `tool-search-tool-2025-10-19`
+  for gateway providers). Opus 5.5 and Fable 5.1 requests also carry `mid-conversation-tool-changes-2026-07-01`.
+- `tools` holds `ToolSearch`, a `DeferredToolPlaceholder` with `defer_loading: true`, and deferred tools with
+  `defer_loading: true`. A tool ToolSearch loads is appended to `tools` (still `defer_loading: true`).
+- ToolSearch's result is a `tool_result` of `{type:"tool_reference", tool_name}` blocks, followed in the same message by
+  one text block `Tool loaded.` per result (§4.2).
+- On Opus 5.5 and Fable 5.1, a server's tools that become visible are announced in a `role:"system"` message with
+  `{type:"tool_addition", tool:{type:"tool_reference", name}}` blocks, the last one carrying a cache breakpoint. A
+  trailing system message `The following deferred tools are now available via ToolSearch…` also appears.
+- Native Haiku 4.5 requests (Claude Code's own `model:"haiku"` subagent) carry `defer_loading` and `tool_reference`
+  and answer 200, but no system message and no `tool_addition`.
+
+What the API accepts when reflex retargets such a request (real sessions, 2026-09-25, `reflex:<tier>` override,
+user's own settings `model: opus[1m]`, sdk-cli; results in `2.1.282/experiment.toolsearch-route.results.json`):
+
+| Target | `role:"system"` | `tool_addition` | Evidence |
+| --- | --- | --- | --- |
+| Haiku 4.5 | no | no | 400 `messages.0.content: 'tool_addition'/'tool_removal' blocks are only permitted within role: "system" messages` (folded into a user message) |
+| Sonnet 5 | yes | no | 400 `tool_addition/tool_removal is not supported on this model` |
+| Opus 5.5 | yes | yes | Claude Code's own requests, 200 |
+| Fable 5.1 | yes | yes | Claude Code's own requests (`model:"fable"` subagent), 200 |
+
+So for Haiku and Sonnet reflex lifts each `tool_addition` out of the system messages and drops `defer_loading` from the
+tool it names (the same visible set; native Haiku likewise sees loaded tools as entries in `tools`), moves a cache
+breakpoint on a lifted block to the last block that stays, and drops a system message left empty
+(`messages.tool_addition_lifted:N`, `tools.undeferred:N` in `forwarded.fields`). A `tool_removal`, never observed, or
+any other non-text block in a system message leaves the request unrewritten. With the final code, 3 Sonnet sessions
+and 1 Haiku session had blocks lifted and 1 more Haiku session had none to lift: every request routed, no fallback,
+including `Tool loaded.` steps and `tool_reference` results (one session of each captured through a dump proxy behind
+reflex: every rewritten request answered 200). Three Haiku sessions on intermediate code (lift for Haiku only) were
+also accepted throughout. Lifting changes `tools` when
+a server connects mid-session, which costs the target model one cache write from `tools` on, as appending a loaded
+tool does natively.
+
+Context at start, interactive, same machine and settings (Claude Code's `/context`, before any prompt):
+
+| Session | Total | MCP tools |
+| --- | --- | --- |
+| `claude`, no proxy | 32.5k | 641 tokens, deferred |
+| reflex 0.5.5 | 66.9k | 23 tools, 9k tokens, loaded up front (built-in tools 43.2k) |
+| reflex with `ENABLE_TOOL_SEARCH=true` | 32.4k | 12 tools, 726 tokens, "loaded on-demand" (built-in tools 16.9k) |
+| same, with `ENABLE_TOOL_SEARCH=false` (environment, or `--settings` `env`) | 66.9k | 23 tools, 9k tokens |
+
+First request of `claude -p "Reply with the single word ok." --output-format json` on Opus 5.5 (single runs; MCP
+servers connect in the background, so it varies with timing): 28,376 input tokens without reflex, 44,456 behind reflex
+0.5.5, 28,167 with the change. Runs that route mode sent to Haiku are excluded (another tokenizer).
 
 ## 6. Responses
 

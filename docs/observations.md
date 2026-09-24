@@ -591,3 +591,24 @@ Side calls $45.25 at the requested model (Session recap $2.70, Prompt suggestion
 the three-day personal log above (net ~$0). It adds nothing to the quality question: without `REFLEX_AB` its routed
 turns are not comparable with its unrouted ones, and combined with the personal log the randomised arms stay at routed
 11 / control 22. List-price estimates over recorded token counts, not bills.
+
+## 2026-09-25 — MCP tool search behind reflex: half the starting context, and two routing breaks it would have caused
+
+**Conditions.** One machine, Claude Code 2.1.282, the owner's own settings (`model: opus[1m]`, four MCP servers, two of
+them unauthenticated), route mode. Details and API errors verbatim: `docs/wire-format.md` §5.10,
+`test/fixtures/claude-code/2.1.282/experiment.toolsearch-route.results.json`.
+
+**Context.** Claude Code's `/context` at the start of an interactive session: 32.5k tokens without reflex, 66.9k behind
+reflex 0.5.5 (MCP tools 9k and built-in tools 43.2k, all loaded up front), 32.4k with `ENABLE_TOOL_SEARCH=true`. The
+first request of a `-p` one-liner on Opus 5.5: 28,376 / 44,456 / 28,167 input tokens (single runs). Every later request
+of a session re-reads that prefix, so the difference is paid again per request, at the cache-read rate.
+
+**What turning it on would have broken.** In the owner's `-p` sessions before the fix, the step after a ToolSearch was
+logged as a side call (`tool_result_text`): a pinned loop would have sent that step to the requested model. And with
+`reflex:haiku` / `reflex:sonnet` the first routed request was rejected (400) because of `tool_addition` blocks, so
+reflex's fallback re-sent it on Opus and the conversation lost its pin. After the fix: 3 Sonnet and 2 Haiku sessions on
+the final code, every request routed, no fallback.
+
+**Not measured.** Whether a model sees the same tools as well when a lifted `tool_addition` becomes a non-deferred tool
+(the visible set is the same; quality was not scored). Cost per session was not measured beyond the start-of-session
+context. List-price estimate of the experiment: about $4.
