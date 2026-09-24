@@ -128,8 +128,13 @@ export type EffortReason =
   | "effort_escalated"
   /** REFLEX_EFFORT_AB: held at the client's level at random, as the control arm. */
   | "effort_ab_control"
-  /** The level could only be applied by inserting a message (a later main-chat turn) and REFLEX_EFFORT_MIDTURN is off. */
-  | "effort_midturn_off";
+  /**
+   * A main-chat turn and REFLEX_EFFORT_MIDTURN is off. Without it only subagents change level: a main chat's later
+   * turns need an inserted message, so a first-turn level alone would hold for the whole chat.
+   */
+  | "effort_midturn_off"
+  /** A Sonnet main chat: its level is a top-level value, fixed for the chat (a change rewrites its whole cache). */
+  | "effort_sonnet_main_chat";
 
 export interface RoutePlan {
   /** Where the request would go; null = leave it on the requested model. */

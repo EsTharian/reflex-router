@@ -4,6 +4,7 @@
 // figures are estimates at list prices, computed as `reflex report` section 8 does (src/worker/session-status.ts).
 import http from "node:http";
 import { tierOfModel, tierRank } from "./tiers.js";
+import { EFFORTS } from "./wire/effort.js";
 import { parseStatusInput } from "./wire/statusline.js";
 
 export const STATUS_PATH = "/__reflex/status";
@@ -19,6 +20,12 @@ export interface StatusBody {
   readonly subagents?: readonly Pair[];
   /** Estimated $ saved (list prices; negative when routing cost more): this session, and all logged sessions. */
   readonly saved?: { readonly session: number; readonly total: number | null };
+  /** REFLEX_EFFORT: the level last applied to the main chat and to each subagent, with the client's own. */
+  readonly effort?: { readonly main: EffortPair | null; readonly subagents: readonly EffortPair[] };
+}
+interface EffortPair {
+  readonly requested: string | null;
+  readonly level: string;
 }
 
 /** `claude-opus-5-5[1m]` -> `Opus 5.5`, `claude-haiku-4-5-20251001` -> `Haiku 4.5`; anything else unchanged. */
@@ -35,6 +42,10 @@ const arrow = (p: Pair): string => {
   const b = tierOfModel(p.sent);
   return a === null || b === null || a === b ? "⇄" : tierRank(b) < tierRank(a) ? "⇣" : "⇡";
 };
+const rank = (e: string | null): number => (EFFORTS as readonly string[]).indexOf(e ?? "");
+/** An applied level that differs from the client's (both known). */
+const moved = (p: EffortPair): boolean => rank(p.level) >= 0 && rank(p.requested) >= 0 && p.level !== p.requested;
+const effortArrow = (p: EffortPair): string => (rank(p.level) < rank(p.requested) ? "⇣" : "⇡");
 /** `$0.42`, `−$0.20`: cents, a real minus sign. */
 export const money = (usd: number): string => `${usd < -0.005 ? "−" : ""}$${Math.abs(usd).toFixed(2)}`;
 const YELLOW = "\x1b[33m";
@@ -50,9 +61,14 @@ export function formatStatus(s: StatusBody | null): string | null {
   if (main !== null && routed(main)) parts.push(`${YELLOW}${arrow(main)} ${shortModel(main.sent)}${RESET} ${DIM}(asked ${shortModel(main.requested as string)})${RESET}`);
   else if (main !== null) parts.push(`${DIM}reflex:${RESET} ${shortModel(main.sent)}`);
   else parts.push(`${DIM}reflex${RESET}`); // nothing decided yet: still say whose line this is
+  const me = s.effort?.main ?? null;
+  if (me !== null && moved(me)) parts.push(`${DIM}effort${RESET} ${YELLOW}${effortArrow(me)} ${me.level}${RESET} ${DIM}(asked ${me.requested as string})${RESET}`);
   const subs = new Map<string, number>();
   for (const p of s.subagents ?? []) if (routed(p)) subs.set(p.sent, (subs.get(p.sent) ?? 0) + 1);
   if (subs.size > 0) parts.push(`${DIM}subagents${RESET} ${[...subs].map(([m, n]) => `${YELLOW}→ ${shortModel(m)}${n > 1 ? ` ×${n}` : ""}${RESET}`).join(", ")}`);
+  const levels = new Map<string, number>();
+  for (const p of s.effort?.subagents ?? []) if (moved(p)) levels.set(`${effortArrow(p)} ${p.level}`, (levels.get(`${effortArrow(p)} ${p.level}`) ?? 0) + 1);
+  if (levels.size > 0) parts.push(`${DIM}subagent effort${RESET} ${[...levels].map(([l, n]) => `${YELLOW}${l}${n > 1 ? ` ×${n}` : ""}${RESET}`).join(", ")}`);
   const saved = s.saved;
   if (saved !== undefined && (Math.abs(saved.session) >= 0.005 || Math.abs(saved.total ?? 0) >= 0.005)) {
     parts.push(`${DIM}est. saved${RESET} ${money(saved.session)}${saved.total === null ? "" : ` ${DIM}(total ${money(saved.total)})${RESET}`}`);

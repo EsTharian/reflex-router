@@ -198,8 +198,8 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     };
   }
 
-  it("an easy turn runs at low: effort message added, recorded, and re-inserted on the continuation", async () => {
-    const h = harness({ REFLEX_EFFORT: "1" }, 0);
+  it("MIDTURN: an easy main-chat turn runs at low: level set in place, recorded, and re-applied on the continuation", async () => {
+    const h = harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1" }, 0);
     const a = await h.send(newTurn);
     assert.equal(a.rewritten, true);
     assert.equal(msgs(a.sent).length, 2, "the turn's own system message carries the new level");
@@ -221,10 +221,10 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
   });
 
   it("above the client's level only with REFLEX_EFFORT_UP", async () => {
-    const off = await harness({ REFLEX_EFFORT: "1" }, 4).send(newTurn);
+    const off = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1" }, 4).send(newTurn);
     assert.equal(off.rewritten, false, "medium is already in effect");
     assert.deepEqual(off.rec.effort?.reasons, ["effort_up_disabled"]);
-    const on = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_UP: "1" }, 4).send(newTurn);
+    const on = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_EFFORT_UP: "1" }, 4).send(newTurn);
     assert.equal(top(on.sent), "max");
   });
 
@@ -235,7 +235,7 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
   });
 
   it("a rejected effort change is not stored, disables no tier, and stops new levels for the session", async () => {
-    const h = harness({ REFLEX_EFFORT: "1" }, 0);
+    const h = harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1" }, 0);
     const a = await h.send(newTurn, 400);
     assert.equal(a.rec.effort?.via, null);
     assert.equal(fs.existsSync(path.join(h.home, "effort.jsonl")), false, "the model never saw it");
@@ -246,14 +246,34 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     assert.equal(b.rec.forwarded.model, "claude-opus-5-5");
   });
 
-  it("routed to Sonnet on its first request: the top-level level is set there and kept for the loop", async () => {
+  const sub = get("subagent-new-turn");
+  const subCont = { headers: sub.headers, body: { ...get("subagent-continuation").body, messages: [...(sub.body["messages"] as unknown[]), ...(get("subagent-continuation").body["messages"] as unknown[]).slice(2)] } };
+
+  it("default: a subagent's level goes into its first request's own system message and stays for its loop", async () => {
+    const h = harness({ REFLEX_EFFORT: "1" }, 0);
+    const a = await h.send(sub);
+    assert.deepEqual(a.rec.forwarded.fields, ["messages.effort_set", "output_config.effort"]);
+    assert.equal(a.rec.effort?.via, "message");
+    const c = await h.send(subCont);
+    assert.equal(msgs(c.sent)[1]!.output_config?.effort, "low");
+    assert.equal(msgs(c.sent).length, (subCont.body.messages).length, "nothing inserted");
+  });
+
+  it("default: the main chat is left alone, even its first turn (its level would hold for the whole chat)", async () => {
+    const a = await harness({ REFLEX_EFFORT: "1" }, 0).send(newTurn);
+    assert.equal(a.rewritten, false);
+    assert.equal(a.rec.effort?.via, null);
+    assert.ok(a.rec.effort?.reasons.includes("effort_midturn_off"));
+  });
+
+  it("a subagent routed to Sonnet: the top-level level on its first request, kept for its loop", async () => {
     const h = harness({ REFLEX_EFFORT: "1" }, 0, tmp(), "sonnet");
-    const a = await h.send(newTurn);
+    const a = await h.send(sub);
     assert.equal(model(a.sent), "claude-sonnet-5");
     assert.equal(top(a.sent), "low");
     assert.ok(msgs(a.sent).every((m) => m.output_config === undefined), "Sonnet takes no effort message");
     assert.equal(a.rec.effort?.via, "top-level");
-    const c = await h.send({ headers: newTurn.headers, body: contBody });
+    const c = await h.send(subCont);
     assert.equal(model(c.sent), "claude-sonnet-5");
     assert.equal(top(c.sent), "low");
   });
@@ -269,18 +289,12 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     assert.deepEqual(a.rec.forwarded.fields, ["messages.effort_added"]);
   });
 
-  it("Sonnet mid-conversation: the level is set where a model switch rewrites the cache anyway, not on a plain later turn", async () => {
-    const env = { REFLEX_EFFORT: "1", REFLEX_MAX_SWITCH_PENALTY_USD: "100", REFLEX_SWITCH_BREAKEVEN_REQUESTS: "0" };
-    const h = harness(env, 0);
-    await h.send(newTurn); // stays on Opus 5.5: the conversation's cache is on Opus
-    h.setTier("sonnet");
-    const sw = await h.send(laterTurn);
-    assert.equal(model(sw.sent), "claude-sonnet-5");
-    assert.equal(top(sw.sent), "low");
-    assert.equal(sw.rec.effort?.via, "top-level");
-    const plain = harness({ REFLEX_EFFORT: "1" }, 0, tmp(), "sonnet");
-    const p = await plain.send(withModel(laterTurn, "claude-sonnet-5"));
-    assert.equal(p.rewritten, false, "a Sonnet conversation's cache would be lost for nothing");
+  it("a Sonnet main chat keeps its level, even with MIDTURN (a first-turn level would hold for the whole chat)", async () => {
+    const a = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1" }, 0, tmp(), "sonnet").send(newTurn);
+    assert.equal(model(a.sent), "claude-sonnet-5", "the tier routing itself is unchanged");
+    assert.equal(top(a.sent), "medium");
+    assert.equal(a.rec.effort?.via, null);
+    assert.ok(a.rec.effort?.reasons.includes("effort_sonnet_main_chat"));
   });
 
   it("MIDTURN: a later main-chat turn is still decided for effort when the guard keeps the model (the tier move stays blocked)", async () => {
@@ -305,14 +319,14 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
   });
 
   it("REFLEX_EFFORT_AB: a control turn is held at the client's level and tagged; a treated one is tagged", async () => {
-    const control = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_AB: "0.5" }, 0, tmp(), "opus", 0.1).send(newTurn);
+    const control = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_EFFORT_AB: "0.5" }, 0, tmp(), "opus", 0.1).send(newTurn);
     assert.equal(control.rewritten, false);
     assert.equal(control.rec.effort?.ab, "control");
     assert.ok(control.rec.effort?.reasons.includes("effort_ab_control"));
-    const treated = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_AB: "0.5" }, 0, tmp(), "opus", 0.9).send(newTurn);
+    const treated = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_EFFORT_AB: "0.5" }, 0, tmp(), "opus", 0.9).send(newTurn);
     assert.equal(treated.rec.effort?.ab, "treated");
     assert.equal(top(treated.sent), "low");
-    const same = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_AB: "0.5" }, 1, tmp(), "opus", 0.1).send(newTurn);
+    const same = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_EFFORT_AB: "0.5" }, 1, tmp(), "opus", 0.1).send(newTurn);
     assert.equal(same.rec.effort?.ab, undefined, "a turn already at the client's level never enters the randomisation");
   });
 

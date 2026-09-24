@@ -340,24 +340,28 @@ export class Router {
     let effortAdded: EffortEdit["added"] = null;
     let effortApplied: "message" | "top-level" | null = null;
     let effortEdited = false;
-    let effortRefused = false;
+    let effortSkip: "effort_midturn_off" | "effort_sonnet_main_chat" | null = null;
     const store = this.d.effortStore;
     if (conv) {
-      const add = routing && this.d.config.effort && !s.effortOff ? effortTarget : null;
-      // Sonnet's cache is written anyway on a conversation's first request and when this request moves it to another model.
-      const cacheFresh = v.facts.nonSystemMessages === 1 || (conv.cacheTier !== null && conv.cacheTier !== tierOfModel(sentModel));
-      const via = effortVia(sentModel, cacheFresh);
+      // A subagent is one task, stated in its first request, so the level fits all of it. A main chat changes level
+      // only with MIDTURN, turn by turn: a first-turn level alone would hold for the whole chat.
+      const main = v.kind === "main";
+      const decided = routing && this.d.config.effort && !s.effortOff ? effortTarget : null;
+      const add = main && !this.d.config.effortMidturn ? null : decided;
+      if (decided !== null && add === null) effortSkip = "effort_midturn_off";
+      const via = effortVia(sentModel, v.facts.nonSystemMessages === 1);
       const me = messageEffort(sentModel);
       let e: EffortEdit | null = null;
       if (me && store) {
-        e = withEffort(sendBody, (a) => store.get(a), via === "message" ? add : null, me.top, this.d.config.effortMidturn);
+        // Only a main chat (MIDTURN) may insert; a subagent's level goes into its first request's own system message.
+        e = withEffort(sendBody, (a) => store.get(a), via === "message" ? add : null, me.top, main);
         effortAdded = e?.added ?? null;
-        effortRefused = e?.insertRefused === true;
       } else if (tierOfModel(sentModel) === "sonnet") {
-        if (via === "top-level" && add !== null) conv.topEffort = add;
+        if (main && add !== null) effortSkip = "effort_sonnet_main_chat";
+        else if (via === "top-level" && add !== null) conv.topEffort = add;
         if (conv.topEffort !== null) e = withTopEffort(sendBody, conv.topEffort);
       }
-      if (add !== null && via !== null && !effortRefused) effortApplied = via;
+      if (add !== null && via !== null && effortSkip === null && e?.insertRefused !== true) effortApplied = via;
       if (e && e.body !== sendBody) {
         sendBody = e.body;
         fields = [...fields, ...e.fields];
@@ -453,7 +457,7 @@ export class Router {
               cache_ttl_beta: v.facts.betaExtendedCacheTtl,
               requested: { model: v.requestedModel, tier: requestedTier, effort: v.requestedEffort },
               ...outcome.part,
-              ...(outcome.part.effort ? { effort: { ...outcome.part.effort, via: fallbackStatus === null ? effortApplied : null, ...(effortRefused ? { reasons: [...outcome.part.effort.reasons, "effort_midturn_off" as const] } : {}) } } : {}),
+              ...(outcome.part.effort ? { effort: { ...outcome.part.effort, via: fallbackStatus === null ? effortApplied : null, ...(effortSkip !== null ? { reasons: [...outcome.part.effort.reasons, effortSkip] } : {}) } } : {}),
               plan: p ? { ...p, routed_to: sentModel, reasons: [...p.reasons, ...extraReasons] } : extraReasons.length > 0 ? { target: null, would_route_to: null, routed_to: sentModel, reasons: extraReasons, would_upgrade: false } : null,
               pin: pinState,
               forwarded: { requested_model: v.requestedModel, model: sentModel, rewritten: rewritten && fallbackStatus === null, fields: rewritten ? fields : [], fallback: fallbackStatus !== null, fallback_status: fallbackStatus, fallback_error: fallbackError },
@@ -575,8 +579,8 @@ export class Router {
     const guardFor = (to: Tier): GuardResult =>
       guard({ cacheTier: conv?.cacheTier ?? null, to, ctxTokens: conv?.lastCtx ?? null, ttl: v.facts.betaExtendedCacheTtl ? "1h" : "5m", fresh, maxPenaltyUsd: cfg.maxSwitchPenaltyUsd,
         perRequest: conv && conv.sums.n > 0 ? { write: conv.sums.write / conv.sums.n, output: conv.sums.output / conv.sums.n } : null, breakevenRequests: cfg.switchBreakevenRequests });
-    // With REFLEX_EFFORT_MIDTURN on a model that takes the effort message the backend is asked anyway: a later turn's
-    // level can change without leaving the cache, and a tier move still meets the guard after the decision.
+    // With REFLEX_EFFORT_MIDTURN on a model that takes the effort message the backend is asked anyway: every main-chat
+    // turn's level can change without leaving the cache, and a tier move still meets the guard after the decision.
     const effortWanted = cfg.effort && cfg.effortMidturn && messageEffort(v.requestedModel) !== null;
     if (kind === "main" && routing && requested !== null && !belowRequested && cfg.upgrades === "off" && !effortWanted) {
       const cheapest = cfg.tiers.find((t) => tierRank(t) < tierRank(requested));

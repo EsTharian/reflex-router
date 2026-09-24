@@ -56,8 +56,8 @@ describe("statusline", () => {
     s.observe(d({ turn: "side", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", turn: "continuation", sentModel: HAIKU }));
-    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ requested: OPUS, sent: HAIKU }], saved: { session: 0, total: null } });
-    assert.deepEqual(s.get("other"), { main: null, subagents: [], saved: { session: 0, total: null } });
+    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ requested: OPUS, sent: HAIKU }], effort: { main: null, subagents: [] }, saved: { session: 0, total: null } });
+    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null, subagents: [] }, saved: { session: 0, total: null } });
   });
 
   it("the saving is section 8's: the same usage at the requested model minus at the model sent, routed records only", () => {
@@ -69,6 +69,24 @@ describe("statusline", () => {
     s.addRecord(rec({ forwarded: { model: HAIKU, rewritten: true, fallback: false } }), "s2"); // another session
     s.setLoggedTotal(10);
     assert.deepEqual(s.get("s1").saved, { session: 2, total: 10 + 2 + 3 });
+  });
+
+  it("shows the effort level REFLEX_EFFORT applied when it differs from the one asked for", () => {
+    const main = { requested: OPUS, sent: OPUS };
+    const effort = { main: { requested: "high", level: "low" }, subagents: [{ requested: "high", level: "low" }, { requested: "high", level: "low" }, { requested: "high", level: "max" }, { requested: "high", level: "high" }] };
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort })), "reflex: Opus 5.5 · effort ⇣ low (asked high) · subagent effort ⇣ low ×2, ⇡ max");
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort: { main: { requested: "high", level: "high" }, subagents: [] } })), "reflex: Opus 5.5", "same level: nothing to say");
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort: { main: { requested: null, level: "low" }, subagents: [] } })), "reflex: Opus 5.5", "the client's level unknown: no comparison");
+  });
+
+  it("the worker keeps the last APPLIED level per main chat and per subagent; unapplied and rejected ones are ignored", () => {
+    const s = new SessionStatus();
+    const rec = (o: Record<string, unknown>) => ({ id: "r", at: "2026-09-24T10:00:00.000Z", turn: "new", kind: "main", conv: "c-main", requested: { model: OPUS, tier: "opus", effort: "high" }, forwarded: { model: OPUS, rewritten: true, fallback: false }, ...o }) as unknown as DecisionRecord;
+    s.addRecord(rec({ effort: { pick: "low", target: "low", via: "message", reasons: ["effort_down"] } }), "s1");
+    s.addRecord(rec({ effort: { pick: "max", target: "high", via: null, reasons: ["effort_midturn_off"] } }), "s1"); // not applied: low holds
+    s.addRecord(rec({ kind: "subagent", conv: "c-a1", effort: { pick: "low", target: "low", via: "message", reasons: ["effort_down"] } }), "s1");
+    s.addRecord(rec({ kind: "subagent", conv: "c-a2", effort: { pick: "low", target: "low", via: "message", reasons: [] }, forwarded: { model: OPUS, rewritten: true, fallback: true } }), "s1");
+    assert.deepEqual(s.get("s1").effort, { main: { requested: "high", level: "low" }, subagents: [{ requested: "high", level: "low" }] });
   });
 
   it("never replaces the user's own status line", () => {

@@ -36,7 +36,7 @@ What this alpha does **not** do, so you don't have to find out: it decides the m
 ## Quick start
 
 ```sh
-npm install -g https://github.com/ziyacivan/reflex-router/releases/download/v0.5.0/reflex-router-0.5.0.tgz
+npm install -g https://github.com/ziyacivan/reflex-router/releases/download/v0.5.1/reflex-router-0.5.1.tgz
 ```
 
 That puts `reflex` on your PATH (Node.js 20+; alpha, see [Status](#status)). The tarball is attached to each
@@ -245,9 +245,9 @@ than in a footnote.
   every level and the thinking it caused moved with the level (single measured runs, [wire format §5.8](docs/wire-format.md#58-changing-effort-mid-conversation-same-model-2181)).
   Whether lower levels keep quality is not known yet: `REFLEX_EFFORT_AB` and report section 14 exist to measure it, and
   with `REFLEX_ESCALATE=1` a turn after a correction, failing test or revert runs at your own level again. By default it
-  only changes a conversation's **first** request (and Sonnet where a model switch rewrites the cache anyway), which
-  leaves nothing behind if you later continue without reflex; `REFLEX_EFFORT_MIDTURN=1` also changes later main-chat
-  turns, which adds messages that only reflex re-sends ([reference](docs/reference.md#configuration)).
+  only changes **subagents** (each in its first request, which leaves nothing behind if you later continue without
+  reflex); `REFLEX_EFFORT_MIDTURN=1` also changes the main chat turn by turn, which adds messages that only reflex
+  re-sends ([reference](docs/reference.md#configuration)). The status line shows a changed level.
 - **Fable routes are unverified and disabled.** `REFLEX_ALLOW_FABLE` exists, but no Fable retarget has been verified
   against the API, so Fable is not in the default tier set and a Fable retarget is recorded and left alone.
 - **Tested on Claude Code 2.1.277, 2.1.278 and 2.1.280, macOS only.** Not verified on Windows or Linux beyond CI

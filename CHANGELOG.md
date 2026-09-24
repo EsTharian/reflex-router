@@ -6,6 +6,21 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.5.1 — 2026-09-24
+
+### Changed
+
+- **`REFLEX_EFFORT` alone now changes subagents only; the main chat needs `REFLEX_EFFORT_MIDTURN=1`.** In 0.5.0 the
+  default changed a main chat's first turn, and without MIDTURN no later turn could change it again, so the first
+  prompt's level held for the whole chat. A subagent is one task stated in its first request, so its level fits all of
+  it. A Sonnet main chat is no longer changed at all (its level is a top-level value, fixed for the chat); the 0.5.0
+  "Sonnet at a model switch" case is gone with it.
+
+### Added
+
+- The status line shows a level `REFLEX_EFFORT` applied that differs from yours: `effort ⇣ low (asked high)` for the
+  main chat, `subagent effort ⇣ low ×2` for subagents.
+
 ## 0.5.0 — 2026-09-24
 
 ### Added

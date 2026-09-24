@@ -514,11 +514,11 @@ effort message after it cost the next request ~11k tokens of cache and so did th
 level in place gave exactly the numbers of the run without `REFLEX_EFFORT` at every request. Claude Code does the
 same itself when the level changes before a turn's system message is sent (the capture above).
 
-`REFLEX_EFFORT=1` applies this (`src/wire/effort.ts`): the level goes into the turn's own effort-bearing system message
-when there is one (`set`: a conversation's first request, main chat or subagent), else, only with
-`REFLEX_EFFORT_MIDTURN=1`, as an appended effort-only message (`insert`: a main chat's later turns). Opus 5.5 also gets
-the top-level value; Opus 5 and Fable do not; Sonnet gets the top-level value only where its cache is being written
-anyway. Every mark is re-applied from `~/.reflex/effort.jsonl` by the hash of Claude Code's own history up to it; the
+`REFLEX_EFFORT=1` applies this (`src/wire/effort.ts`): a subagent's level goes into its first request's own
+effort-bearing system message (`set`); the main chat changes only with `REFLEX_EFFORT_MIDTURN=1`, its first turn by
+`set` and later turns as an appended effort-only message (`insert`), since a first-turn level alone would hold for the
+whole chat. Opus 5.5 also gets the top-level value; Opus 5 and Fable do not; Sonnet gets the top-level value on a
+subagent's first request only (a Sonnet main chat keeps its level). Every mark is re-applied from `~/.reflex/effort.jsonl` by the hash of Claude Code's own history up to it; the
 hash ignores `cache_control` and treats a string and one text block alike (on the 2.1.281 capture the same messages
 came back in both forms, and every re-application landed at its place).
 
