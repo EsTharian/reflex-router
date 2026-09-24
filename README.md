@@ -8,7 +8,7 @@
 2. **Route** (opt-in). When it is safe, and does not throw away the conversation's prompt cache for nothing, send the work to a cheaper model. Otherwise leave it exactly as it was.
 3. **Observe.** For every decision, record whether it looked wrong afterwards (the next prompt reads like a correction, a test failed after an edit, an edit was undone) and read the result back with `reflex report`.
 
-What this alpha does **not** do, so you don't have to find out: it decides the model tier only (not reasoning effort); **no threshold in it is calibrated**, because calibrating one needs far more data than one person's log holds; and **no cost saving has been measured** — the dollar figures below are list-price estimates over recorded token counts, not bills. See [What reflex found](#what-reflex-found), [Status](#status) and [Contributing data](#contributing-data).
+What this alpha does **not** do, so you don't have to find out: reasoning effort (`REFLEX_EFFORT`, off by default) is new and its effect on quality is unmeasured; **no threshold in it is calibrated**, because calibrating one needs far more data than one person's log holds; and **no cost saving has been measured** — the dollar figures below are list-price estimates over recorded token counts, not bills. See [What reflex found](#what-reflex-found), [Status](#status) and [Contributing data](#contributing-data).
 
 ## How it works
 
@@ -75,7 +75,7 @@ Uncalibrated, Laya keeps Opus for everything; reflex ships a calibration head fi
 
 1. `reflex` (everything you type after it goes to `claude` untouched). The default mode is `shadow`: nothing about your session changes, and `~/.reflex/decisions.jsonl` fills up.
 2. Work as usual for a few sessions, then `reflex report` (`--since 2h`, `--usd`). Read section 3, "shadow vs actual": what reflex *would* have routed where.
-3. When you are happy with that, opt in: `REFLEX_MODE=route reflex`. To route only subagent work and leave the main chat alone, add `REFLEX_MAIN_CHAT=never`. The status line then shows the model reflex actually sent, e.g. `Reflex: ⇣ Sonnet 5 (asked Opus 5.5)`, with one line below for each subagent it changed (Claude Code's own model display keeps showing the one it asked for); `REFLEX_STATUSLINE=0` turns it off, and a status line of your own is never replaced.
+3. When you are happy with that, opt in: `REFLEX_MODE=route reflex`. To route only subagent work and leave the main chat alone, add `REFLEX_MAIN_CHAT=never`. The status line then shows the model reflex actually sent and the estimated saving, e.g. `Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Est. Saved: $0.42 · Total Saved: $3.10` (list-price estimates, negative when routing cost more), with one line below for each subagent it changed (Claude Code's own model display keeps showing the one it asked for); `REFLEX_STATUSLINE=0` turns it off, and a status line of your own is never replaced.
 4. `REFLEX_MODE=off reflex` is literally plain `claude`, with no proxy at all.
 
 Here is what the report looks like. This is real output (`reflex report` on the archived first dogfood session, sections 3 and 6), with its conditions in [`docs/observations.md`](docs/observations.md#2026-09-19--reflex-report-over-the-shadow-dogfood-session-excerpt): one shadow session, 12 decisions, nothing was routed, and "% tokens" is the token share of each cell's own request, **not a saving**.
@@ -113,7 +113,7 @@ Capabilities only. This table has no speed or savings figures, ours or theirs, a
 | Cost guard | Yes: refuses a main-chat switch whose lost prompt cache would cost more than a limit (list prices) | No cost model; a fixed context-size rule | Yes: cache-aware, with a maximum switch cost |
 | Privacy controls | Allow-listed state sent to the backend, character budgets and secret redaction before anything leaves the machine, log files `0600` in a `0700` directory and size-rotated, a redacted 300-character prompt preview (off by default, switchable) | README says only the prompt is sent; the code also sends model, context size and available models ([§3](docs/prior-art.md#3-jev-router)) | Journal keeps a 300-character prompt preview by default (switchable) and is not rotated ([§2](docs/prior-art.md#2-jcm-router)) |
 
-What they have that reflex does not: jcm-router has a live dashboard; jev-router has a status line and a custom model picker. reflex's report is plain text. Ideas we took from both (retry with the original request when a rewrite is rejected, byte-identical forwarding, pinning through a tool loop) are credited in [`THIRD_PARTY.md`](THIRD_PARTY.md); no code was copied.
+What they have that reflex does not: jcm-router has a live dashboard; jev-router has a custom model picker. reflex's report is plain text. Ideas we took from both (retry with the original request when a rewrite is rejected, byte-identical forwarding, pinning through a tool loop) are credited in [`THIRD_PARTY.md`](THIRD_PARTY.md); no code was copied.
 
 ## What leaves your machine
 
@@ -138,7 +138,7 @@ Per-turn routing can only reach work that starts a turn or a subagent. In long s
 - **`opus[1m]` sessions.** Haiku does not accept the long-context beta, so the `context-1m-*` beta is removed from the request when it is retargeted to Haiku; the rest of the header is kept. Without that the API answered 400, and reflex's fallback then re-sent the original request ([`docs/acceptance-phase1.md`](docs/acceptance-phase1.md), item 6).
 - **Side calls keep billing the requested model.** Claude Code's own side calls are never rewritten, so part of a routed session's usage stays on the model you asked for, by construction. In route session B ([`docs/observations.md`](docs/observations.md)) they also kept that model's prompt cache warm while the conversation itself ran elsewhere.
 - **Only verified retargets are applied.** Every pair among Haiku, Sonnet, Opus and Fable has been verified against the API ([`docs/wire-format.md`](docs/wire-format.md) §5). Upgrades need `REFLEX_UPGRADES=on` or `confident` (off by default) or a `reflex:<tier>` override; Fable needs `REFLEX_ALLOW_FABLE=1`.
-- **The wire format is not a public contract.** reflex checks the request's shape at runtime and only fixtures for Claude Code 2.1.277 have been captured; a different version warns, a different major version runs `route` as `shadow`. A failed shape check turns the session back into `shadow`.
+- **The wire format is not a public contract.** reflex checks the request's shape at runtime and fixtures exist only for Claude Code 2.1.277, 2.1.278 and 2.1.280; a different version warns, a different major version runs `route` as `shadow`. A failed shape check turns the session back into `shadow`.
 - **Restarts lose pins.** If the worker crashes it is restarted, but pins and open outcome windows live in its memory: a routed tool loop then continues on the requested model. A response that is already streaming when the worker dies fails (Claude Code retries it), and killing the reflex launcher itself ends the session's connection.
 - **Route mode adds a wait.** A new turn waits for the backend decision, bounded by `REFLEX_JEV_DEADLINE_MS` (a setting), after which the request goes out unchanged. Every decision record splits the wait from the upstream's first byte.
 - **Outcome capture is a record, not a verdict.** Correction scores are heuristics, and the rules are English and Turkish only — which means the signal is weakest, for everyone else, exactly where escalation would use it.
@@ -173,13 +173,15 @@ These are single-session or single-day figures, same as the rest of this section
 
 ## Benchmarks
 
-There are no benchmark or savings figures yet, on purpose. A measured cost report lands after a week of real use of v0.1.0 in route mode. It will come from this command on our own traffic, published with its sample sizes and conditions:
+There are no benchmark or measured savings figures, on purpose. The closest thing is the maintainer's own route-mode log, read with the same command you can run:
 
 ```sh
-reflex report --since 7d --usd
+reflex report --usd
 ```
 
-You can run the same command on your own traffic today. It prices the same measured token counts at the model sent and at the model requested, at list prices, and says what it does not model (tokenizer differences, what the requested model's cache would have held, cache TTL, discounts, subscription limits). Until our numbers are published, treat any figure about savings, ours or anyone's, as unmeasured.
+Over three days of it (2026-09-22 to 09-24, 27 sessions, 2,209 requests, ~384M tokens), routing moved 96 requests down from Opus 5.5 to Sonnet 5 or Haiku 4.5, an estimated **$3.76** less, and 38 requests up to Opus, an estimated **$3.73** more: net about **$0.03**. The best single session was an estimated $2.07 less, all of it in subagents. 73% of the tokens were main-chat tool-loop continuations, so routing could touch at most 26% of them, and the cost guard refused 18 main-chat switches whose lost cache would not have paid back (median penalty $1.09). *Condition:* one machine, one person; some upward moves came from sessions that requested Sonnet or Haiku with `REFLEX_UPGRADES` on; all dollar figures are list-price estimates over recorded token counts, not bills ([entry](docs/observations.md#2026-09-24--three-days-of-route-mode-down-and-up-moves-nearly-cancel)).
+
+The command prices the same measured token counts at the model sent and at the model requested, at list prices, and says what it does not model (tokenizer differences, what the requested model's cache would have held, cache TTL, discounts, subscription limits). Treat any figure about savings, ours or anyone's, as an estimate until it is measured against a bill.
 
 ## Contributing data
 
@@ -248,8 +250,8 @@ than in a footnote.
   only changes **subagents** (each in its first request, which leaves nothing behind if you later continue without
   reflex); `REFLEX_EFFORT_MIDTURN=1` also changes the main chat turn by turn, which adds messages that only reflex
   re-sends ([reference](docs/reference.md#configuration)). The status line shows a changed level.
-- **Fable routes are unverified and disabled.** `REFLEX_ALLOW_FABLE` exists, but no Fable retarget has been verified
-  against the API, so Fable is not in the default tier set and a Fable retarget is recorded and left alone.
+- **Fable is off by default.** Opus 5.5 ↔ Fable retargets are verified against the API ([wire format §5](docs/wire-format.md)),
+  but Fable is only in the tier set with `REFLEX_ALLOW_FABLE=1`; without it a Fable retarget is recorded and left alone.
 - **Tested on Claude Code 2.1.277, 2.1.278 and 2.1.280, macOS only.** Not verified on Windows or Linux beyond CI
   (Ubuntu + macOS, Node 20/22/24). Fixtures exist only for those three Claude Code versions (2.1.280: one `claude -p`
   capture with a subagent). **`REFLEX_BACKEND=laya` has never been run on Windows**: the process guard that stops

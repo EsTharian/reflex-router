@@ -544,3 +544,23 @@ accounts only. Quality is still unmeasured: `REFLEX_EFFORT_AB` and report sectio
 requested Haiku itself (`requested.model` `claude-haiku-4-5-20251001`, no effort): the resumed session took the model
 of the transcript's last turn, so the user's own model choice did not come back. Not investigated further here.
 
+
+## 2026-09-24 — three days of route mode: down and up moves nearly cancel
+
+**Setup.** `reflex report --usd` over the maintainer's `~/.reflex/decisions.jsonl` (2026-09-22T15:21Z to
+2026-09-24T18:01Z): 27 sessions, 2,209 classified requests, ~384M tokens, `route` mode, Jev `jev-1.13.0`, mostly
+Opus 5.5 requested. Section 8's "routed only" difference, split by direction and session with `savedUsd`.
+
+**Result.** 96 requests moved down (Opus 5.5 → Sonnet 5: 89, → Haiku 4.5: 7), an estimated $3.76 less; 38 moved up
+(Sonnet 5 / Haiku 4.5 → Opus 5 or Opus 5.5), an estimated $3.73 more; net $0.03. By session: +$2.07, +$1.03, +$0.66,
++$0.25 (downward, three of them subagent work) against −$1.87 and −$2.11 (upward, sessions that requested Sonnet or
+Haiku with `REFLEX_UPGRADES` on, partly experiments). Tokens: main-chat tool-loop continuations 73.4%, subagents
+12.9%, side calls 8.5%, main-chat new turns 5.2%, so routing could touch at most 26.3%. The guard refused 18 of 26
+main-chat switches (16 `over_limit`, median penalty $1.09; 2 `ctx_unknown`). In the last 24 hours of the log nothing
+was routed: Jev wanted Sonnet on 19 of 40 new turns and the guard refused the main-chat ones. Jev latency p50 414 ms
+(381 ms on a reused connection, n = 165).
+
+**What it means.** On this log the estimated saving from downward moves is real but small, and the upward moves spend
+about the same amount; the status line's per-session figure can look large while the total stays near zero. None of
+it says whether the routed turns were as good (section 7: routed arms n < 20). List-price estimates over recorded
+token counts, not bills; one machine, one person.
