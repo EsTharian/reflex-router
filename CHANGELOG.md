@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.5.6 — 2026-09-25
+
 ### Fixed
 
 - MCP tool search was off in every reflex session: Claude Code disables it behind a non-first-party
