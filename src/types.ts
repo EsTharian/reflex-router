@@ -94,6 +94,8 @@ export type ReasonCode =
   | "context_ceiling"
   | "no_enabled_tier"
   | "main_chat_disabled"
+  /** The Agent tool call gave this subagent a model explicitly (`model` in its input): it is not routed. */
+  | "model_explicit"
   | "override"
   | "guard_blocked"
   | "stay_pinned"

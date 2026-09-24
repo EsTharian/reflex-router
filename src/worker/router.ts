@@ -2,8 +2,9 @@
 //   shadow  forward the original bytes immediately; decide off the critical path; record what would have happened.
 //   route   a positively identified `new` turn waits for its decision (bounded by the Jev deadline) and is rewritten
 //           when policy, the main-chat cost guard, disabled tiers and the verified-rewrite list all allow it; its
-//           continuations reuse that pin (per conversation, i.e. per agent id for subagents). Side calls always pass
-//           through unchanged.
+//           continuations reuse that pin (per conversation, i.e. per agent id for subagents). Side calls are never
+//           decided; a pinned subagent's progress summary follows its pin, and every side call gets the conversation's
+//           effort marks, so both read the cache their conversation already wrote.
 // Every failure ends in "forward the original bytes"; the retry-with-original on a rejected rewrite lives in server.ts.
 import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
@@ -71,6 +72,8 @@ export interface RouterDeps {
   readonly typedPrompts?: (sessionId: string | null) => readonly string[] | null;
   /** The effort messages added to conversations (REFLEX_EFFORT); re-inserted whenever present. */
   readonly effortStore?: EffortStore | null;
+  /** The model the Agent tool call gave this subagent's task explicitly (PreToolUse), or null when it inherits. */
+  readonly explicitModel?: (sessionId: string | null, task: string) => string | null;
 }
 
 /** Handed to server.ts for one request as it is forwarded. */
@@ -255,6 +258,8 @@ export class Router {
     }
     const routing = this.d.effectiveMode === "route" && s.shape.status !== "degraded" && this.#uaDegrade === null;
     const conv = v.convKey !== null && v.turn !== "side" ? this.#conv(s, v.convKey) : null;
+    /** A side call's conversation, if this worker has seen it: read only, a side call never creates or moves state. */
+    const sideConv = v.convKey !== null && v.turn === "side" ? (s.convs.get(v.convKey) ?? null) : null;
     const requestedTier = tierOfModel(v.requestedModel);
     // A pin belongs to the requested tier it was decided under. After the user switches models (/model) it is stale:
     // dropped, so this request goes to the new requested model and the next new turn decides afresh. Without this a
@@ -335,17 +340,25 @@ export class Router {
         conv.pin = { target: t, from: requestedTier };
       }
       if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier) && !applyRetarget(requestedTier, t.tier, t.model) && !extraReasons.includes("rewrite_unverified")) extraReasons = ["rewrite_failed"];
+    } else if (v.sideKind === "agent_summary" && sideConv) {
+      // A pinned subagent's progress summary replays its history: sent where the loop runs, it reads that loop's cache
+      // instead of writing a second one on the requested model. Its pin is only read, never moved.
+      const t = sideConv.pin?.from === requestedTier ? (sideConv.pin?.target ?? null) : null;
+      if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier)) applyRetarget(requestedTier, t.tier, t.model);
     }
 
     // REFLEX_EFFORT (src/wire/effort.ts), after any retarget: `sentModel` is what goes upstream. Effort messages already
     // added to a conversation are re-inserted whatever the mode or the setting, because leaving one out edits the
-    // history the model saw; a new level is only set on a decided turn in route mode.
+    // history the model saw; a new level is only set on a decided turn in route mode. Side calls replay the same
+    // history (a suggestion, a subagent's summary, a notification turn), so they get the marks too: without them the
+    // prefix differs at the first changed message and the whole conversation's cache is written again.
     let effortAdded: EffortEdit["added"] = null;
     let effortApplied: "message" | "top-level" | null = null;
     let effortEdited = false;
     let effortSkip: "effort_midturn_off" | "effort_sonnet_main_chat" | null = null;
     const store = this.d.effortStore;
-    if (conv) {
+    const effortConv = conv ?? sideConv;
+    if (conv || v.turn === "side") {
       // A subagent is one task, stated in its first request, so the level fits all of it. A main chat changes level
       // only with MIDTURN, turn by turn: a first-turn level alone would hold for the whole chat.
       const main = v.kind === "main";
@@ -361,8 +374,8 @@ export class Router {
         effortAdded = e?.added ?? null;
       } else if (tierOfModel(sentModel) === "sonnet") {
         if (main && add !== null) effortSkip = "effort_sonnet_main_chat";
-        else if (via === "top-level" && add !== null) conv.topEffort = add;
-        if (conv.topEffort !== null) e = withTopEffort(sendBody, conv.topEffort);
+        else if (via === "top-level" && add !== null && conv) conv.topEffort = add;
+        if (effortConv?.topEffort) e = withTopEffort(sendBody, effortConv.topEffort);
       }
       if (add !== null && via !== null && effortSkip === null && e?.insertRefused !== true) effortApplied = via;
       if (e && e.body !== sendBody) {
@@ -565,6 +578,8 @@ export class Router {
       if (override === requested) return finalize(null, null, ["override", "same_tier"], {}, null);
       return finalize(override, override, ["override"], {}, null); // bypasses backend, confidence and the cost guard
     }
+    // The Agent call named this subagent's model: a choice made on purpose, so it runs where it was sent.
+    if (kind === "subagent" && (this.d.explicitModel?.(v.sessionId, v.task) ?? null) !== null) return none({ plan: planRecord(null, ["model_explicit"]) });
     if (kind === "main" && cfg.mainChat === "never") return none({ plan: planRecord(null, ["main_chat_disabled"]) });
 
     // The tier this main-chat conversation is pinned to now (its last decided target); the requested tier when it

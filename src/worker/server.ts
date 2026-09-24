@@ -110,6 +110,9 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const prompts = new RecentPrompts();
   const notices = new ModelNotices();
   const status = new SessionStatus();
+  /** Agent calls that named their subagent's model, by session and prompt hash: those subagents are never routed. */
+  const explicitModels = new Map<string, string>();
+  const agentKey = (sessionId: string | null, prompt: string): string => `${sessionId ?? ""}\n${hashId(prompt.trim()) ?? ""}`;
   // The all-time figure: the decision log as it stands now (the same records `reflex report` reads), read once, off the
   // request path. ponytail: a record this worker writes before the read finishes counts twice, and other sessions
   // running in parallel only show up at the next worker start.
@@ -151,6 +154,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         newestTypedPrompt: (sessionId) => prompts.newestUnclaimed(sessionId),
         claimTypedPrompt: (sessionId) => { prompts.claimNewest(sessionId); },
         effortStore: EffortStore.at(opts.config.home, opts.log),
+        explicitModel: (sessionId, task) => explicitModels.get(agentKey(sessionId, task)) ?? null,
       })
     : null;
   routerRef = router;
@@ -205,6 +209,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         void decisionLog.appendRecord(rec);
       }
       if (event?.type === "UserPromptSubmit") prompts.add(event.base.sessionId, event.prompt);
+      if (event?.type === "PreToolUse" && event.model !== null) explicitModels.set(agentKey(event.base.sessionId, event.prompt), event.model);
       if (event?.type === "PreToolUse" && event.title !== null) status.title(event.base.sessionId, hashId(event.prompt.trim()) as string, event.title);
       if (event?.type === "SubagentStop" && event.base.agentId !== null) status.stop(event.base.sessionId, event.base.agentId);
       if (event) tracker?.ingest(event);

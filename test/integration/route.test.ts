@@ -107,12 +107,22 @@ describe("route mode", () => {
       assert.ok(b.upstream_first_byte_ms !== null);
     });
 
-    it("the subagent's harness side call passes through unchanged even though the agent is pinned", async () => {
-      const f = inSession(fx("subagent-summary"), "s-sub");
+    it("the pinned subagent's progress summary follows the pin (its loop's cache lives there); no Jev call", async () => {
+      const calls = jev.calls.length;
+      const n = stack.upstream.seen.length;
+      const { rec } = await replay(stack, inSession(fx("subagent-summary"), "s-sub"));
+      assert.equal(jev.calls.length, calls);
+      assert.equal(sentBody(stack, n)["model"], HAIKU);
+      assert.equal(rec.turn, "side");
+      assert.equal(rec.side_kind, "agent_summary");
+      assert.equal(rec.forwarded.rewritten, true);
+    });
+
+    it("an unpinned subagent's progress summary passes through unchanged", async () => {
+      const f = inSession(fx("subagent-summary"), "s-summary-nopin");
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, f);
       assert.ok(stack.upstream.seen[n]!.body.equals(f.body));
-      assert.equal(rec.turn, "side");
       assert.equal(rec.forwarded.rewritten, false);
     });
 

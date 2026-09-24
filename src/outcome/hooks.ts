@@ -6,8 +6,11 @@ export type HookEvent =
   | { readonly type: "UserPromptSubmit"; readonly base: Base; readonly prompt: string }
   | { readonly type: "PostToolUse" | "PostToolUseFailure"; readonly base: Base; readonly tool: ToolUse }
   | { readonly type: "SubagentStart"; readonly base: Base; readonly agentType: string | null }
-  /** The main chat starting a subagent (Agent tool): its title as Claude Code shows it, and the prompt it is given. */
-  | { readonly type: "PreToolUse"; readonly base: Base; readonly title: string | null; readonly prompt: string }
+  /**
+   * The main chat starting a subagent (Agent tool): its title as Claude Code shows it, the prompt it is given, and the
+   * model it was explicitly given (`model` in the tool call; null when it inherits).
+   */
+  | { readonly type: "PreToolUse"; readonly base: Base; readonly title: string | null; readonly prompt: string; readonly model: string | null }
   | { readonly type: "SubagentStop"; readonly base: Base }
   | { readonly type: "Stop"; readonly base: Base };
 
@@ -81,7 +84,8 @@ export function parseHookEvent(body: Buffer): HookEvent | null {
       const input = isObj(e["tool_input"]) ? e["tool_input"] : {};
       const prompt = str(input["prompt"]);
       if (!(AGENT_TOOLS as readonly unknown[]).includes(e["tool_name"]) || prompt === null) return null;
-      return { type: "PreToolUse", base, title: str(input["description"]) || null, prompt };
+      const model = str(input["model"]);
+      return { type: "PreToolUse", base, title: str(input["description"]) || null, prompt, model: model && model !== "inherit" ? model : null };
     }
     case "SubagentStart":
       return { type: "SubagentStart", base, agentType: str(e["agent_type"]) || null };
