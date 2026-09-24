@@ -6,6 +6,31 @@ None of these versions has been published to a registry.
 
 _Nothing yet._
 
+## 0.5.0 — 2026-09-24
+
+### Added
+
+- **`REFLEX_EFFORT=1`: the effort level, `low` to `max`, set per turn without changing the model** (route mode, off by
+  default). The level is read from the reasoning-demand score the tier question already gets, and applied the way
+  Claude Code's own `/effort` does it: Opus 5.5 (per-turn effort and top-level value), Opus 5 and Fable 5.1 (per-turn
+  effort only), Sonnet 5 (top-level value, only where its cache is rewritten anyway); Haiku takes none. By default it
+  changes a conversation's first request (main chat and every subagent), in place, which costs no cache and leaves
+  nothing behind if the conversation is later continued without reflex. Every change is re-applied from
+  `~/.reflex/effort.jsonl` (hashes and levels only) on later requests, whatever the mode or setting. All of it measured
+  against the API on Claude Code 2.1.281 (`docs/wire-format.md` §5.8); whether lower levels keep quality is not.
+- `REFLEX_EFFORT_UP=1`: allow levels above your client's. `REFLEX_EFFORT_MIDTURN=1`: also change a main chat's later
+  turns, by adding an effort message (on accounts created on or after 2026-08-31, continuing such a conversation
+  without reflex costs one refused request and its earlier thinking blocks; Claude Code retries by itself).
+  `REFLEX_EFFORT_AB`: a random control arm at your level, for a causal read of quality.
+- With `REFLEX_ESCALATE=1`, a correction, failing test or revert after a lowered-effort turn keeps the next turns at
+  your level.
+- `reflex report` section 14: effort decisions, applied levels, carried changes, outcomes by arm.
+
+### Fixed
+
+- `REFLEX_BACKEND=laya` could hang waiting for a `laya-serve` that was missing: the ready poll now wakes when the guard
+  exits.
+
 ## 0.4.4 — 2026-09-23
 
 ### Added
