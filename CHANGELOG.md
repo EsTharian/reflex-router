@@ -6,6 +6,14 @@
 
 _Nothing yet._
 
+## 0.5.5 — 2026-09-24
+
+### Fixed
+
+- Subagent lines never appeared while the main chat sat waiting on background agents: Claude Code re-runs the status
+  line only on main-chat events. reflex's status line now also refreshes every 2 seconds (`refreshInterval`).
+- The status line now lists every running subagent, not only the ones reflex changed.
+
 ## 0.5.4 — 2026-09-24
 
 ### Added
