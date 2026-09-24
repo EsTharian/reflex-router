@@ -18,6 +18,7 @@ import { HINT_VERSION } from "../delegate/hint.js";
 import { hintReply } from "../delegate/reply.js";
 import { Breaker } from "./breaker.js";
 import { Router, type Observation } from "./router.js";
+import { EffortStore } from "./effort-store.js";
 import { HOOK_PATH } from "../outcome/hooks-config.js";
 import { STATUS_PATH } from "../statusline.js";
 import { parseHookEvent, type HookEvent } from "../outcome/hooks.js";
@@ -149,6 +150,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         typedPromptCount: (sessionId) => prompts.typedCount(sessionId),
         newestTypedPrompt: (sessionId) => prompts.newestUnclaimed(sessionId),
         claimTypedPrompt: (sessionId) => { prompts.claimNewest(sessionId); },
+        effortStore: EffortStore.at(opts.config.home, opts.log),
       })
     : null;
   routerRef = router;

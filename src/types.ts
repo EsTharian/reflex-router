@@ -1,10 +1,10 @@
-// Decision-side types shared by the backend, the policy and the log. Effort-ready: Phase 1 only fills the "tier"
-// dimension, and adding "effort" means adding entries, not reshaping these types.
+// Decision-side types shared by the backend, the policy and the log. Two dimensions: the tier, and (REFLEX_EFFORT) the
+// effort level, which is read from the same answers (src/policy.ts effortPlan) and applied by src/wire/effort.ts.
 import type { DecisionRule, Tier } from "./config.js";
 
 export type { DecisionRule, Tier } from "./config.js";
-export type Effort = "low" | "medium" | "high" | "xhigh" | "max"; // declared now; Phase 1 never sets it
-export type Dimension = "tier" | "effort"; // Phase 1 policy implements only "tier"
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export type Dimension = "tier" | "effort";
 
 // ---- what goes to a decision backend -------------------------------------------------------------------------------
 
@@ -114,6 +114,16 @@ export type ReasonCode =
    * model instead, as the control arm of the experiment. Not a refusal and not a failure.
    */
   | "ab_control";
+
+/** Why a turn's effort target is what it is (REFLEX_EFFORT); recorded in the decision's `effort` block. */
+export type EffortReason =
+  | "effort_down"
+  | "effort_up"
+  | "effort_same"
+  /** The backend's level is above the client's and REFLEX_EFFORT_UP is off: the client's level is kept. */
+  | "effort_up_disabled"
+  /** The client sent no effort (or one reflex does not know), so there is nothing to move from. */
+  | "effort_requested_unknown";
 
 export interface RoutePlan {
   /** Where the request would go; null = leave it on the requested model. */

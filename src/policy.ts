@@ -3,7 +3,8 @@
 // provisional constant, logged with the raw answers so shadow data can retune it.
 import type { Config, Tier } from "./config.js";
 import { fitsContext, tierRank, tierOfModel } from "./tiers.js";
-import type { Answer, Decision, Dimension, Judgement, Picked, QuestionSet, ReasonCode, RoutePlan, Target } from "./types.js";
+import type { Answer, Decision, Dimension, Effort, EffortReason, Judgement, Picked, QuestionSet, ReasonCode, RoutePlan, Target } from "./types.js";
+import { EFFORTS, isEffort } from "./wire/effort.js";
 
 /**
  * `argmax` rule only: a downgrade needs at least this choice confidence (a spread statistic, not the top
@@ -194,3 +195,19 @@ export function plan(input: PlanInput, j: Judgement, cfg: Config): RoutePlan {
   const target: Target | null = tier.target?.tier ? { tier: tier.target.tier } : null;
   return { target, reasons: tier.reasons, wouldUpgrade: tier.wouldUpgrade };
 }
+
+/**
+ * REFLEX_EFFORT: the level for a `new` turn, read from the reasoning_demand score (0..4) already asked for the tier,
+ * one level per step of its scale: 0 mechanical -> low, 1 routine -> medium, 2 moderate -> high, 3 hard -> xhigh,
+ * 4 open-ended -> max. A provisional reading, logged with the raw score. The target is absolute (the level the turn
+ * should run at), so a later turn can undo an earlier one; it never goes above the client's level unless `up`.
+ */
+export function effortPlan(demand: number | undefined, requested: string | null, up: boolean): { pick: Effort; target: Effort | null; reasons: EffortReason[] } | null {
+  if (demand === undefined || !Number.isFinite(demand)) return null;
+  const pick = EFFORTS[Math.min(EFFORTS.length - 1, Math.max(0, Math.round(demand)))]!;
+  if (!isEffort(requested)) return { pick, target: null, reasons: ["effort_requested_unknown"] };
+  const d = EFFORTS.indexOf(pick) - EFFORTS.indexOf(requested);
+  if (d > 0 && !up) return { pick, target: requested, reasons: ["effort_up_disabled"] };
+  return { pick, target: pick, reasons: [d < 0 ? "effort_down" : d > 0 ? "effort_up" : "effort_same"] };
+}
+

@@ -14,14 +14,15 @@ import { assessVersion, type VersionLevel } from "../launcher/version.js";
 import { hashId, type CompareBlock, type DecisionLog, type DecisionRecord } from "../log/decision-log.js";
 import { parseOverride } from "../overrides.js";
 import { DECISION_GRACE_MS } from "../timing.js";
-import { buildQuestions, clampUp, judge, plan } from "../policy.js";
+import { buildQuestions, clampUp, effortPlan, judge, plan } from "../policy.js";
 import { buildState } from "../privacy/state.js";
 import { estimateTokens, fitsContext, tierOfModel, tierRank } from "../tiers.js";
-import type { DecisionState, QuestionSet, ReasonCode } from "../types.js";
+import type { DecisionState, Effort, QuestionSet, ReasonCode } from "../types.js";
 import type { Log } from "../util/log.js";
 import { isPromptTooLong } from "../wire/anthropic.js";
 import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
 import { sideFingerprint, type SideFingerprint } from "../wire/fingerprint.js";
+import { effortVia, takesEffortMessage, withEffort, withTopEffort, type EffortEdit } from "../wire/effort.js";
 import { isVerifiedRetarget, retarget, retargetBetas } from "../wire/rewrite.js";
 import { ShapeTracker } from "../wire/shape.js";
 import { DRIFT_MIN_TYPED_PROMPTS, DriftTracker } from "../wire/drift.js";
@@ -33,6 +34,7 @@ import type { Breaker } from "./breaker.js";
 import { UsageTee } from "./usage-tee.js";
 import type { DecisionInfo } from "../outcome/tracker.js";
 import { HINT_VERSION } from "../delegate/hint.js";
+import type { EffortStore } from "./effort-store.js";
 import { decay, escalatedTier, raise, type EscalationEvent, type EscalationState } from "./escalation.js";
 
 /** A tier whose rewritten request was rejected stays off for the session this long. */
@@ -66,6 +68,8 @@ export interface RouterDeps {
   readonly claimTypedPrompt?: (sessionId: string | null) => void;
   /** Prompts UserPromptSubmit delivered in a session (memory only); null when none arrived. Keeps them out of fingerprints. */
   readonly typedPrompts?: (sessionId: string | null) => readonly string[] | null;
+  /** The effort messages added to conversations (REFLEX_EFFORT); re-inserted whenever present. */
+  readonly effortStore?: EffortStore | null;
 }
 
 /** Handed to server.ts for one request as it is forwarded. */
@@ -100,6 +104,8 @@ interface ConvState {
   lastCtx: number | null;
   /** Sums over the responses after the first (whose cache write is the whole prompt): new tokens, output tokens, count. */
   sums: { write: number; output: number; n: number };
+  /** REFLEX_EFFORT on Sonnet: the top-level level set on this conversation's first request, kept for all its requests. */
+  topEffort: Effort | null;
 }
 interface SessionState {
   readonly shape: ShapeTracker;
@@ -109,9 +115,11 @@ interface SessionState {
   turnOverride: Tier | null;
   readonly disabledUntil: Map<Tier, number>;
   readonly convs: Map<string, ConvState>;
+  /** A request carrying an effort change was rejected: no new level is set in this session (added ones are kept). */
+  effortOff: boolean;
 }
 
-type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override" | "escalation" | "would_escalate" | "ab">;
+type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override" | "escalation" | "would_escalate" | "ab" | "effort">;
 interface Outcome {
   readonly part: DecisionPart;
   /** Where route mode sends this turn; null = the requested model. */
@@ -184,7 +192,7 @@ export class Router {
     const key = v.sessionId ?? "";
     let s = this.#sessions.get(key);
     if (!s) {
-      s = { shape: new ShapeTracker(this.d.config.shapeCheckN), drift: new DriftTracker(), turnOverride: null, disabledUntil: new Map(), convs: new Map() };
+      s = { shape: new ShapeTracker(this.d.config.shapeCheckN), drift: new DriftTracker(), turnOverride: null, disabledUntil: new Map(), convs: new Map(), effortOff: false };
       this.#sessions.set(key, s);
     }
     return s;
@@ -193,7 +201,7 @@ export class Router {
   #conv(s: SessionState, key: string): ConvState {
     let c = s.convs.get(key);
     if (!c) {
-      c = { pin: null, cacheTier: null, lastCtx: null, sums: { write: 0, output: 0, n: 0 } };
+      c = { pin: null, cacheTier: null, lastCtx: null, sums: { write: 0, output: 0, n: 0 }, topEffort: null };
       s.convs.set(key, c);
     }
     return c;
@@ -262,6 +270,8 @@ export class Router {
     let fields: readonly string[] = [];
     let sentModel = v.requestedModel;
     let extraReasons: ReasonCode[] = [];
+    /** REFLEX_EFFORT: the level a decided new turn should run at (route mode); null = leave it. */
+    let effortTarget: Effort | null = null;
     // Estimated context of this request: the larger of the last measured prompt size and the body-size estimate.
     const ctx = Math.max(conv?.lastCtx ?? 0, estimateTokens(body.length));
     /** A target whose context ceiling the request exceeds moves to the next enabled tier up (null: the requested model). */
@@ -310,6 +320,7 @@ export class Router {
           if (!extraReasons.includes("rewrite_unverified")) extraReasons = ["rewrite_failed"];
           if (conv) conv.pin = { target: null, from: requestedTier };
         }
+        effortTarget = outcome.part.effort?.target ?? null;
         outcomeP = Promise.resolve(outcome);
       }
     } else if (v.turn === "continuation" && conv) {
@@ -323,6 +334,32 @@ export class Router {
       if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier) && !applyRetarget(requestedTier, t.tier, t.model) && !extraReasons.includes("rewrite_unverified")) extraReasons = ["rewrite_failed"];
     }
 
+    // REFLEX_EFFORT (src/wire/effort.ts), after any retarget: `sentModel` is what goes upstream. Effort messages already
+    // added to a conversation are re-inserted whatever the mode or the setting, because leaving one out edits the
+    // history the model saw; a new level is only set on a decided turn in route mode.
+    let effortAdded: EffortEdit["added"] = null;
+    let effortApplied: "message" | "top-level" | null = null;
+    let effortEdited = false;
+    const store = this.d.effortStore;
+    if (conv) {
+      const add = routing && this.d.config.effort && !s.effortOff ? effortTarget : null;
+      const via = effortVia(sentModel, v.facts.nonSystemMessages === 1);
+      let e: EffortEdit | null = null;
+      if (takesEffortMessage(sentModel) && store) {
+        e = withEffort(sendBody, (a) => store.get(a), via === "message" ? add : null);
+        effortAdded = e?.added ?? null;
+      } else if (tierOfModel(sentModel) === "sonnet") {
+        if (via === "top-level" && add !== null) conv.topEffort = add;
+        if (conv.topEffort !== null) e = withTopEffort(sendBody, conv.topEffort);
+      }
+      if (add !== null && via !== null) effortApplied = via;
+      if (e && e.body !== sendBody) {
+        sendBody = e.body;
+        fields = [...fields, ...e.fields];
+        effortEdited = true;
+      }
+    }
+
     let status: number | null = null;
     let msToHeaders: number | null = null;
     let upstreamFirstByteMs: number | null = null;
@@ -333,11 +370,14 @@ export class Router {
     let fallbackStatus: number | null = null;
     let fallbackError: string | null = null;
     const rewritten = sendBody !== body;
-    const routedTier = rewritten ? tierOfModel(sentModel) : null;
+    // An effort-only rewrite leaves the model alone: its rejection says nothing about a tier.
+    const routedTier = rewritten && sentModel !== v.requestedModel ? tierOfModel(sentModel) : null;
 
     const obs: Observation = {
       headers: (st, h) => {
         status = st;
+        // The model saw the added message only if the request went out as rewritten and was accepted.
+        if (st === 200 && fallbackStatus === null && effortAdded && store) store.add(effortAdded.anchor, effortAdded.effort);
         const arrived = this.#now();
         msToHeaders = arrived - started;
         upstreamFirstByteMs = arrived - forwardStarted;
@@ -356,6 +396,10 @@ export class Router {
         // recorded from the retry's usage, keeps the next turn off a tier it does not fit.
         if (routedTier && !isPromptTooLong(err)) s.disabledUntil.set(routedTier, this.#now() + TIER_DISABLE_MS);
         if (conv) conv.pin = { target: null, from: requestedTier }; // the rest of this loop stays on the requested model
+        if (effortEdited) {
+          s.effortOff = true;
+          if (conv) conv.topEffort = null; // a top-level value is not history: dropping it is safe (added messages are not)
+        }
       },
       finish: (complete) => {
         if (finished) return;
@@ -404,6 +448,7 @@ export class Router {
               cache_ttl_beta: v.facts.betaExtendedCacheTtl,
               requested: { model: v.requestedModel, tier: requestedTier, effort: v.requestedEffort },
               ...outcome.part,
+              ...(outcome.part.effort ? { effort: { ...outcome.part.effort, via: fallbackStatus === null ? effortApplied : null } } : {}),
               plan: p ? { ...p, routed_to: sentModel, reasons: [...p.reasons, ...extraReasons] } : extraReasons.length > 0 ? { target: null, would_route_to: null, routed_to: sentModel, reasons: extraReasons, would_upgrade: false } : null,
               pin: pinState,
               forwarded: { requested_model: v.requestedModel, model: sentModel, rewritten: rewritten && fallbackStatus === null, fields: rewritten ? fields : [], fallback: fallbackStatus !== null, fallback_status: fallbackStatus, fallback_error: fallbackError },
@@ -545,7 +590,9 @@ export class Router {
       const j = judge(decision, cfg);
       if (!j.ok) return failed({ backend: backend.id, sent, error: `invalid_answer:${j.error}` });
       const p = plan({ kind, requestedModel: v.requestedModel, contextTokens: ctx }, j.judgement, cfg);
+      const effort = cfg.effort ? effortPlan(j.judgement.vetoes["reasoning_demand"], v.requestedEffort, cfg.effortUp) : null;
       const part: Partial<DecisionPart> = {
+        ...(effort ? { effort: { ...effort, via: null } } : {}),
         backend: backend.id,
         sent,
         decision: {

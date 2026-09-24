@@ -6,7 +6,7 @@ import path from "node:path";
 import type { Tier } from "../config.js";
 import { head } from "../privacy/budget.js";
 import { redact } from "../privacy/redact.js";
-import type { Effort, ReasonCode } from "../types.js";
+import type { Effort, EffortReason, ReasonCode } from "../types.js";
 import type { SideFingerprint } from "../wire/fingerprint.js";
 import { JsonlWriter, type JsonlOptions } from "./jsonl.js";
 
@@ -87,6 +87,13 @@ export interface DecisionRecord {
     readonly reasons: readonly ReasonCode[];
     readonly would_upgrade: boolean;
   } | null;
+  /**
+   * REFLEX_EFFORT, on a decided new turn: the level read from reasoning_demand (`pick`), the level the turn should run
+   * at (`target`; null = the client's), how it was applied (`via`; null = not applied: shadow, a model it is not
+   * verified for, or a failed decision) and why. Absent with the setting off. What a request's body carried is in
+   * `forwarded.fields` (`messages.effort_added`, `messages.effort_reinserted:<n>`, `output_config.effort`).
+   */
+  readonly effort?: { readonly pick: Effort; readonly target: Effort | null; readonly via: "message" | "top-level" | null; readonly reasons: readonly EffortReason[] } | null;
   /** Main-chat cost guard, when it was evaluated. */
   readonly guard: { readonly allowed: boolean; readonly reason: string; readonly ctx: number | null; readonly penalty_usd: number | null; readonly saving_usd: number | null } | null;
   /** Manual `!tier` override in effect for this decision (main chat: from the prompt; subagent: captured at its first request). */

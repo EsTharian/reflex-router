@@ -34,6 +34,7 @@ worker (child process)                           src/worker/   all routing logic
 src/outcome/  outcome capture (record only): hook settings, hook payload parsing, heuristics, the tracker that joins hooks to decisions
 src/delegate/ REFLEX_DELEGATE: the hint text + version (hint.ts, the only place it lives) and which UserPromptSubmit gets it (reply.ts)
 src/worker/escalation.ts REFLEX_ESCALATE: the tier arithmetic and the decay of an escalation; the tracker hands signals to the router through TrackerDeps.onSignal
+src/wire/effort.ts + src/worker/effort-store.ts  REFLEX_EFFORT: add / re-insert Claude Code's effort-only message (Opus 5.5) or the top-level value (Sonnet, first request); every added message is re-inserted by history hash forever, whatever the setting
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
 src/backend/  decision backends: jev.ts (the Jev wire client, also used for laya-serve), laya.ts + laya-calibration.ts (feature questions and the fitted head; a feature change bumps FEATURE_VERSION and needs a refit)
 src/config.ts the ONLY interpreter of settings (and of process.env); src/env-file.ts only reads/permission-checks ~/.reflex/env and merges it under the process env

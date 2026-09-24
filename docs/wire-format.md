@@ -479,6 +479,11 @@ unverified on accounts that the preserved-thinking check enforces (created on or
 **Not tested:** Fable 5.1 and Opus 5 (the docs list per-message effort for both), whether Sonnet's top-level effort
 changes its thinking, and interactive (`cli`) sessions.
 
+`REFLEX_EFFORT=1` applies exactly this (`src/wire/effort.ts`): on Opus 5.5 the effort message plus the top-level value,
+re-inserted after the message whose history hash `~/.reflex/effort.jsonl` holds; on Sonnet the top-level value on a
+conversation's first request only. The hash ignores `cache_control` and treats a string and one text block alike: on
+the 2.1.281 capture the same messages came back in both forms, and every re-insertion landed at its place.
+
 ## 6. Responses
 
 Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_block_start, ping, content_block_delta, content_block_stop, message_delta, message_stop`. The capture proxy drops `accept-encoding`, so compression was **not** observed. The interactive client offers `zstd`, which `node:zlib` cannot decode before Node 22.15, so reflex narrows `accept-encoding` toward the upstream to the client's own offer restricted to `gzip, br, deflate` (absent stays absent). A response in any other coding is relayed untouched and logged as `usage_unknown_reason: "encoding:<name>"`. `message_start.message.usage` has `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, cache_creation{…}, output_tokens, service_tier, inference_geo`; final usage is in `message_delta.usage` (adds `output_tokens_details`, `iterations[]`).

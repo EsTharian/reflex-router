@@ -240,6 +240,12 @@ than in a footnote.
   (`REFLEX_ESCALATE=shadow` records what it would have done and changes nothing) precisely because nobody has
   evidence about when it should fire. It can only ever raise a tier, never above the one your client asked for, so its
   worst case is a session on the model you already chose. Its correction rules are English and Turkish only.
+- **`REFLEX_EFFORT` ties a conversation to reflex.** Off by default. On Opus 5.5 it changes a turn's effort level by
+  adding a message to the conversation, the way Claude Code's own `/effort` does, and reflex must re-add those messages
+  on every later request (`~/.reflex/effort.jsonl`, hashes only). Continue such a conversation **without** reflex and
+  its history is edited: accepted on the maintainer's account, possibly refused on accounts created on or after
+  2026-08-31 (untested). Whether the chosen levels keep quality is not measured
+  ([reference](docs/reference.md#configuration)).
 - **Fable routes are unverified and disabled.** `REFLEX_ALLOW_FABLE` exists, but no Fable retarget has been verified
   against the API, so Fable is not in the default tier set and a Fable retarget is recorded and left alone.
 - **Tested on Claude Code 2.1.277, 2.1.278 and 2.1.280, macOS only.** Not verified on Windows or Linux beyond CI

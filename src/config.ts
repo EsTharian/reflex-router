@@ -147,6 +147,14 @@ export interface Config {
    * the two arms comparable.
    */
   readonly abFraction: number;
+  /**
+   * REFLEX_EFFORT=1 (route mode): set each new turn's effort level from the decision (src/policy.ts effortPlan), on
+   * the models where that is verified (src/wire/effort.ts). Off by default. On Opus 5.5 this adds messages to the
+   * conversation, which reflex must keep re-adding (src/worker/effort-store.ts).
+   */
+  readonly effort: boolean;
+  /** REFLEX_EFFORT_UP=1: let REFLEX_EFFORT go above the client's level (costs more). Off by default. */
+  readonly effortUp: boolean;
   /** Correction score (0..CORRECTION_SCORE_CAP) at or above which a closed window escalates the conversation. */
   readonly escalateThreshold: number;
   /** How many of the conversation's later new turns one escalation signal covers before it decays. */
@@ -198,7 +206,7 @@ export const SETTING_NAMES: readonly string[] = [
   "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS", "REFLEX_LAYA_CALIBRATION", "REFLEX_COMPARE",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
-  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_STATUSLINE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
+  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_STATUSLINE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_EFFORT", "REFLEX_EFFORT_UP", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
 ];
 
@@ -358,12 +366,16 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     escalate: parseEscalateMode(setting(env, "REFLEX_ESCALATE"), errors),
     escalateTarget: parseEnum(setting(env, "REFLEX_ESCALATE_TARGET"), ESCALATE_TARGETS, "requested", "REFLEX_ESCALATE_TARGET", errors),
     abFraction: parseBoundedNumber(setting(env, "REFLEX_AB"), 0, 0, 1, "REFLEX_AB", errors),
+    effort: truthy(setting(env, "REFLEX_EFFORT")),
+    effortUp: truthy(setting(env, "REFLEX_EFFORT_UP")),
     escalateThreshold: parseBoundedNumber(setting(env, "REFLEX_ESCALATE_THRESHOLD"), DEFAULT_ESCALATE_THRESHOLD, 0, CORRECTION_SCORE_CAP, "REFLEX_ESCALATE_THRESHOLD", errors),
     escalateWindowTurns: parseBoundedInt(setting(env, "REFLEX_ESCALATE_WINDOW_TURNS"), DEFAULT_ESCALATE_WINDOW_TURNS, 1, 20, "REFLEX_ESCALATE_WINDOW_TURNS", errors),
   };
   if (errors.length > 0) return { ok: false, errors };
   if (config.abFraction > 0 && mode !== "route") warnings.push(`REFLEX_AB has no effect with REFLEX_MODE=${mode} (nothing is routed, so there is nothing to hold back as a control)`);
   if (config.escalate === "on" && mode !== "route") warnings.push(`REFLEX_ESCALATE=on has no effect with REFLEX_MODE=${mode} (escalation only changes a request in route mode)`);
+  if (config.effort && mode !== "route") warnings.push(`REFLEX_EFFORT has no effect with REFLEX_MODE=${mode} (effort is only changed in route mode)`);
+  if (config.effortUp && !config.effort) warnings.push("REFLEX_EFFORT_UP has no effect without REFLEX_EFFORT=1");
   if (config.delegate && mode === "off") warnings.push("REFLEX_DELEGATE has no effect with REFLEX_MODE=off (the hint travels through reflex's hooks)");
   return { ok: true, config, warnings };
 }
