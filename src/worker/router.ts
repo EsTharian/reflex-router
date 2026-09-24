@@ -19,7 +19,8 @@ import { buildState } from "../privacy/state.js";
 import { estimateTokens, fitsContext, tierOfModel, tierRank } from "../tiers.js";
 import type { DecisionState, Effort, QuestionSet, ReasonCode } from "../types.js";
 import type { Log } from "../util/log.js";
-import { isPromptTooLong } from "../wire/anthropic.js";
+import { isPromptTooLong, ModelRestorer, usageFormat } from "../wire/anthropic.js";
+import type { ChunkEdit } from "../net/forward.js";
 import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
 import { sideFingerprint, type SideFingerprint } from "../wire/fingerprint.js";
 import { EFFORTS, effortVia, messageEffort, withEffort, withTopEffort, type EffortEdit } from "../wire/effort.js";
@@ -74,7 +75,8 @@ export interface RouterDeps {
 
 /** Handed to server.ts for one request as it is forwarded. */
 export interface Observation {
-  headers(status: number, headers: IncomingHttpHeaders): void;
+  /** Returns the edit to apply to the response bytes (the client's model restored after a retarget), if any. */
+  headers(status: number, headers: IncomingHttpHeaders): ChunkEdit | null;
   readonly tap: (chunk: Buffer) => void;
   /** The rewritten request was rejected with `status` (redacted error summary); the original bytes are sent instead. */
   fallback(status: number, error: string | null): void;
@@ -294,7 +296,8 @@ export class Router {
       const b = retargetBetas(typeof beta === "string" ? beta : undefined, to);
       sendBody = r.body;
       fields = [...r.fields, ...b.stripped.map((x) => `anthropic-beta:-${x}`)];
-      if (b.stripped.length > 0) sendHeaders = { ...headers, "anthropic-beta": b.value };
+      // Uncompressed, so the response's model can be put back (ModelRestorer); the fallback resends the client's headers.
+      sendHeaders = { ...headers, ...(b.stripped.length > 0 ? { "anthropic-beta": b.value } : {}), "accept-encoding": "identity" };
       sentModel = model;
       return true;
     };
@@ -393,6 +396,9 @@ export class Router {
         const ct = h["content-type"];
         const ce = h["content-encoding"];
         tee = new UsageTee(typeof ct === "string" ? ct : undefined, typeof ce === "string" ? ce : undefined);
+        const plain = (ce === undefined || ce === "identity") && h["content-length"] === undefined;
+        const moved = fallbackStatus === null && v.requestedModel !== null && sentModel !== v.requestedModel;
+        return st === 200 && moved && plain && usageFormat(typeof ct === "string" ? ct : undefined) === "sse" ? new ModelRestorer(v.requestedModel) : null;
       },
       tap: (chunk) => tee?.write(chunk),
       fallback: (st, err) => {

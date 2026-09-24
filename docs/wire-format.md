@@ -529,6 +529,23 @@ nothing dropped (a cache rewrite only), as on Opus 5.5. An interactive smoke run
 (`REFLEX_EFFORT=1 REFLEX_EFFORT_MIDTURN=1`, entrypoint `cli`): the first turn `set` to `low`, its tool-loop requests
 re-applied it (cache read 76,617 and 77,563), the second turn `insert`ed `medium` (read 77,972, written 37); all 200.
 
+### 5.9 A resumed conversation requests the transcript's model (2.1.281, $0)
+
+Claude Code writes the **response's** `message.model` into the transcript, and `--continue`/`--resume` (both `-p` and
+interactive) request the model of the transcript's last turn, over the user's own `model` setting (`opus[1m]` here).
+Measured against a loopback stand-in for the API that answers every request naming a model other than the one asked
+for: the first turn asked for `claude-opus-5-5`, the resumed one for `claude-haiku-4-5-20251001` (tool list 43 → 47);
+with the model echoed back unchanged the resumed turn asked for `claude-opus-5-5` again. Claude Code's own cost
+figures (`modelUsage`, `total_cost_usd`) are keyed by the requested model either way. Interactive `--continue` does
+not see sessions started with `-p`.
+
+So a routed turn would carry on as the user's choice once the conversation is resumed, through reflex or without it.
+When reflex retargets a request's model it asks the upstream for `accept-encoding: identity` and writes the client's
+model back into `message_start` (`ModelRestorer`, src/wire/anthropic.ts), only for a `200` `text/event-stream` answer
+with no `content-encoding` and no `content-length`; every other byte is relayed unchanged. End to end through the built
+`reflex` (fake upstream and Jev, `reflex:haiku`): the turn went out as Haiku, and `claude -p --continue` without
+reflex then asked for `claude-opus-5-5`.
+
 ## 6. Responses
 
 Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_block_start, ping, content_block_delta, content_block_stop, message_delta, message_stop`. The capture proxy drops `accept-encoding`, so compression was **not** observed. The interactive client offers `zstd`, which `node:zlib` cannot decode before Node 22.15, so reflex narrows `accept-encoding` toward the upstream to the client's own offer restricted to `gzip, br, deflate` (absent stays absent). A response in any other coding is relayed untouched and logged as `usage_unknown_reason: "encoding:<name>"`. `message_start.message.usage` has `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, cache_creation{…}, output_tokens, service_tier, inference_geo`; final usage is in `message_delta.usage` (adds `output_tokens_details`, `iterations[]`).

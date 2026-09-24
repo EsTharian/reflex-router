@@ -72,24 +72,37 @@ export function forward(target: URL, req: ForwardRequest, opts: ForwardOptions =
   });
 }
 
+/** Changes a response's bytes on their way to the client: `push` per chunk, `end` once for anything held back. */
+export interface ChunkEdit {
+  push(chunk: Buffer): Buffer;
+  end(): Buffer;
+}
+
 /**
  * Streams an upstream response to the client, headers first. Rejects if the stream breaks; the caller then destroys
- * `res`. `tap` sees every chunk after it was handed on unchanged; a throwing tap is ignored.
+ * `res`. `tap` sees every upstream chunk as it arrived; a throwing tap is ignored. `edit` (a deliberate rewrite) is the
+ * only thing that may change the bytes the client gets.
  */
-export async function relay(upstream: http.IncomingMessage, res: http.ServerResponse, tap?: (chunk: Buffer) => void): Promise<void> {
+export async function relay(upstream: http.IncomingMessage, res: http.ServerResponse, tap?: (chunk: Buffer) => void, edit?: ChunkEdit): Promise<void> {
   res.writeHead(upstream.statusCode ?? 502, upstream.statusMessage, sanitizeHeaders(upstream.headers, "response"));
-  if (!tap) {
+  if (!tap && !edit) {
     await pipeline(upstream, res);
     return;
   }
   const tee = new Transform({
     transform(chunk: Buffer, _enc, done) {
-      done(null, chunk);
+      const out = edit ? edit.push(chunk) : chunk;
+      if (out.length > 0) this.push(out);
+      done();
       try {
-        tap(chunk);
+        tap?.(chunk);
       } catch {
         // observation must never affect the response
       }
+    },
+    flush(done) {
+      const rest = edit?.end();
+      done(null, rest !== undefined && rest.length > 0 ? rest : undefined);
     },
   });
   await pipeline(upstream, tee, res);

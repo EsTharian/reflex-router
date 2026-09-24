@@ -542,7 +542,7 @@ accounts only. Quality is still unmeasured: `REFLEX_EFFORT_AB` and report sectio
 
 **Seen on the way, not about effort.** After route mode moved a `-p` main chat to Haiku, `claude -p --continue`
 requested Haiku itself (`requested.model` `claude-haiku-4-5-20251001`, no effort): the resumed session took the model
-of the transcript's last turn, so the user's own model choice did not come back. Not investigated further here.
+of the transcript's last turn, so the user's own model choice did not come back. Measured and fixed afterwards: [wire format §5.9](wire-format.md#59-a-resumed-conversation-requests-the-transcripts-model-21281-0).
 
 
 ## 2026-09-24 — three days of route mode: down and up moves nearly cancel

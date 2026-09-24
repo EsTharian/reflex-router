@@ -149,3 +149,54 @@ export function errorSummary(body: Buffer, contentEncoding: string | undefined):
   }
   return text.slice(0, ERROR_SUMMARY_MAX);
 }
+
+/** How much of a response is held back looking for the end of its first SSE event before giving up. */
+const MAX_HEAD_BYTES = 64 * 1024;
+
+/**
+ * Writes the client's own model back into a routed response's `message_start` (docs/wire-format.md §5.9). Claude Code
+ * stores the response's `model` in the transcript and a resumed conversation (`--continue`/`--resume`, `-p` or
+ * interactive) requests that model over the user's own setting, so without this a routed turn would carry on as the
+ * user's choice, with or without reflex. Only `"model":"…"` in the first event is replaced, and only if that event is
+ * `message_start`; every other byte passes unchanged. Fed identity-coded bytes in arbitrary chunks; never throws.
+ */
+export class ModelRestorer {
+  #head: Buffer[] = [];
+  #size = 0;
+  #done = false;
+  /** True once the model was replaced. */
+  restored = false;
+
+  constructor(private readonly model: string) {}
+
+  /** The bytes to send on now (possibly none while the first event is incomplete). */
+  push(chunk: Buffer): Buffer {
+    if (this.#done) return chunk;
+    this.#head.push(chunk);
+    this.#size += chunk.length;
+    const head = Buffer.concat(this.#head);
+    this.#head = [head];
+    const m = /\r?\n\r?\n/.exec(head.toString("latin1"));
+    if (m) return this.#rewrite(head, m.index);
+    return this.#size >= MAX_HEAD_BYTES ? this.end() : Buffer.alloc(0);
+  }
+
+  /** Whatever is still held back, unchanged (the stream ended before the first event did). */
+  end(): Buffer {
+    this.#done = true;
+    const rest = Buffer.concat(this.#head);
+    this.#head = [];
+    return rest;
+  }
+
+  #rewrite(head: Buffer, eventEnd: number): Buffer {
+    this.#done = true;
+    this.#head = [];
+    const event = head.subarray(0, eventEnd).toString("utf8");
+    if (!/"type"\s*:\s*"message_start"/.test(event)) return head;
+    const out = event.replace(/("model"\s*:\s*)"(?:[^"\\]|\\.)*"/, (_, key: string) => key + JSON.stringify(this.model));
+    if (out === event) return head;
+    this.restored = true;
+    return Buffer.concat([Buffer.from(out, "utf8"), head.subarray(eventEnd)]);
+  }
+}

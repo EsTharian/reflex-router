@@ -229,8 +229,8 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         obs?.fallback(rejected, summary === null ? null : redact(summary));
         up = await forward(upstream, { method, url, headers: req.headers, body }, { signal: ac.signal });
       }
-      obs?.headers(up.statusCode ?? 0, up.headers);
-      await relay(up, res, obs?.tap);
+      const edit = obs?.headers(up.statusCode ?? 0, up.headers) ?? undefined;
+      await relay(up, res, obs?.tap, edit);
       obs?.finish(true);
     } catch (e) {
       obs?.finish(false);

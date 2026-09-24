@@ -1,14 +1,15 @@
 // Route mode end to end: real front door + supervisor + worker, fake upstream, fake Jev, captured fixtures.
 // Each describe block uses its own session ids so pins, overrides and disabled tiers never leak between cases.
 import assert from "node:assert/strict";
+import type http from "node:http";
 import { after, before, beforeEach, describe, it } from "node:test";
 import zlib from "node:zlib";
 import { DEFAULT_MODELS } from "../../src/config.js";
 import { DECISION_GRACE_MS } from "../../src/timing.js";
 import { startFakeJev, type FakeJev } from "../support/fake-jev.js";
 import { loadFixtures, type Fixture } from "../support/fixtures.js";
-import { request } from "../support/http.js";
-import { replay, requestHeaders, sseHandler } from "../support/replay.js";
+import { request, waitFor } from "../support/http.js";
+import { records, replay, requestHeaders, sseHandler } from "../support/replay.js";
 import { startStack, type Stack } from "../support/stack.js";
 
 type Json = Record<string, unknown>;
@@ -203,6 +204,44 @@ describe("route mode", () => {
       assert.equal((await hook("s-notice", { hook_event_name: "Stop" })).status, 204, "delivered once");
       await replay(stack, inSession(fx("main-continuation"), "s-notice"));
       assert.equal((await hook("s-notice", { hook_event_name: "Stop" })).status, 204, "still on Haiku: nothing new");
+    });
+  });
+
+  describe("the client's model in routed responses (a resumed conversation asks for the transcript's model)", () => {
+    /** Answers like the API: SSE naming the model it was sent, gzipped when the request allows it. */
+    const echoModel = (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer): void => {
+      const model = (JSON.parse(body.toString()) as Json)["model"] as string;
+      const text = `event: message_start\ndata: {"type":"message_start","message":{"model":"${model}","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n`;
+      const gzip = String(req.headers["accept-encoding"] ?? "").includes("gzip");
+      res.writeHead(200, { "content-type": "text/event-stream", ...(gzip ? { "content-encoding": "gzip" } : {}) });
+      res.end(gzip ? zlib.gzipSync(text) : text);
+    };
+    const send = async (f: Fixture): Promise<string> => {
+      const before = records(stack).length;
+      const r = await request(`${stack.url}/v1/messages?beta=true`, { method: "POST", headers: { ...requestHeaders(f), "accept-encoding": "gzip" }, body: f.body });
+      await waitFor(() => (records(stack).length > before ? true : null), { what: "its record" });
+      const ce = r.headers["content-encoding"];
+      return (ce === "gzip" ? zlib.gunzipSync(r.body) : r.body).toString();
+    };
+
+    it("a retargeted request goes out uncompressed and its message_start names the requested model again", async () => {
+      stack.upstream.setHandler(echoModel);
+      const n = stack.upstream.seen.length;
+      const text = await send(inSession(fx("main-new-turn"), "s-restore"));
+      assert.equal(sentBody(stack, n)["model"], HAIKU);
+      assert.equal(stack.upstream.seen[n]!.headers["accept-encoding"], "identity");
+      assert.match(text, /"model":"claude-sonnet-5"/);
+      assert.doesNotMatch(text, /haiku/);
+    });
+
+    it("a request reflex did not retarget is relayed byte for byte, compression included", async () => {
+      stack.upstream.setHandler(echoModel);
+      const f = inSession(fx("subagent-summary"), "s-restore");
+      const n = stack.upstream.seen.length;
+      const text = await send(f);
+      assert.ok(stack.upstream.seen[n]!.body.equals(f.body));
+      assert.equal(stack.upstream.seen[n]!.headers["accept-encoding"], "gzip");
+      assert.match(text, new RegExp(`"model":"${(JSON.parse(f.body.toString()) as Json)["model"] as string}"`));
     });
   });
 
