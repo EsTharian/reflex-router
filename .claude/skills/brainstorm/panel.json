@@ -1,0 +1,57 @@
+{
+  "value": {
+    "type": "score",
+    "instructions": "A developer runs Claude Code through `project`. If `idea` were built as described, how much would that developer's day-to-day outcome improve (money saved, time saved, better answers, or more trust in what the router does)? Judge the size and frequency of the benefit, not how clever or novel the idea is.",
+    "criteria": [
+      "No noticeable benefit, or a benefit only in a rare edge case.",
+      "A small benefit that most users would not notice.",
+      "A clear benefit in a common situation, but modest in size.",
+      "A large benefit in a situation most users hit every week.",
+      "A benefit big enough to change whether people would use `project` at all."
+    ]
+  },
+  "evidence": {
+    "type": "score",
+    "instructions": "How well does `idea.evidence` show that the problem behind `idea` is real and current? Only count what `idea.evidence` actually states; ignore how plausible the idea sounds.",
+    "criteria": [
+      "No evidence: the need is assumed.",
+      "Anecdotal or indirect: a plausible story or a single opinion.",
+      "One concrete, dated source or one measurement from `project`'s own data.",
+      "Several independent dated sources, or measured data from `project` that directly shows the problem."
+    ]
+  },
+  "rule_conflict": {
+    "type": "noul",
+    "instructions": "Would building `idea` as described in `idea.mechanism` require breaking any rule in `project.rules`?",
+    "criteria": {
+      "true": "At least one rule would have to be broken or bent.",
+      "false": "It can be built while every rule holds."
+    }
+  },
+  "duplicate": {
+    "type": "noul",
+    "instructions": "Is `idea` substantially the same as something listed in `project.already_built` or `project.open_items`?",
+    "criteria": {
+      "true": "It mostly repeats an existing feature or an already planned item.",
+      "false": "It adds something that neither list covers."
+    }
+  },
+  "measurable": {
+    "type": "noul",
+    "instructions": "Could the benefit claimed by `idea` be measured with the method in `idea.measure`, well enough to decide whether to turn it on by default?",
+    "criteria": {
+      "true": "The method would produce a number that answers the question.",
+      "false": "The method is missing, vague, or would not show the benefit."
+    }
+  },
+  "novelty": {
+    "type": "score",
+    "instructions": "How non-obvious is `idea` to an engineer who already knows current LLM routers and gateways (model cascades, cost-based routing, fallback chains, caching proxies)?",
+    "criteria": [
+      "Standard: every router already does this.",
+      "A known technique applied in an ordinary way.",
+      "A known technique applied in a way specific to Claude Code or to `project`.",
+      "A genuinely new angle that such an engineer would not have proposed."
+    ]
+  }
+}
