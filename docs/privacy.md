@@ -25,7 +25,7 @@ Text is truncated first, then redacted (`src/privacy/redact.ts`): TypeSafe, Anth
 
 `~/.reflex/` (`REFLEX_HOME`): directory `0700`, files `0600`, rotated at 10 MB × 5.
 
-`effort.jsonl` (only once `REFLEX_EFFORT=1` has changed a level) holds one line per effort message reflex added: a SHA-256 of the conversation history before it, the level, and a timestamp. No text.
+`effort.jsonl` (only once `REFLEX_EFFORT=1` has changed a level) holds one line per level reflex put into a conversation: a SHA-256 of the conversation history up to that point, the level, whether it changed an existing message or added one (`op`), and a timestamp. No text.
 
 `decisions.jsonl` holds one record per classified `POST /v1/messages` request: classification, signals, mode, the backend's answers and the would-be plan, upstream status, token usage, and error categories. Session ids are stored hashed (SHA-256, truncated); conversation keys are hashes. For decided requests it also stores `prompt_preview`: the redacted task, whitespace-collapsed, capped at 300 characters by a constant in the logger. The preview is **off by default** (revisited 2026-09-20; it was on through the pre-release versions); `REFLEX_LOG_PROMPTS=1` turns it on so decisions can be reviewed. When on, redaction removes secrets and home-directory prefixes, not project-relative paths or the user's own words. Apart from the preview, the log holds no user text: the only other free-text field is `forwarded.fallback_error`, the upstream's own (redacted) error message for a rejected rewrite.
 

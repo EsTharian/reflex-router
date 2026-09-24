@@ -97,7 +97,7 @@ Here is what the report looks like. This is real output (`reflex report` on the 
     connection not logged  12  823 ms  1,136 ms
 ```
 
-The full report has fourteen sections (0–13): a workflow profile of where your tokens went; decisions by kind and tier; `mass` vs `argmax`; shadow vs actual; guard refusals; fallbacks and breaker; latency (Jev by new vs reused connection, the decision wait and the upstream's first byte); outcome rates for routed vs unchanged turns, with sample sizes and an explicit "insufficient data" line below 20 windows; cost at list prices; side-call usage on its own line; cache writes by move type; unclassified side-call fingerprints; a side-call routing estimate; and escalations. `reflex report --json` prints the same sections as one JSON object, keyed by section number, for scripting against. Settings, route-mode details and safety nets: [`docs/reference.md`](docs/reference.md).
+The full report has fifteen sections (0–14): a workflow profile of where your tokens went; decisions by kind and tier; `mass` vs `argmax`; shadow vs actual; guard refusals; fallbacks and breaker; latency (Jev by new vs reused connection, the decision wait and the upstream's first byte); outcome rates for routed vs unchanged turns, with sample sizes and an explicit "insufficient data" line below 20 windows; cost at list prices; side-call usage on its own line; cache writes by move type; unclassified side-call fingerprints; a side-call routing estimate; escalations; and effort (what `REFLEX_EFFORT` decided and applied, with outcomes by arm). `reflex report --json` prints the same sections as one JSON object, keyed by section number, for scripting against. Settings, route-mode details and safety nets: [`docs/reference.md`](docs/reference.md).
 
 ## How it compares
 
@@ -240,12 +240,14 @@ than in a footnote.
   (`REFLEX_ESCALATE=shadow` records what it would have done and changes nothing) precisely because nobody has
   evidence about when it should fire. It can only ever raise a tier, never above the one your client asked for, so its
   worst case is a session on the model you already chose. Its correction rules are English and Turkish only.
-- **`REFLEX_EFFORT` ties a conversation to reflex.** Off by default. On Opus 5.5 it changes a turn's effort level by
-  adding a message to the conversation, the way Claude Code's own `/effort` does, and reflex must re-add those messages
-  on every later request (`~/.reflex/effort.jsonl`, hashes only). Continue such a conversation **without** reflex and
-  its history is edited: accepted on the maintainer's account, possibly refused on accounts created on or after
-  2026-08-31 (untested). Whether the chosen levels keep quality is not measured
-  ([reference](docs/reference.md#configuration)).
+- **`REFLEX_EFFORT` is new and its quality effect is unmeasured.** Off by default. It changes a turn's effort level
+  (`low`…`max`) the way Claude Code's own `/effort` does, on Opus 5.5, Opus 5, Fable 5.1 and Sonnet 5; the API accepted
+  every level and the thinking it caused moved with the level (single measured runs, [wire format §5.8](docs/wire-format.md#58-changing-effort-mid-conversation-same-model-2181)).
+  Whether lower levels keep quality is not known yet: `REFLEX_EFFORT_AB` and report section 14 exist to measure it, and
+  with `REFLEX_ESCALATE=1` a turn after a correction, failing test or revert runs at your own level again. By default it
+  only changes a conversation's **first** request (and Sonnet where a model switch rewrites the cache anyway), which
+  leaves nothing behind if you later continue without reflex; `REFLEX_EFFORT_MIDTURN=1` also changes later main-chat
+  turns, which adds messages that only reflex re-sends ([reference](docs/reference.md#configuration)).
 - **Fable routes are unverified and disabled.** `REFLEX_ALLOW_FABLE` exists, but no Fable retarget has been verified
   against the API, so Fable is not in the default tier set and a Fable retarget is recorded and left alone.
 - **Tested on Claude Code 2.1.277, 2.1.278 and 2.1.280, macOS only.** Not verified on Windows or Linux beyond CI

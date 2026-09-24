@@ -758,6 +758,66 @@ export function s11Fingerprints({ rec }: Ctx): string[] {
 }
 
 /** `id` is the section number as it appears at the start of `title` (and nowhere else) — the `--json` key, stable across wording changes to the title. */
+const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+const effortRank = (e: string | null): number => (e === null ? -1 : (EFFORT_LEVELS as readonly string[]).indexOf(e));
+
+/** Outcome counts for the main-chat windows of a set of decisions (the section 7 measures). */
+function outcomeArm(ctx: Ctx, ids: ReadonlySet<string>): { windows: number; scored: number; corrected: number; withEdits: number; testFailures: number; reverts: number } {
+  const revertedIds = new Set(ctx.rec.updates.filter((u) => u.signal === "reverted_edit").map((u) => u.decisionId));
+  const w = ctx.rec.outcomes.filter((o) => o.scope === "main" && o.attribution !== "interjection" && o.decisionId !== null && ids.has(o.decisionId));
+  const withEdits = w.filter((x) => x.edits > 0);
+  return {
+    windows: w.length,
+    scored: w.filter((x) => x.correctionScore !== null).length,
+    corrected: w.filter((x) => (x.correctionScore ?? 0) > 0).length,
+    withEdits: withEdits.length,
+    testFailures: withEdits.filter((x) => x.testFailureAfterEdit).length,
+    reverts: withEdits.filter((x) => x.revertedInWindow || (x.decisionId !== null && revertedIds.has(x.decisionId))).length,
+  };
+}
+
+/** 14. REFLEX_EFFORT: what was decided and applied, what it did to output tokens, and outcomes by arm. */
+export function s14Effort(ctx: Ctx): string[] {
+  const all = ctx.rec.decisions;
+  const decided = all.filter((d) => d.effort !== null);
+  const carried = all.filter((d) => d.effortAdded || d.effortReinserted > 0);
+  if (decided.length === 0 && carried.length === 0) return ["  (no effort decisions; REFLEX_EFFORT=1 turns them on)"];
+  const applied = decided.filter((d) => d.effort!.via !== null);
+  const rel = (d: Dec): string => {
+    const t = effortRank(d.effort!.target);
+    const r = effortRank(d.requestedEffort);
+    return t < 0 || r < 0 ? "unknown" : t < r ? "lower" : t > r ? "higher" : "same";
+  };
+  const out = [
+    `  decided turns: ${decided.length} (${countBy(decided, (d) => d.kind).map(([k, n]) => `${k} ${n}`).join(", ")})`,
+    `  target vs the client's level: ${countBy(decided, rel).map(([k, n]) => `${k} ${n}`).join(", ")}`,
+    `  reasons: ${countBy(decided.flatMap((d) => d.effort!.reasons), (r) => r).map(([k, n]) => `${k} ${n}`).join(", ")}`,
+    `  applied: ${countBy(decided, (d) => d.effort!.via ?? "not applied").map(([k, n]) => `${k} ${n}`).join(", ")} (not applied: shadow, a model without a verified way, or a rejected request)`,
+    `  applied levels: ${EFFORT_LEVELS.map((l) => `${l} ${applied.filter((d) => d.effort!.target === l).length}`).join(", ")}`,
+    `  requests carrying reflex's effort messages: ${carried.filter((d) => d.effortAdded).length} added one, ${carried.filter((d) => d.effortReinserted > 0).length} re-inserted earlier ones (${sum(carried.map((d) => d.effortReinserted))} in all); rejected and resent unchanged: ${carried.filter((d) => d.fallback).length}`,
+  ];
+  const withUsage = applied.filter((d) => d.usage !== null);
+  if (withUsage.length > 0) {
+    out.push(`  output tokens of the deciding request, by applied level: ${EFFORT_LEVELS.map((l) => { const x = withUsage.filter((d) => d.effort!.target === l); return x.length === 0 ? null : `${l} mean ${int(mean(x.map((d) => d.usage!.output)))} (n=${x.length})`; }).filter(Boolean).join(", ")}. The turn's tool loop is not included; levels differ in the work they were given, so this is not the effect of the level`);
+  }
+  const arms: [string, Set<string>][] = [
+    ["lowered", new Set(applied.filter((d) => rel(d) === "lower" && !d.fallback && d.effort!.ab !== "control").map((d) => d.id))],
+    ["at client level", new Set(decided.filter((d) => rel(d) === "same").map((d) => d.id))],
+  ];
+  const rows = arms.map(([name, ids]) => [name, outcomeArm(ctx, ids)] as const);
+  out.push("", "  main-chat outcomes (NOT randomised: a turn is lowered because the backend judged it easy, so these arms differ in difficulty):");
+  out.push(...table([["arm", "windows", "scored", "correction > 0", "windows with edits", "test failure", "revert"], ...rows.map(([n, a]) => [n, String(a.windows), String(a.scored), String(a.corrected), String(a.withEdits), String(a.testFailures), String(a.reverts)])], "    "));
+  const ab = (["treated", "control"] as const).map((arm) => [arm, outcomeArm(ctx, new Set(decided.filter((d) => d.effort!.ab === arm).map((d) => d.id)))] as const);
+  if (ab.some(([, a]) => a.windows > 0) || decided.some((d) => d.effort!.ab !== null)) {
+    out.push("", "  randomised comparison (REFLEX_EFFORT_AB): of the turns whose target differed from the client's level, a random fraction ran at the client's level instead:");
+    out.push(...table([["arm", "windows", "scored", "correction > 0", "windows with edits", "test failure", "revert"], ...ab.map(([n, a]) => [n, String(a.windows), String(a.scored), String(a.corrected), String(a.withEdits), String(a.testFailures), String(a.reverts)])], "    "));
+    const small = ab.filter(([, a]) => a.windows < MIN_OUTCOME_N);
+    if (small.length > 0) out.push(`    insufficient data: ${small.map(([n, a]) => `${n} n=${a.windows}`).join(", ")} < ${MIN_OUTCOME_N}; no rates shown and no comparison is made`);
+    else for (const [n, a] of ab) out.push(`    ${n}: correction > 0 in ${pct(a.corrected, a.scored)} of scored; test failure ${pct(a.testFailures, a.withEdits)} and revert ${pct(a.reverts, a.withEdits)} of windows with edits`);
+  }
+  return out;
+}
+
 export const SECTIONS: readonly { readonly id: string; readonly title: string; readonly run: (c: Ctx) => string[] }[] = [
   { id: "0", title: "0. Workflow profile", run: s0Workflow },
   { id: "1", title: "1. Decisions by kind, turn and tier", run: s1Decisions },
@@ -773,6 +833,7 @@ export const SECTIONS: readonly { readonly id: string; readonly title: string; r
   { id: "11", title: "11. Unclassified side-call fingerprints", run: s11Fingerprints },
   { id: "12", title: "12. Side-call routing estimate", run: s12SideRouting },
   { id: "13", title: "13. Escalations (REFLEX_ESCALATE)", run: s13Escalations },
+  { id: "14", title: "14. Effort (REFLEX_EFFORT)", run: s14Effort },
 ];
 
 // ---- 12. Side-call routing estimate ---------------------------------------------------------------------------

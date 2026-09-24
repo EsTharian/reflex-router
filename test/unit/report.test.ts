@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, buildReportJson, reportCommand, type ReportJson } from "../../src/report/index.js";
 import { parseDuration, parseRecords, sinceView } from "../../src/report/records.js";
-import { breakEvenOf, classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, escalationRows, abArms, abComparison, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { breakEvenOf, classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, s14Effort, escalationRows, abArms, abComparison, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
@@ -1055,3 +1055,30 @@ describe("report: the randomised REFLEX_AB comparison", () => {
     assert.match(lines, /the arms above differ in difficulty, not treatment/);
   });
 });
+
+describe("report: section 14 (REFLEX_EFFORT)", () => {
+  const withEffort = (r: Rec, effort: object | null, fields: string[] = []): Rec => ({ ...r, requested: { ...(r["requested"] as object), effort: "high" }, ...(effort ? { effort } : {}), forwarded: { ...(r["forwarded"] as object), rewritten: fields.length > 0, fields } });
+  it("counts decisions, applied levels, carried messages, and keeps the randomised arms apart", () => {
+    const log = toJsonl([
+      withEffort(dec({ id: "a", t: 0, probs: [0, 0, 1] }), { pick: "low", target: "low", via: "message", reasons: ["effort_down"], ab: "treated" }, ["messages.effort_added", "output_config.effort"]),
+      withEffort(dec({ id: "b", t: 1, probs: [0, 0, 1] }), { pick: "low", target: "high", via: "message", reasons: ["effort_down", "effort_ab_control"], ab: "control" }),
+      withEffort(dec({ id: "c", t: 2, probs: [0, 0, 1] }), { pick: "high", target: "high", via: null, reasons: ["effort_same"] }),
+      withEffort(dec({ id: "d", t: 3, turn: "continuation" }), null, ["messages.effort_reinserted:2"]),
+      outcome({ id: "o1", t: 5, decision: "a", score: 1 }),
+      outcome({ id: "o2", t: 6, decision: "b", score: 0 }),
+    ]);
+    const text = s14Effort(ctxOf(log)).join("\n");
+    assert.match(text, /decided turns: 3/);
+    assert.match(text, /target vs the client's level: (?=.*lower 1)(?=.*same 2)/);
+    assert.match(text, /applied: (?=.*message 2)(?=.*not applied 1)/);
+    assert.match(text, /applied levels: low 1, medium 0, high 1, xhigh 0, max 0/);
+    assert.match(text, /1 added one, 1 re-inserted earlier ones \(2 in all\)/);
+    assert.match(text, /randomised comparison \(REFLEX_EFFORT_AB\)/);
+    assert.match(text, /insufficient data: treated n=1, control n=1/);
+    assert.doesNotMatch(text, /correction > 0 in/, "no rates below MIN_OUTCOME_N");
+  });
+  it("with no effort records it says how to turn them on", () => {
+    assert.deepEqual(s14Effort(ctxOf(toJsonl([dec({ id: "x", t: 0 })]))), ["  (no effort decisions; REFLEX_EFFORT=1 turns them on)"]);
+  });
+});
+

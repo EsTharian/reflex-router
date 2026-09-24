@@ -155,6 +155,17 @@ export interface Config {
   readonly effort: boolean;
   /** REFLEX_EFFORT_UP=1: let REFLEX_EFFORT go above the client's level (costs more). Off by default. */
   readonly effortUp: boolean;
+  /**
+   * REFLEX_EFFORT_MIDTURN=1: also change the level on turns that need an inserted effort message (a main chat's later
+   * turns). Off by default: an inserted message ties the conversation to reflex (src/wire/effort.ts explains why).
+   */
+  readonly effortMidturn: boolean;
+  /**
+   * REFLEX_EFFORT_AB: the fraction (0..1) of turns whose effort target differs from the client's level that are held at
+   * the client's level at random instead (`effort.ab: "control"`; the rest `"treated"`), so report section 14 can
+   * compare outcomes causally. 0 disables it.
+   */
+  readonly effortAbFraction: number;
   /** Correction score (0..CORRECTION_SCORE_CAP) at or above which a closed window escalates the conversation. */
   readonly escalateThreshold: number;
   /** How many of the conversation's later new turns one escalation signal covers before it decays. */
@@ -206,7 +217,7 @@ export const SETTING_NAMES: readonly string[] = [
   "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS", "REFLEX_LAYA_CALIBRATION", "REFLEX_COMPARE",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
-  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_STATUSLINE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_EFFORT", "REFLEX_EFFORT_UP", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
+  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_STATUSLINE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_EFFORT", "REFLEX_EFFORT_UP", "REFLEX_EFFORT_MIDTURN", "REFLEX_EFFORT_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
 ];
 
@@ -368,6 +379,8 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     abFraction: parseBoundedNumber(setting(env, "REFLEX_AB"), 0, 0, 1, "REFLEX_AB", errors),
     effort: truthy(setting(env, "REFLEX_EFFORT")),
     effortUp: truthy(setting(env, "REFLEX_EFFORT_UP")),
+    effortMidturn: truthy(setting(env, "REFLEX_EFFORT_MIDTURN")),
+    effortAbFraction: parseBoundedNumber(setting(env, "REFLEX_EFFORT_AB"), 0, 0, 1, "REFLEX_EFFORT_AB", errors),
     escalateThreshold: parseBoundedNumber(setting(env, "REFLEX_ESCALATE_THRESHOLD"), DEFAULT_ESCALATE_THRESHOLD, 0, CORRECTION_SCORE_CAP, "REFLEX_ESCALATE_THRESHOLD", errors),
     escalateWindowTurns: parseBoundedInt(setting(env, "REFLEX_ESCALATE_WINDOW_TURNS"), DEFAULT_ESCALATE_WINDOW_TURNS, 1, 20, "REFLEX_ESCALATE_WINDOW_TURNS", errors),
   };
@@ -376,6 +389,8 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
   if (config.escalate === "on" && mode !== "route") warnings.push(`REFLEX_ESCALATE=on has no effect with REFLEX_MODE=${mode} (escalation only changes a request in route mode)`);
   if (config.effort && mode !== "route") warnings.push(`REFLEX_EFFORT has no effect with REFLEX_MODE=${mode} (effort is only changed in route mode)`);
   if (config.effortUp && !config.effort) warnings.push("REFLEX_EFFORT_UP has no effect without REFLEX_EFFORT=1");
+  if (config.effortMidturn && !config.effort) warnings.push("REFLEX_EFFORT_MIDTURN has no effect without REFLEX_EFFORT=1");
+  if (config.effortAbFraction > 0 && !config.effort) warnings.push("REFLEX_EFFORT_AB has no effect without REFLEX_EFFORT=1");
   if (config.delegate && mode === "off") warnings.push("REFLEX_DELEGATE has no effect with REFLEX_MODE=off (the hint travels through reflex's hooks)");
   return { ok: true, config, warnings };
 }

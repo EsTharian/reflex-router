@@ -476,13 +476,58 @@ level therefore makes the history the model saw differ from Claude Code's transc
 left out (state lost, or the conversation continued without reflex), that is a history edit: accepted on this account,
 unverified on accounts that the preserved-thinking check enforces (created on or after 2026-08-31).
 
-**Not tested:** Fable 5.1 and Opus 5 (the docs list per-message effort for both), whether Sonnet's top-level effort
-changes its thinking, and interactive (`cli`) sessions.
+**Opus 5, Fable 5.1 and Sonnet, and the preserved-thinking check** (`experiment.effort-verify-{1,2,3}` and
+`experiment.effort-verify-set`, est. $5.7 in all; the first run's puzzle probes were malformed (a user message after
+Claude Code's trailing system text message is a 400: "role 'system' must precede an 'assistant' message or end the
+array") and are superseded by the second and third). Same `-p` setup, `--probe-effort-verify`; Opus 5 is the Opus 5.5
+request with the model swapped, Fable the product's retarget, Sonnet likewise; the puzzle goes onto the last user
+message. Single runs, all answers correct:
 
-`REFLEX_EFFORT=1` applies exactly this (`src/wire/effort.ts`): on Opus 5.5 the effort message plus the top-level value,
-re-inserted after the message whose history hash `~/.reflex/effort.jsonl` holds; on Sonnet the top-level value on a
-conversation's first request only. The hash ignores `cache_control` and treats a string and one text block alike: on
-the 2.1.281 capture the same messages came back in both forms, and every re-insertion landed at its place.
+| Model | How | Cache on the change | Output tokens `low` / client (`high`) / `max` |
+| --- | --- | --- | --- |
+| Opus 5 | message only | kept (48,570 read); with the top-level value too: 13,628 rewritten | 1,556 / 2,354 / 2,676 |
+| Fable 5.1 | message only | kept (48,570 read); with the top-level value too: 13,628 rewritten | 2,215 / 2,563 / 5,908 |
+| Sonnet 5 | top-level | the whole prompt rewritten each time | 1,980 / 5,626 / 10,524 |
+
+The check (`thinking.block_binding.prefix_mismatch_behavior`, beta `thinking-binding-controls-2026-08-01`, which opts
+any account in), on Opus 5.5 with a thinking block produced after the change:
+
+| Change | Sent as reflex sends it (`"error"`) | Left out (continued without reflex), `"error"` | Left out, `"drop_block"` |
+| --- | --- | --- | --- |
+| effort-only message **inserted** after the user message | 200 | **400** "Invalid `signature` in `thinking` block. The block is bound to a different conversation." | 200, `thinking_dropped` / `prefix_binding_mismatch` |
+| level **set** on the turn's own effort-bearing system message | 200 | 200, nothing dropped | 200, nothing dropped |
+
+An inserted message sitting after Claude Code's trailing system text message (first verify run) was left out without
+a mismatch; treated as bound anyway. So an inserted message becomes part of what later thinking blocks are bound to;
+a changed level on an existing message does not (it is still part of the cache key: left out, it costs one rewrite).
+Without the controls this older account was not refused in any case.
+
+**What Claude Code does with that 400** ($0, a local stand-in upstream answering the second main request with the
+exact error): it resent the request with the thinking block removed from the history and carried on, no user
+action. So on an enforced account a conversation continued without reflex after an insert loses its earlier thinking
+blocks and one request, not the session.
+
+**Where the level goes** (smoke runs through the built `reflex`, `REFLEX_TIERS=opus`, then `-p --continue` in a new
+reflex process). A first request ends in Claude Code's system message carrying its own effort. Appending a second
+effort message after it cost the next request ~11k tokens of cache and so did the resumed turn (read 33,310 / written
+12,152, and 32,959 / 12,644, against 44,113 / 1,000 and 45,576 / 30 without `REFLEX_EFFORT`); changing that message's
+level in place gave exactly the numbers of the run without `REFLEX_EFFORT` at every request. Claude Code does the
+same itself when the level changes before a turn's system message is sent (the capture above).
+
+`REFLEX_EFFORT=1` applies this (`src/wire/effort.ts`): the level goes into the turn's own effort-bearing system message
+when there is one (`set`: a conversation's first request, main chat or subagent), else, only with
+`REFLEX_EFFORT_MIDTURN=1`, as an appended effort-only message (`insert`: a main chat's later turns). Opus 5.5 also gets
+the top-level value; Opus 5 and Fable do not; Sonnet gets the top-level value only where its cache is being written
+anyway. Every mark is re-applied from `~/.reflex/effort.jsonl` by the hash of Claude Code's own history up to it; the
+hash ignores `cache_control` and treats a string and one text block alike (on the 2.1.281 capture the same messages
+came back in both forms, and every re-application landed at its place).
+
+**Fable and interactive sessions** (`experiment.effort-verify-set-fable`, est. $0.70: the live main chat retargeted
+to Fable 5.1 with its first request's level `set`, Fable-signed thinking in the history). With the check on
+(`"error"`), the level re-applied was accepted with the cache kept (49,072 read), and left out it was accepted too with
+nothing dropped (a cache rewrite only), as on Opus 5.5. An interactive smoke run through the built `reflex`
+(`REFLEX_EFFORT=1 REFLEX_EFFORT_MIDTURN=1`, entrypoint `cli`): the first turn `set` to `low`, its tool-loop requests
+re-applied it (cache read 76,617 and 77,563), the second turn `insert`ed `medium` (read 77,972, written 37); all 200.
 
 ## 6. Responses
 

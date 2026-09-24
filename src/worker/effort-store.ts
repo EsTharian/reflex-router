@@ -6,10 +6,10 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Effort } from "../types.js";
 import type { Log } from "../util/log.js";
-import { isEffort } from "../wire/effort.js";
+import { isEffort, type EffortMark } from "../wire/effort.js";
 
 export class EffortStore {
-  readonly #byAnchor = new Map<string, Effort>();
+  readonly #byAnchor = new Map<string, EffortMark>();
 
   // ponytail: read once at start and never pruned. Another reflex session's additions are only seen after a restart
   // (matters only for one conversation open in two sessions at once); prune by age if the file ever grows large.
@@ -25,8 +25,8 @@ export class EffortStore {
     }
     for (const line of text.split("\n")) {
       try {
-        const o = JSON.parse(line) as { anchor?: unknown; effort?: unknown };
-        if (typeof o.anchor === "string" && /^[0-9a-f]{64}$/.test(o.anchor) && isEffort(o.effort)) this.#byAnchor.set(o.anchor, o.effort);
+        const o = JSON.parse(line) as { anchor?: unknown; effort?: unknown; op?: unknown };
+        if (typeof o.anchor === "string" && /^[0-9a-f]{64}$/.test(o.anchor) && isEffort(o.effort)) this.#byAnchor.set(o.anchor, { effort: o.effort, op: o.op === "set" ? "set" : "insert" });
       } catch {
         // a torn or foreign line; skip it
       }
@@ -37,17 +37,18 @@ export class EffortStore {
     return new EffortStore(path.join(home, "effort.jsonl"), logger);
   }
 
-  get(anchor: string): Effort | undefined {
+  get(anchor: string): EffortMark | undefined {
     return this.#byAnchor.get(anchor);
   }
 
   /** In memory at once; on disk synchronously, so the next request of the conversation can never miss it. */
-  add(anchor: string, effort: Effort): void {
-    if (this.#byAnchor.get(anchor) === effort) return;
-    this.#byAnchor.set(anchor, effort);
+  add(anchor: string, effort: Effort, op: EffortMark["op"] = "insert"): void {
+    const had = this.#byAnchor.get(anchor);
+    if (had?.effort === effort && had.op === op) return;
+    this.#byAnchor.set(anchor, { effort, op });
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
-      fs.appendFileSync(this.file, JSON.stringify({ v: 1, at: new Date().toISOString(), anchor, effort }) + "\n", { mode: 0o600 });
+      fs.appendFileSync(this.file, JSON.stringify({ v: 1, at: new Date().toISOString(), anchor, effort, op }) + "\n", { mode: 0o600 });
     } catch (e) {
       this.logger("warn", `effort store: could not write ${this.file}: ${e instanceof Error ? e.message : String(e)}`);
     }

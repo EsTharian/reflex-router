@@ -9,11 +9,11 @@ import type { DecisionBackend } from "../../src/backend/types.js";
 import { loadConfig } from "../../src/config.js";
 import { DecisionLog, type DecisionRecord } from "../../src/log/decision-log.js";
 import { effortPlan } from "../../src/policy.js";
-import type { Decision, Effort } from "../../src/types.js";
+import type { Decision } from "../../src/types.js";
 import { Breaker } from "../../src/worker/breaker.js";
 import { EffortStore } from "../../src/worker/effort-store.js";
 import { Router } from "../../src/worker/router.js";
-import { effortVia, withEffort, withTopEffort } from "../../src/wire/effort.js";
+import { effortVia, messageEffort, withEffort, withTopEffort, type EffortMark } from "../../src/wire/effort.js";
 import { loadFixtures } from "../support/fixtures.js";
 import { waitFor } from "../support/http.js";
 
@@ -52,34 +52,55 @@ describe("effort on the wire", () => {
   ] };
   const buf = (o: unknown): Buffer => Buffer.from(JSON.stringify(o));
 
-  it("adds Claude Code's effort-only message after the new turn and sets the top-level value", () => {
+  const storeOf = (e: ReturnType<typeof withEffort>): Map<string, EffortMark> => new Map([[e!.added!.anchor, { effort: e!.added!.effort, op: e!.added!.op }]]);
+
+  it("a turn ending in Claude Code's own effort-bearing system message: that message's level is changed (op set)", () => {
     const e = withEffort(buf(first), () => undefined, "low")!;
-    assert.equal(shape(e.body), "u s:high s:low");
-    assert.deepEqual(msgs(e.body).at(-1), { role: "system", content: [], output_config: { effort: "low" } });
+    assert.equal(shape(e.body), "u s:low");
+    assert.deepEqual(msgs(e.body).at(-1), { role: "system", content: [{ type: "text", text: "reminders" }], output_config: { effort: "low" } });
     assert.equal(top(e.body), "low");
-    assert.deepEqual(e.fields, ["messages.effort_added", "output_config.effort"]);
+    assert.deepEqual(e.fields, ["messages.effort_set", "output_config.effort"]);
+    assert.equal(e.added!.op, "set");
     assert.match(e.added!.anchor, /^[0-9a-f]{64}$/);
   });
 
-  it("re-inserts it on later requests at the same place, whatever cache_control and string/block form do", () => {
-    const a = withEffort(buf(first), () => undefined, "low")!;
-    const store = new Map<string, Effort>([[a.added!.anchor, "low"]]);
-    const e = withEffort(buf(next), (h) => store.get(h), null)!;
-    assert.equal(shape(e.body), "u s:high s:low a u");
+  it("any other turn: Claude Code's effort-only message is appended (op insert)", () => {
+    const e = withEffort(buf(next), () => undefined, "low")!;
+    assert.equal(shape(e.body), "u s:high a u s:low");
+    assert.deepEqual(msgs(e.body).at(-1), { role: "system", content: [], output_config: { effort: "low" } });
+    assert.equal(e.added!.op, "insert");
+    const trailing = { ...next, messages: [...next.messages, { role: "system", content: [{ type: "text", text: "reminder" }] }] };
+    assert.equal(shape(withEffort(buf(trailing), () => undefined, "low")!.body), "u s:high a u s s:low", "after a system message with no effort of its own");
+  });
+
+  it("re-applies it on later requests at the same place, whatever cache_control and string/block form do", () => {
+    const set = storeOf(withEffort(buf(first), () => undefined, "low"));
+    const e = withEffort(buf(next), (h) => set.get(h), null)!;
+    assert.equal(shape(e.body), "u s:low a u", "Claude Code sends its message back at its own level; reflex's is re-applied");
     assert.equal(top(e.body), "low");
     assert.deepEqual(e.fields, ["messages.effort_reinserted:1", "output_config.effort"]);
     assert.equal(e.added, null);
+    const ins = storeOf(withEffort(buf(next), () => undefined, "max"));
+    const later = { ...next, messages: [...next.messages, { role: "assistant", content: [{ type: "text", text: "ok" }] }, { role: "user", content: [{ type: "text", text: "go on" }] }] };
+    assert.equal(shape(withEffort(buf(later), (h) => ins.get(h), null)!.body), "u s:high a u s:max a u");
   });
 
-  it("a new level on a later turn goes at its end; the level already in effect is not added twice", () => {
-    const a = withEffort(buf(first), () => undefined, "low")!;
-    const store = new Map<string, Effort>([[a.added!.anchor, "low"]]);
-    assert.equal(shape(withEffort(buf(next), (h) => store.get(h), "max")!.body), "u s:high s:low a u s:max");
-    const same = withEffort(buf(next), (h) => store.get(h), "low")!;
+  it("a new level on a later turn goes at its end; the level already in effect is not put in twice", () => {
+    const set = storeOf(withEffort(buf(first), () => undefined, "low"));
+    assert.equal(shape(withEffort(buf(next), (h) => set.get(h), "max")!.body), "u s:low a u s:max");
+    const same = withEffort(buf(next), (h) => set.get(h), "low")!;
     assert.equal(same.added, null);
-    assert.equal(shape(same.body), "u s:high s:low a u");
+    assert.equal(shape(same.body), "u s:low a u");
     // back to the client's own level: a message saying so, since the history still holds "low"
-    assert.equal(shape(withEffort(buf(next), (h) => store.get(h), "high")!.body), "u s:high s:low a u s:high");
+    assert.equal(shape(withEffort(buf(next), (h) => set.get(h), "high")!.body), "u s:low a u s:high");
+  });
+
+  it("without allowInsert a turn that would need an inserted message is left alone (set still works)", () => {
+    const b = buf(next);
+    const e = withEffort(b, () => undefined, "low", true, false)!;
+    assert.equal(e.body, b);
+    assert.equal(e.insertRefused, true);
+    assert.equal(withEffort(buf(first), () => undefined, "low", true, false)!.added?.op, "set");
   });
 
   it("nothing stored and nothing to add: the very same bytes (byte-identical passthrough)", () => {
@@ -94,11 +115,18 @@ describe("effort on the wire", () => {
     assert.equal(withEffort(buf(withOwn), () => undefined, "max")!.added, null);
   });
 
-  it("Sonnet: top-level only; Opus 5.5: by message; Opus 5, Fable and Haiku: not at all", () => {
-    assert.equal(effortVia("claude-opus-5-5", false), "message");
+  it("by message on Opus 5.5 (with the top-level value), Opus 5 and Fable 5.1 (message only); Sonnet top-level; Haiku none", () => {
+    for (const m of ["claude-opus-5-5", "claude-opus-5-5[1m]", "claude-opus-5", "claude-opus-5[1m]", "claude-fable-5-1"]) assert.equal(effortVia(m, false), "message", m);
+    assert.equal(messageEffort("claude-opus-5-5")?.top, true);
+    assert.equal(messageEffort("claude-opus-5")?.top, false, "a top-level change rewrites Opus 5's messages cache");
+    assert.equal(messageEffort("claude-fable-5-1")?.top, false);
     assert.equal(effortVia("claude-sonnet-5", true), "top-level");
     assert.equal(effortVia("claude-sonnet-5", false), null, "a top-level change rewrites Sonnet's whole cache");
-    for (const m of ["claude-opus-5", "claude-fable-5-1", "claude-haiku-4-5-20251001"]) assert.equal(effortVia(m, true), null, m);
+    assert.equal(effortVia("claude-haiku-4-5-20251001", true), null);
+    const noTop = withEffort(buf(next), () => undefined, "low", false)!;
+    assert.equal(shape(noTop.body), "u s:high a u s:low");
+    assert.equal(top(noTop.body), "high", "message only: the top-level value is left alone");
+    assert.deepEqual(noTop.fields, ["messages.effort_added"]);
     const b = buf(first);
     assert.equal(top(withTopEffort(b, "max")!.body), "max");
     assert.equal(withTopEffort(b, "high")!.body, b);
@@ -109,12 +137,12 @@ describe("EffortStore", () => {
   it("keeps anchors across instances, skips bad lines, writes hashes and levels only", () => {
     const home = tmp();
     const a = "a".repeat(64);
-    EffortStore.at(home, () => undefined).add(a, "low");
+    EffortStore.at(home, () => undefined).add(a, "low", "set");
     fs.appendFileSync(path.join(home, "effort.jsonl"), "torn{\n" + JSON.stringify({ anchor: "short", effort: "low" }) + "\n" + JSON.stringify({ anchor: "b".repeat(64), effort: "huge" }) + "\n");
     const again = EffortStore.at(home, () => undefined);
-    assert.equal(again.get(a), "low");
+    assert.deepEqual(again.get(a), { effort: "low", op: "set" });
     assert.equal(again.get("b".repeat(64)), undefined);
-    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(home, "effort.jsonl"), "utf8").split("\n")[0]!) as Json).sort(), ["anchor", "at", "effort", "v"]);
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(home, "effort.jsonl"), "utf8").split("\n")[0]!) as Json).sort(), ["anchor", "at", "effort", "op", "v"]);
     assert.equal(fs.statSync(path.join(home, "effort.jsonl")).mode & 0o777, 0o600);
   });
 });
@@ -130,7 +158,8 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
   // messages: the history Claude Code would really send back.
   const contBody = { ...get("main-continuation").body, messages: [...(newTurn.body["messages"] as unknown[]), ...(get("main-continuation").body["messages"] as unknown[]).slice(2)] };
 
-  function harness(env: Record<string, string>, demand: number, home = tmp(), tier: "opus" | "sonnet" = "opus") {
+  function harness(env: Record<string, string>, demand: number, home = tmp(), tier: "opus" | "sonnet" = "opus", random = 0.5) {
+    let tierNow = tier;
     const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "200", ...env });
     assert.ok(loaded.ok);
     const backend: DecisionBackend = {
@@ -138,7 +167,7 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
       decide: () =>
         Promise.resolve<Decision>({
           answers: {
-            tier: { type: "choice", choice: tier, confidence: 0.9, probabilities: { haiku: 0, sonnet: tier === "sonnet" ? 1 : 0, opus: tier === "opus" ? 1 : 0 } },
+            tier: { type: "choice", choice: tierNow, confidence: 0.9, probabilities: { haiku: 0, sonnet: tierNow === "sonnet" ? 1 : 0, opus: tierNow === "opus" ? 1 : 0 } },
             reasoning_demand: { type: "score", score: demand, confidence: 0.9, probabilities: {} },
           },
           latencyMs: 1,
@@ -149,10 +178,12 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     };
     const log = new DecisionLog(home, false);
     const store = EffortStore.at(home, () => undefined);
-    const router = new Router({ config: loaded.config, effectiveMode: "route", degradedReason: null, claudeVersion: "2.1.280", backend, breaker: new Breaker(), log, logger: () => undefined, effortStore: store });
+    const router = new Router({ config: loaded.config, effectiveMode: "route", degradedReason: null, claudeVersion: "2.1.280", backend, breaker: new Breaker(), log, logger: () => undefined, effortStore: store, random: () => random });
     const records = (): DecisionRecord[] => (fs.existsSync(log.file) ? fs.readFileSync(log.file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as DecisionRecord) : []);
     return {
       home,
+      router,
+      setTier: (t: "opus" | "sonnet") => { tierNow = t; },
       async send(req: { headers: Json; body: Json }, status = 200) {
         const before = records().length;
         const p = await router.prepare("POST", "/v1/messages?beta=true", req.headers as never, Buffer.from(JSON.stringify(req.body)));
@@ -171,22 +202,22 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     const h = harness({ REFLEX_EFFORT: "1" }, 0);
     const a = await h.send(newTurn);
     assert.equal(a.rewritten, true);
-    assert.equal(msgs(a.sent).length, 3);
-    assert.deepEqual(msgs(a.sent).at(-1), { role: "system", content: [], output_config: { effort: "low" } });
+    assert.equal(msgs(a.sent).length, 2, "the turn's own system message carries the new level");
+    assert.equal(msgs(a.sent)[1]!.output_config?.effort, "low");
     assert.equal(top(a.sent), "low");
     assert.equal(model(a.sent), "claude-opus-5-5", "the model is left alone");
     assert.deepEqual(a.rec.effort, { pick: "low", target: "low", via: "message", reasons: ["effort_down"] });
-    assert.deepEqual(a.rec.forwarded.fields, ["messages.effort_added", "output_config.effort"]);
+    assert.deepEqual(a.rec.forwarded.fields, ["messages.effort_set", "output_config.effort"]);
 
     const c = await h.send({ headers: newTurn.headers, body: contBody });
-    assert.equal(msgs(c.sent)[2]!.output_config?.effort, "low");
-    assert.equal(msgs(c.sent)[3]!.role, "assistant");
+    assert.equal(msgs(c.sent).length, (contBody.messages).length, "nothing added: the level is re-applied in place");
+    assert.equal(msgs(c.sent)[1]!.output_config?.effort, "low");
     assert.ok(c.rec.forwarded.fields.includes("messages.effort_reinserted:1"));
 
-    // a fresh worker (restart, or a resume through reflex) still re-inserts it, even with the setting off now
+    // a fresh worker (restart, or a resume through reflex) still re-applies it, even with the setting off now
     const fresh = harness({}, 0, h.home);
     const r = await fresh.send({ headers: newTurn.headers, body: contBody });
-    assert.equal(msgs(r.sent)[2]!.output_config?.effort, "low");
+    assert.equal(msgs(r.sent)[1]!.output_config?.effort, "low");
   });
 
   it("above the client's level only with REFLEX_EFFORT_UP", async () => {
@@ -225,5 +256,72 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     const c = await h.send({ headers: newTurn.headers, body: contBody });
     assert.equal(model(c.sent), "claude-sonnet-5");
     assert.equal(top(c.sent), "low");
+  });
+
+  const withModel = (req: { headers: Json; body: Json }, model: string) => ({ headers: req.headers, body: { ...req.body, model } });
+  // A later user-typed turn of the same conversation: not the first request, so Sonnet's cache is not fresh.
+  const laterTurn = { headers: newTurn.headers, body: { ...newTurn.body, messages: [...(newTurn.body["messages"] as unknown[]), { role: "assistant", content: [{ type: "text", text: "done" }] }, { role: "user", content: [{ type: "text", text: "now rename the helper too" }] }] } };
+
+  it("Opus 5: the level by message only, the top-level value untouched (it would rewrite the cache)", async () => {
+    const a = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1" }, 0).send(withModel(laterTurn, "claude-opus-5"));
+    assert.deepEqual(msgs(a.sent).at(-1), { role: "system", content: [], output_config: { effort: "low" } });
+    assert.equal(top(a.sent), "medium");
+    assert.deepEqual(a.rec.forwarded.fields, ["messages.effort_added"]);
+  });
+
+  it("Sonnet mid-conversation: the level is set where a model switch rewrites the cache anyway, not on a plain later turn", async () => {
+    const env = { REFLEX_EFFORT: "1", REFLEX_MAX_SWITCH_PENALTY_USD: "100", REFLEX_SWITCH_BREAKEVEN_REQUESTS: "0" };
+    const h = harness(env, 0);
+    await h.send(newTurn); // stays on Opus 5.5: the conversation's cache is on Opus
+    h.setTier("sonnet");
+    const sw = await h.send(laterTurn);
+    assert.equal(model(sw.sent), "claude-sonnet-5");
+    assert.equal(top(sw.sent), "low");
+    assert.equal(sw.rec.effort?.via, "top-level");
+    const plain = harness({ REFLEX_EFFORT: "1" }, 0, tmp(), "sonnet");
+    const p = await plain.send(withModel(laterTurn, "claude-sonnet-5"));
+    assert.equal(p.rewritten, false, "a Sonnet conversation's cache would be lost for nothing");
+  });
+
+  it("MIDTURN: a later main-chat turn is still decided for effort when the guard keeps the model (the tier move stays blocked)", async () => {
+    const h = harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1" }, 0);
+    await h.send(newTurn, 200);
+    h.setTier("sonnet");
+    const b = await h.send(laterTurn);
+    assert.equal(model(b.sent), "claude-opus-5-5");
+    assert.ok(b.rec.plan?.reasons.includes("guard_blocked"));
+    assert.equal(b.rec.effort?.via, "message");
+  });
+
+  it("REFLEX_ESCALATE=1: after an outcome signal the next turn keeps the client's level", async () => {
+    const h = harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_ESCALATE: "1" }, 0);
+    const a = await h.send(newTurn);
+    assert.equal(a.rec.effort?.target, "low");
+    h.router.onEscalationSignal({ conv: a.rec.conv!, signal: "test_failure", score: null, decisionId: a.rec.id, turnSeq: 1 });
+    const b = await h.send(laterTurn);
+    assert.equal(b.rec.effort?.target, "medium");
+    assert.ok(b.rec.effort?.reasons.includes("effort_escalated"));
+    assert.equal(msgs(b.sent).at(-1)?.output_config?.effort, "medium", "back to the client's level, by message");
+  });
+
+  it("REFLEX_EFFORT_AB: a control turn is held at the client's level and tagged; a treated one is tagged", async () => {
+    const control = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_AB: "0.5" }, 0, tmp(), "opus", 0.1).send(newTurn);
+    assert.equal(control.rewritten, false);
+    assert.equal(control.rec.effort?.ab, "control");
+    assert.ok(control.rec.effort?.reasons.includes("effort_ab_control"));
+    const treated = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_AB: "0.5" }, 0, tmp(), "opus", 0.9).send(newTurn);
+    assert.equal(treated.rec.effort?.ab, "treated");
+    assert.equal(top(treated.sent), "low");
+    const same = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_AB: "0.5" }, 1, tmp(), "opus", 0.1).send(newTurn);
+    assert.equal(same.rec.effort?.ab, undefined, "a turn already at the client's level never enters the randomisation");
+  });
+
+  it("without MIDTURN a later main-chat turn keeps the client's level: nothing inserted, the reason recorded", async () => {
+    // the first turn ran at the client's level (nothing stored), so this turn would need an inserted message
+    // (REFLEX_UPGRADES=on makes the backend be asked on a later main-chat turn; without MIDTURN effort alone does not)
+    const b = await harness({ REFLEX_EFFORT: "1", REFLEX_UPGRADES: "on" }, 0).send(laterTurn);
+    assert.equal(b.rewritten, false);
+    assert.equal(b.rec.effort?.via, null);
+    assert.ok(b.rec.effort?.reasons.includes("effort_midturn_off"));
   });
 });

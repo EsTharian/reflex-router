@@ -193,6 +193,15 @@ describe("tracker -> router escalation signal", () => {
     assert.deepEqual(signals, []);
   });
 
+  it("a window whose turn ran on the model asked for but at a LOWER effort (REFLEX_EFFORT) hands over its signal", () => {
+    const { t, signals, tick } = tracker();
+    t.ingest(prompt("P1", "make it work"));
+    t.onDecision(decision({ id: "D1", sentModel: "claude-opus-5", effortLowered: true }));
+    tick(1000);
+    t.ingest(prompt("P2", "no, that's wrong"));
+    assert.deepEqual(signals.map((s) => s.decisionId), ["D1"]);
+  });
+
   it("a consumer that throws never disturbs the records", () => {
     const out: TrackerRecord[] = [];
     const t = new OutcomeTracker({ emit: (r) => out.push(r), onSignal: () => { throw new Error("boom"); }, now: () => 1, newId: () => "x" });

@@ -38,6 +38,8 @@ export interface DecisionInfo {
   readonly conv: string | null;
   readonly requestedModel: string | null;
   readonly sentModel: string | null;
+  /** REFLEX_EFFORT ran this turn below the client's effort level (the model may be the one asked for). */
+  readonly effortLowered?: boolean;
 }
 
 type RevertKind = "inverse_edit" | "write_restore" | "git_restore";
@@ -452,13 +454,14 @@ export class OutcomeTracker {
   /**
    * Hands one escalation signal to whoever wired `onSignal` (the router, only when REFLEX_ESCALATE=1). Never throws
    * into the tracker: outcome capture must keep writing records whatever the consumer does. Only a window whose
-   * decision was ROUTED is reported — a turn that ran on the model the client asked for has nothing to escalate to,
-   * and reporting it would let escalation fire on requests reflex never touched.
+   * decision was ROUTED (another model, or a lower effort level) is reported — a turn that ran exactly as the client
+   * asked has nothing to escalate to, and reporting it would let escalation fire on requests reflex never touched.
    */
   #signal(w: Window, e: { signal: EscalationSignal; score: number | null; turnSeq: number }): void {
     const d = w.decision;
     if (this.d.onSignal === undefined || d === null || d.conv === null) return;
-    if (d.sentModel === null || d.requestedModel === null || d.sentModel === d.requestedModel) return;
+    const moved = d.sentModel !== null && d.requestedModel !== null && d.sentModel !== d.requestedModel;
+    if (!moved && d.effortLowered !== true) return;
     try {
       this.d.onSignal({ conv: d.conv, signal: e.signal, score: e.score, decisionId: d.id, turnSeq: e.turnSeq });
     } catch {

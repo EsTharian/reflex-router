@@ -82,6 +82,21 @@ export interface Dec {
   readonly escalation: EscalationRec | null;
   /** `REFLEX_ESCALATE=shadow`: what escalation would have done. Never set alongside `escalation`. */
   readonly wouldEscalate: EscalationRec | null;
+  /** The client's effort level (`requested.effort`); null when it sent none. */
+  readonly requestedEffort: string | null;
+  /** REFLEX_EFFORT's decision on a new turn (`effort`); null with the setting off or on other requests. */
+  readonly effort: EffortRec | null;
+  /** From `forwarded.fields`: this request carried an effort message reflex added now, and how many it re-inserted. */
+  readonly effortAdded: boolean;
+  readonly effortReinserted: number;
+}
+
+export interface EffortRec {
+  readonly pick: string | null;
+  readonly target: string | null;
+  readonly via: string | null;
+  readonly reasons: readonly string[];
+  readonly ab: string | null;
 }
 
 export interface EscalationRec {
@@ -131,6 +146,12 @@ export interface Records {
   readonly sources: readonly string[];
 }
 
+const toEffort = (v: unknown): EffortRec | null => {
+  if (!isObj(v)) return null;
+  const r = v["reasons"];
+  return { pick: str(v["pick"]), target: str(v["target"]), via: str(v["via"]), reasons: Array.isArray(r) ? r.filter((x): x is string => typeof x === "string") : [], ab: str(v["ab"]) };
+};
+
 const toEscalation = (e: unknown): EscalationRec | null => {
   if (!isObj(e)) return null;
   const signal = str(e["signal"]);
@@ -154,6 +175,8 @@ export function toDec(o: J): Dec | null {
   const am = at(d, "pick_argmax");
   const g = at(o, "guard");
   const reasons = at(o, "plan", "reasons");
+  const fl = at(o, "forwarded", "fields");
+  const fields = Array.isArray(fl) ? fl.filter((f): f is string => typeof f === "string") : [];
   return {
     id,
     at: atStr,
@@ -201,6 +224,10 @@ export function toDec(o: J): Dec | null {
     backendVersion: str(o["backend_version"]) ?? str(at(o, "decision", "backendModel")),
     escalation: toEscalation(at(o, "escalation")),
     wouldEscalate: toEscalation(at(o, "would_escalate")),
+    requestedEffort: str(at(o, "requested", "effort")),
+    effort: toEffort(at(o, "effort")),
+    effortAdded: fields.includes("messages.effort_added"),
+    effortReinserted: fields.reduce((n, f) => n + (f.startsWith("messages.effort_reinserted:") ? Number(f.slice("messages.effort_reinserted:".length)) || 0 : 0), 0),
   };
 }
 

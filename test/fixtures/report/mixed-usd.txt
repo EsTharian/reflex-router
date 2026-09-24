@@ -210,3 +210,6 @@ reflex report
 
 13. Escalations (REFLEX_ESCALATE)
   no escalated turns in this log (REFLEX_ESCALATE is off by default; a turn is escalated only after a routed turn's outcome window closes with a signal)
+
+14. Effort (REFLEX_EFFORT)
+  (no effort decisions; REFLEX_EFFORT=1 turns them on)

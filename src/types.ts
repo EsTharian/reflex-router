@@ -123,7 +123,13 @@ export type EffortReason =
   /** The backend's level is above the client's and REFLEX_EFFORT_UP is off: the client's level is kept. */
   | "effort_up_disabled"
   /** The client sent no effort (or one reflex does not know), so there is nothing to move from. */
-  | "effort_requested_unknown";
+  | "effort_requested_unknown"
+  /** REFLEX_ESCALATE=1: the conversation's previous routed or effort-lowered turn closed with an outcome signal, so this turn does not go below the client's level. */
+  | "effort_escalated"
+  /** REFLEX_EFFORT_AB: held at the client's level at random, as the control arm. */
+  | "effort_ab_control"
+  /** The level could only be applied by inserting a message (a later main-chat turn) and REFLEX_EFFORT_MIDTURN is off. */
+  | "effort_midturn_off";
 
 export interface RoutePlan {
   /** Where the request would go; null = leave it on the requested model. */

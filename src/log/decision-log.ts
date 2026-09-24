@@ -93,7 +93,14 @@ export interface DecisionRecord {
    * verified for, or a failed decision) and why. Absent with the setting off. What a request's body carried is in
    * `forwarded.fields` (`messages.effort_added`, `messages.effort_reinserted:<n>`, `output_config.effort`).
    */
-  readonly effort?: { readonly pick: Effort; readonly target: Effort | null; readonly via: "message" | "top-level" | null; readonly reasons: readonly EffortReason[] } | null;
+  readonly effort?: {
+    readonly pick: Effort;
+    readonly target: Effort | null;
+    readonly via: "message" | "top-level" | null;
+    readonly reasons: readonly EffortReason[];
+    /** REFLEX_EFFORT_AB arm, only on turns whose target differed from the client's level; absent otherwise. */
+    readonly ab?: "control" | "treated";
+  } | null;
   /** Main-chat cost guard, when it was evaluated. */
   readonly guard: { readonly allowed: boolean; readonly reason: string; readonly ctx: number | null; readonly penalty_usd: number | null; readonly saving_usd: number | null } | null;
   /** Manual `!tier` override in effect for this decision (main chat: from the prompt; subagent: captured at its first request). */

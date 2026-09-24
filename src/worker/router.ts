@@ -22,7 +22,7 @@ import type { Log } from "../util/log.js";
 import { isPromptTooLong } from "../wire/anthropic.js";
 import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
 import { sideFingerprint, type SideFingerprint } from "../wire/fingerprint.js";
-import { effortVia, takesEffortMessage, withEffort, withTopEffort, type EffortEdit } from "../wire/effort.js";
+import { EFFORTS, effortVia, messageEffort, withEffort, withTopEffort, type EffortEdit } from "../wire/effort.js";
 import { isVerifiedRetarget, retarget, retargetBetas } from "../wire/rewrite.js";
 import { ShapeTracker } from "../wire/shape.js";
 import { DRIFT_MIN_TYPED_PROMPTS, DriftTracker } from "../wire/drift.js";
@@ -175,7 +175,7 @@ export class Router {
    * lifetime whether or not there was anywhere to move to, so a signal cannot outlive its window by sitting on a
    * conversation whose pick is already at the requested tier.
    */
-  #escalate(v: RequestView, kind: "main" | "subagent", pick: Tier, requested: Tier, ctx: number): { tier: Tier; state: EscalationState } | null {
+  #escalate(v: RequestView, kind: "main" | "subagent", pick: Tier, requested: Tier, ctx: number): { tier: Tier | null; state: EscalationState } | null {
     // Subagents are separate conversations with separate pins; a subagent failing says nothing about the main chat,
     // and side calls and pinned continuations never reach this method at all (only `turn === "new"` decides).
     if (kind !== "main" || v.convKey === null) return null;
@@ -184,8 +184,8 @@ export class Router {
     const next = decay(state);
     if (next === null) this.#escalations.delete(v.convKey);
     else this.#escalations.set(v.convKey, next);
-    const tier = escalatedTier(pick, requested, this.d.config.escalateTarget, this.d.config, ctx);
-    return tier === null ? null : { tier, state };
+    // The state is returned even with nowhere to move the tier: it still keeps this turn's effort at the client's level.
+    return { tier: escalatedTier(pick, requested, this.d.config.escalateTarget, this.d.config, ctx), state };
   }
 
   #session(v: RequestView): SessionState {
@@ -340,19 +340,24 @@ export class Router {
     let effortAdded: EffortEdit["added"] = null;
     let effortApplied: "message" | "top-level" | null = null;
     let effortEdited = false;
+    let effortRefused = false;
     const store = this.d.effortStore;
     if (conv) {
       const add = routing && this.d.config.effort && !s.effortOff ? effortTarget : null;
-      const via = effortVia(sentModel, v.facts.nonSystemMessages === 1);
+      // Sonnet's cache is written anyway on a conversation's first request and when this request moves it to another model.
+      const cacheFresh = v.facts.nonSystemMessages === 1 || (conv.cacheTier !== null && conv.cacheTier !== tierOfModel(sentModel));
+      const via = effortVia(sentModel, cacheFresh);
+      const me = messageEffort(sentModel);
       let e: EffortEdit | null = null;
-      if (takesEffortMessage(sentModel) && store) {
-        e = withEffort(sendBody, (a) => store.get(a), via === "message" ? add : null);
+      if (me && store) {
+        e = withEffort(sendBody, (a) => store.get(a), via === "message" ? add : null, me.top, this.d.config.effortMidturn);
         effortAdded = e?.added ?? null;
+        effortRefused = e?.insertRefused === true;
       } else if (tierOfModel(sentModel) === "sonnet") {
         if (via === "top-level" && add !== null) conv.topEffort = add;
         if (conv.topEffort !== null) e = withTopEffort(sendBody, conv.topEffort);
       }
-      if (add !== null && via !== null) effortApplied = via;
+      if (add !== null && via !== null && !effortRefused) effortApplied = via;
       if (e && e.body !== sendBody) {
         sendBody = e.body;
         fields = [...fields, ...e.fields];
@@ -377,7 +382,7 @@ export class Router {
       headers: (st, h) => {
         status = st;
         // The model saw the added message only if the request went out as rewritten and was accepted.
-        if (st === 200 && fallbackStatus === null && effortAdded && store) store.add(effortAdded.anchor, effortAdded.effort);
+        if (st === 200 && fallbackStatus === null && effortAdded && store) store.add(effortAdded.anchor, effortAdded.effort, effortAdded.op);
         const arrived = this.#now();
         msToHeaders = arrived - started;
         upstreamFirstByteMs = arrived - forwardStarted;
@@ -448,7 +453,7 @@ export class Router {
               cache_ttl_beta: v.facts.betaExtendedCacheTtl,
               requested: { model: v.requestedModel, tier: requestedTier, effort: v.requestedEffort },
               ...outcome.part,
-              ...(outcome.part.effort ? { effort: { ...outcome.part.effort, via: fallbackStatus === null ? effortApplied : null } } : {}),
+              ...(outcome.part.effort ? { effort: { ...outcome.part.effort, via: fallbackStatus === null ? effortApplied : null, ...(effortRefused ? { reasons: [...outcome.part.effort.reasons, "effort_midturn_off" as const] } : {}) } } : {}),
               plan: p ? { ...p, routed_to: sentModel, reasons: [...p.reasons, ...extraReasons] } : extraReasons.length > 0 ? { target: null, would_route_to: null, routed_to: sentModel, reasons: extraReasons, would_upgrade: false } : null,
               pin: pinState,
               forwarded: { requested_model: v.requestedModel, model: sentModel, rewritten: rewritten && fallbackStatus === null, fields: rewritten ? fields : [], fallback: fallbackStatus !== null, fallback_status: fallbackStatus, fallback_error: fallbackError },
@@ -461,7 +466,9 @@ export class Router {
               // Only next to a decision of the primary backend: a comparison needs both sides.
               ...(compare !== undefined && outcome.part.decision !== null ? { compare } : {}),
             };
-            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, interjection: v.interjection, conv: v.convKey, requestedModel: v.requestedModel, sentModel });
+            const et = outcome.part.effort?.target ?? null;
+            const effortLowered = fallbackStatus === null && effortApplied !== null && et !== null && EFFORTS.indexOf(et) < EFFORTS.indexOf(v.requestedEffort as Effort);
+            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, interjection: v.interjection, conv: v.convKey, requestedModel: v.requestedModel, sentModel, effortLowered });
             this.d.onRecord?.(record, v.sessionId);
             return this.d.log.append(record, v.turn === "new" ? v.task : null);
           })
@@ -568,7 +575,10 @@ export class Router {
     const guardFor = (to: Tier): GuardResult =>
       guard({ cacheTier: conv?.cacheTier ?? null, to, ctxTokens: conv?.lastCtx ?? null, ttl: v.facts.betaExtendedCacheTtl ? "1h" : "5m", fresh, maxPenaltyUsd: cfg.maxSwitchPenaltyUsd,
         perRequest: conv && conv.sums.n > 0 ? { write: conv.sums.write / conv.sums.n, output: conv.sums.output / conv.sums.n } : null, breakevenRequests: cfg.switchBreakevenRequests });
-    if (kind === "main" && routing && requested !== null && !belowRequested && cfg.upgrades === "off") {
+    // With REFLEX_EFFORT_MIDTURN on a model that takes the effort message the backend is asked anyway: a later turn's
+    // level can change without leaving the cache, and a tier move still meets the guard after the decision.
+    const effortWanted = cfg.effort && cfg.effortMidturn && messageEffort(v.requestedModel) !== null;
+    if (kind === "main" && routing && requested !== null && !belowRequested && cfg.upgrades === "off" && !effortWanted) {
       const cheapest = cfg.tiers.find((t) => tierRank(t) < tierRank(requested));
       if (cheapest === undefined) return none({ plan: planRecord(null, ["no_enabled_tier"]) });
       const pre = guardFor(cheapest);
@@ -590,9 +600,9 @@ export class Router {
       const j = judge(decision, cfg);
       if (!j.ok) return failed({ backend: backend.id, sent, error: `invalid_answer:${j.error}` });
       const p = plan({ kind, requestedModel: v.requestedModel, contextTokens: ctx }, j.judgement, cfg);
-      const effort = cfg.effort ? effortPlan(j.judgement.vetoes["reasoning_demand"], v.requestedEffort, cfg.effortUp) : null;
+      const eff = cfg.effort ? effortPlan(j.judgement.vetoes["reasoning_demand"], v.requestedEffort, cfg.effortUp) : null;
+      let effort: DecisionPart["effort"] = eff ? { ...eff, via: null } : undefined;
       const part: Partial<DecisionPart> = {
-        ...(effort ? { effort: { ...effort, via: null } } : {}),
         backend: backend.id,
         sent,
         decision: {
@@ -621,7 +631,11 @@ export class Router {
         // Escalation, if any, is applied HERE: before the guard branch below, so it raises the floor the guard
         // evaluates against and never overrules the guard's own answer. It only ever moves `desired` up.
         const esc = this.#escalate(v, kind, desired, requested, ctx);
-        if (esc !== null) {
+        // An escalated conversation's turn never runs below the client's effort level either (on, not shadow).
+        if (esc !== null && cfg.escalate === "on" && effort?.target && EFFORTS.indexOf(effort.target) < EFFORTS.indexOf(v.requestedEffort as Effort)) {
+          effort = { ...effort, target: v.requestedEffort as Effort, reasons: [...effort.reasons, "effort_escalated"] };
+        }
+        if (esc !== null && esc.tier !== null) {
           const block = { signal: esc.state.signal, from: desired, to: esc.tier, decision_id: esc.state.decisionId, turn_seq: esc.state.turnSeq };
           if (cfg.escalate === "shadow") {
             // Shadow: the same arithmetic, recorded and not applied. Section 13 can then price what escalation would
@@ -663,7 +677,14 @@ export class Router {
           }
         }
       }
-      return finalize(policyTarget, candidate, reasons, { ...part, escalation, would_escalate: wouldEscalate, ab }, g);
+      // REFLEX_EFFORT_AB: only a turn whose target differs from the client's level can be held back; an escalated one is
+      // already decided. Both arms are tagged, since only turns that entered the randomisation compare.
+      if (effort?.target && effort.target !== v.requestedEffort && !effort.reasons.includes("effort_escalated") && cfg.effortAbFraction > 0) {
+        effort = (this.d.random ?? Math.random)() < cfg.effortAbFraction
+          ? { ...effort, target: v.requestedEffort as Effort, reasons: [...effort.reasons, "effort_ab_control"], ab: "control" }
+          : { ...effort, ab: "treated" };
+      }
+      return finalize(policyTarget, candidate, reasons, { ...part, escalation, would_escalate: wouldEscalate, ab, ...(effort ? { effort } : {}) }, g);
     } catch (e) {
       if (e instanceof BackendError) {
         if (e.kind !== "aborted") this.d.breaker.failure();
