@@ -84,6 +84,12 @@ describe("JevBackend", () => {
     assert.ok(d.latencyMs >= 40);
   });
 
+  it("decisions started together are all answered within the deadline: none waits behind another's socket", async () => {
+    jev.set({ kind: "answer", tier: "haiku", delayMs: 180 });
+    const all = await Promise.allSettled(Array.from({ length: 8 }, () => backend.decide(state, questions, { signal })));
+    assert.deepEqual(all.map((r) => r.status), Array(8).fill("fulfilled"), "a queued second wave would end at ~360 ms, past the 300 ms deadline");
+  });
+
   it("junk is invalid_response", async () => {
     jev.set({ kind: "junk" });
     await rejectsWith(backend.decide(state, questions, { signal }), "invalid_response");

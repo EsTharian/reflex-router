@@ -119,7 +119,9 @@ export class JevBackend implements DecisionBackend {
   constructor(private readonly opts: JevOptions) {
     this.id = opts.id ?? "jev";
     this.#url = new URL(opts.baseUrl.replace(/\/+$/, "") + JEV_PATH);
-    const agentOpts = { keepAlive: true, maxSockets: 4, maxFreeSockets: 2, scheduling: "lifo" as const };
+    // No socket cap: the deadline runs from decide(), so a decision queued behind busy sockets spent its budget waiting
+    // (4 sockets, 8 subagents started at once, 800 ms answers: the last 4 timed out). Only 2 idle ones are kept.
+    const agentOpts = { keepAlive: true, maxFreeSockets: 2, scheduling: "lifo" as const };
     this.#agent = this.#url.protocol === "https:" ? new https.Agent(agentOpts) : new http.Agent(agentOpts);
   }
 
