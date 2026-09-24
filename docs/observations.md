@@ -564,3 +564,30 @@ was routed: Jev wanted Sonnet on 19 of 40 new turns and the guard refused the ma
 about the same amount; the status line's per-session figure can look large while the total stays near zero. None of
 it says whether the routed turns were as good (section 7: routed arms n < 20). List-price estimates over recorded
 token counts, not bills; one machine, one person.
+
+
+## 2026-09-24 — stopping Laya work
+
+**Decision.** Laya throughput did not meet expectations in daily use; closing all open Laya items (refit, latency,
+512-token truncation, Windows support). No further Laya work planned. `REFLEX_BACKEND=laya` stays in the codebase as
+a supported option (fitted for `cal-20260923.2`, `FEATURE_VERSION` unchanged) but gets no more tuning.
+
+
+## 2026-09-24 — a second machine: five days of work use (shared log)
+
+**Setup.** `reflex report --usd` over a `reflex share` log from the maintainer's work machine (2026-09-19T09:17Z to
+2026-09-24T18:49Z): 26 sessions, 2,517 classified requests, ~631M tokens; route 1,641 / shadow 876 requests; Jev
+`jev-1.13.0`; Claude Code 2.1.278+; mostly Opus 5.5 requested, some Fable 5.1. No `REFLEX_AB` in this log.
+
+**Result.** 248 routed records (Opus 5.5 → Sonnet 5: 185, Opus 5 → Sonnet 5: 38, Sonnet 5 → Opus 5.5: 25): an
+estimated $7.11 less on routed requests (75.2% of their requested-model price), 3.4% of all main + subagent spend
+($206.79 → $199.68). Tokens: main-chat continuations 55.0%, subagents 27.3%, side calls 16.8%, new turns 0.8%; routing
+could touch at most 15.1%, 69.2% of it in subagents (one session of 13 subagent runs held 294.6M tokens). Guard: 6 of
+10 main-chat switches refused (`over_limit`, penalty p50 $0.62). Jev p50 629 ms, p95 1,027 ms (n = 41). Mass vs argmax
+agreed on 48.8% of 41 turns. Outcome windows: routed main 1, subagent 2, all without signals; no comparison possible.
+Side calls $45.25 at the requested model (Session recap $2.70, Prompt suggestions $3.67).
+
+**What it means.** On a subagent-heavy work log the downward moves dominate and the estimated saving is positive, unlike
+the three-day personal log above (net ~$0). It adds nothing to the quality question: without `REFLEX_AB` its routed
+turns are not comparable with its unrouted ones, and combined with the personal log the randomised arms stay at routed
+11 / control 22. List-price estimates over recorded token counts, not bills.
