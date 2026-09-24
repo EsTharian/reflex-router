@@ -4,6 +4,10 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.5.2 — 2026-09-24
+
 ### Changed
 
 - New status line format: `Reflex: Opus 5.5 · Effort: ⇣ low (asked high) · Est. Saved: $0.42 · Total Saved: $3.10`,
