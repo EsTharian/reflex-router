@@ -19,6 +19,14 @@ const ACCEPTS_EFFORT: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: 
  * it: its system messages are folded into user messages.
  */
 const ACCEPTS_MESSAGE_OUTPUT_CONFIG: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: false, opus: true, fable: true };
+/**
+ * Families that take MCP tool search's `tool_addition` blocks (2.1.282, beta mid-conversation-tool-changes). Opus 5.5
+ * and Fable 5.1 get them from Claude Code natively (captures toolsearch-2.1.282, toolsearch-fable-native: 200). Sonnet 5
+ * rejects them: "tool_addition/tool_removal is not supported on this model" (route opus->sonnet, 2026-09-25); Haiku 4.5
+ * takes no role:"system" message, which is the only place they may stand. Native Haiku requests carry tool search
+ * without them (capture toolsearch-haiku-native).
+ */
+const ACCEPTS_TOOL_CHANGES: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: false, opus: true, fable: true };
 
 /** Native Haiku 4.5 requests from Claude Code use this budget (with max_tokens 32000). */
 export const HAIKU_THINKING_BUDGET = 31999;
@@ -88,11 +96,48 @@ export interface RewriteOptions {
 
 export type RewriteResult =
   | { readonly ok: true; readonly body: Buffer; readonly fields: readonly string[] }
-  | { readonly ok: false; readonly reason: "not_json" | "no_messages" | "thinking_budget_too_small" };
+  | { readonly ok: false; readonly reason: "not_json" | "no_messages" | "thinking_budget_too_small" | "system_block_unfoldable" };
 
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
 const blocksOf = (content: unknown): unknown[] => (typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : []);
+
+/**
+ * For a target that does not take `tool_addition` blocks (ACCEPTS_TOOL_CHANGES): each one announces a deferred tool as
+ * visible from then on, so it becomes its tool without `defer_loading` (the same visible set) and the block goes. A
+ * system message left with no content goes too (its only other observed key, a per-turn effort, is one neither such
+ * target takes). A `tool_removal` has no such equivalent and was never observed, so it, like any block type not listed
+ * here, makes the request unrewritable: it is then sent unchanged, never with a block the target may reject.
+ */
+function liftToolAdditions(messages: Json[]): { messages: Json[]; added: Set<string>; lifted: number } | null {
+  const added = new Set<string>();
+  let lifted = 0;
+  const out: Json[] = [];
+  for (const m of messages) {
+    if (m["role"] !== "system" || !Array.isArray(m["content"])) {
+      out.push(m);
+      continue;
+    }
+    const kept: unknown[] = [];
+    let mark: unknown;
+    for (const c of m["content"] as unknown[]) {
+      if (isObj(c) && c["type"] === "tool_addition" && isObj(c["tool"]) && typeof c["tool"]["name"] === "string") {
+        added.add(c["tool"]["name"]);
+        lifted++;
+        if (c["cache_control"] !== undefined) mark = c["cache_control"];
+      } else if (isObj(c) && c["type"] === "text") kept.push(c);
+      else return null;
+    }
+    // A cache breakpoint on a lifted block moves to the last block that stays (in this message, else the one before),
+    // so the conversation prefix is still written to the cache.
+    const prev = out.at(-1)?.["content"];
+    const host: unknown[] = kept.length > 0 ? kept : Array.isArray(prev) ? prev : [];
+    const tail = host.at(-1);
+    if (mark !== undefined && isObj(tail) && tail["cache_control"] === undefined) host[host.length - 1] = { ...tail, cache_control: mark };
+    if (kept.length > 0) out.push({ ...m, content: kept });
+  }
+  return { messages: out, added, lifted };
+}
 
 /**
  * Folds every role:"system" message into the closest earlier user message (appended, so tool_result blocks stay
@@ -165,6 +210,22 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
   }
 
   let messages = (b["messages"] as unknown[]).filter(isObj);
+  if (!ACCEPTS_TOOL_CHANGES[opts.to] && messages.some((m) => m["role"] === "system")) {
+    const lifted = liftToolAdditions(messages);
+    if (lifted === null) return { ok: false, reason: "system_block_unfoldable" };
+    messages = lifted.messages;
+    if (lifted.lifted > 0) fields.push(`messages.tool_addition_lifted:${lifted.lifted}`);
+    if (lifted.added.size > 0 && Array.isArray(b["tools"])) {
+      let undeferred = 0;
+      b["tools"] = (b["tools"] as unknown[]).map((t) => {
+        if (!isObj(t) || t["defer_loading"] !== true || typeof t["name"] !== "string" || !lifted.added.has(t["name"])) return t;
+        undeferred++;
+        const { defer_loading: _, ...rest } = t;
+        return rest;
+      });
+      if (undeferred > 0) fields.push(`tools.undeferred:${undeferred}`);
+    }
+  }
   if (!ACCEPTS_SYSTEM_MESSAGES[opts.to] && messages.some((m) => m["role"] === "system")) {
     const r = foldSystemMessages(messages);
     messages = r.messages;

@@ -185,3 +185,70 @@ describe("retarget from Fable 5.1: per-message output_config", () => {
     assert.deepEqual((JSON.parse(r.body.toString()) as { messages: Json[] }).messages[1]!["output_config"], { effort: "high" });
   });
 });
+
+describe("retarget with MCP tool search on (2.1.282)", () => {
+  const TS = "toolsearch.main-new-turn.request.json";
+  const orig = JSON.parse(fx(TS).toString()) as Json;
+  const additions = (b: Json): string[] =>
+    (b["messages"] as Json[]).flatMap((m) => (Array.isArray(m["content"]) ? (m["content"] as Json[]) : [])).filter((c) => c["type"] === "tool_addition").map((c) => String((c["tool"] as Json)["name"]));
+  const deferred = (b: Json): string[] => (b["tools"] as Json[]).filter((t) => t["defer_loading"] === true).map((t) => String(t["name"]));
+
+  it("Haiku takes no role:system message, so each tool_addition becomes its tool without defer_loading", () => {
+    const added = additions(orig);
+    assert.ok(added.length > 0 && added.every((n) => deferred(orig).includes(n)), "the fixture announces deferred tools");
+    const r = retarget(fx(TS), { from: "opus", to: "haiku", model: HAIKU });
+    assert.ok(r.ok);
+    const b = JSON.parse(r.body.toString()) as Json;
+    assert.deepEqual(additions(b), [], "API: 'tool_addition'/'tool_removal' blocks are only permitted within role: \"system\" messages");
+    assert.ok(!(b["messages"] as Json[]).some((m) => m["role"] === "system"));
+    assert.deepEqual(deferred(b), deferred(orig).filter((n) => !added.includes(n)), "tools the harness never announced stay deferred");
+    assert.equal((b["tools"] as Json[]).length, (orig["tools"] as Json[]).length);
+    assert.ok(r.fields.includes(`tools.undeferred:${added.length}`) && r.fields.includes(`messages.tool_addition_lifted:${added.length}`));
+    assert.equal(cacheMarks(b["messages"]), cacheMarks(orig["messages"]), "the breakpoint on the last tool_addition moves, it is not lost");
+    // The ToolSearch tool and every tool definition other than the flag are kept as they were.
+    const strip = (t: Json): Json => Object.fromEntries(Object.entries(t).filter(([k]) => k !== "defer_loading"));
+    assert.deepEqual((b["tools"] as Json[]).map(strip), (orig["tools"] as Json[]).map(strip));
+  });
+
+  it("a tool_removal, or any other block reflex does not know, in a system message leaves the request unchanged", () => {
+    for (const block of [{ type: "tool_removal", tool: { type: "tool_reference", name: "x" } }, { type: "something_new" }]) {
+      const b = JSON.parse(fx(TS).toString()) as Json;
+      const sys = (b["messages"] as Json[]).find((m) => m["role"] === "system")!;
+      (sys["content"] as Json[]).push(block);
+      const r = retarget(Buffer.from(JSON.stringify(b)), { from: "opus", to: "haiku", model: HAIKU });
+      assert.deepEqual(r, { ok: false, reason: "system_block_unfoldable" });
+    }
+  });
+
+  it("Sonnet 5 keeps its system messages but not tool_addition blocks ('not supported on this model')", () => {
+    const r = retarget(fx(TS), { from: "opus", to: "sonnet", model: "claude-sonnet-5" });
+    assert.ok(r.ok);
+    const b = JSON.parse(r.body.toString()) as Json;
+    assert.deepEqual(additions(b), []);
+    assert.ok((b["messages"] as Json[]).some((m) => m["role"] === "system"), "the hook text stays a system message");
+    assert.deepEqual(deferred(b), deferred(orig).filter((n) => !additions(orig).includes(n)));
+    assert.equal(cacheMarks(b["messages"]), cacheMarks(orig["messages"]));
+  });
+
+  it("a system message that held only tool_addition blocks goes, and its cache breakpoint moves to the message before", () => {
+    const b0 = JSON.parse(fx(TS).toString()) as Json;
+    const msgs = b0["messages"] as Json[];
+    const sys = msgs.find((m) => m["role"] === "system")!;
+    sys["content"] = (sys["content"] as Json[]).filter((c) => c["type"] === "tool_addition");
+    const r = retarget(Buffer.from(JSON.stringify(b0)), { from: "opus", to: "sonnet", model: "claude-sonnet-5" });
+    assert.ok(r.ok);
+    const b = JSON.parse(r.body.toString()) as Json;
+    assert.equal((b["messages"] as Json[]).length, msgs.length - 1, "no empty system message is sent");
+    assert.equal(cacheMarks(b["messages"]), cacheMarks(msgs));
+  });
+
+  it("Opus 5.5 and Fable 5.1 take tool_addition natively: blocks and defer_loading stay as they are", () => {
+    for (const [from, to, model] of [["opus", "fable", "claude-fable-5-1"], ["fable", "opus", "claude-opus-5-5"]] as const) {
+      const r = retarget(fx(TS), { from, to, model });
+      assert.ok(r.ok);
+      const b = JSON.parse(r.body.toString()) as Json;
+      assert.deepEqual(b["tools"], orig["tools"]);
+      assert.deepEqual(additions(b), additions(orig));
+    }
+  });
+});

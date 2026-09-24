@@ -11,6 +11,7 @@ import { loadFixtures, type Fixture } from "../support/fixtures.js";
 import { request, waitFor } from "../support/http.js";
 import { records, replay, requestHeaders, sseHandler } from "../support/replay.js";
 import { startStack, type Stack } from "../support/stack.js";
+import { retargetBetas } from "../../src/wire/rewrite.js";
 
 type Json = Record<string, unknown>;
 const HAIKU = "claude-haiku-4-5-20251001";
@@ -420,6 +421,61 @@ describe("route mode", () => {
       assert.ok(stack.upstream.seen[n]!.body.equals(bad.body));
       assert.equal(rec.mode_effective, "shadow");
       assert.match(String(rec["degraded_reason"]), /shape:session_id/);
+    });
+
+    it("MCP tool search survives the proxy: beta header, defer_loading, tool_addition and tool_reference, both ways", async () => {
+      // What ENABLE_TOOL_SEARCH=true (src/launcher/launch.ts proxyEnv) relies on, on real 2.1.282 requests that reflex
+      // rewrites to Haiku (the one target that takes no role:system message, so tool_addition blocks are lifted).
+      const ts = (name: string): Fixture => {
+        const f = fixtures.find((x) => x.file === `toolsearch.${name}.request.json`);
+        assert.ok(f, name);
+        return f;
+      };
+      const tools = (b: Json): Json[] => b["tools"] as Json[];
+      const blocks = (b: Json): Json[] => (b["messages"] as Json[]).flatMap((m) => (Array.isArray(m["content"]) ? (m["content"] as Json[]) : []));
+      const first = inSession(ts("subagent-new-turn"), "s-toolsearch");
+      const n = stack.upstream.seen.length;
+      const a = await replay(stack, first);
+      assert.equal(a.rec.forwarded.model, HAIKU);
+      assert.equal(a.rec.forwarded.fallback, false);
+      const beta = String(first.headers["anthropic-beta"]);
+      assert.equal(stack.upstream.seen[n]!.headers["anthropic-beta"], retargetBetas(beta, "haiku").value);
+      assert.match(String(stack.upstream.seen[n]!.headers["anthropic-beta"]), /advanced-tool-use-2025-11-20/);
+      const sentA = sentBody(stack, n);
+      assert.ok(!blocks(sentA).some((c) => c["type"] === "tool_addition"));
+      assert.ok(tools(sentA).some((t) => t["name"] === "DeferredToolPlaceholder" && t["defer_loading"] === true), "unannounced tools stay deferred");
+
+      // The pinned tool-loop step that returns a ToolSearch result ("Tool loaded." beside tool_reference blocks).
+      const result = { type: "tool_result", tool_use_id: "toolu_ts", content: [{ type: "tool_reference", tool_name: "CronList" }] };
+      const step = inSession(ts("subagent-continuation"), "s-toolsearch", (b) => {
+        (b["messages"] as Json[]).push({ role: "assistant", content: [{ type: "tool_use", id: "toolu_ts", name: "ToolSearch", input: { query: "select:CronList" } }] }, { role: "user", content: [result, { type: "text", text: "Tool loaded." }] });
+      });
+      const k = stack.upstream.seen.length;
+      const c = await replay(stack, step);
+      assert.equal(c.rec.turn, "continuation");
+      assert.equal(c.rec.pin, "hit");
+      assert.equal(c.rec.forwarded.model, HAIKU);
+      const sentC = sentBody(stack, k);
+      assert.deepEqual((sentC["messages"] as Json[]).at(-1), { role: "user", content: [result, { type: "text", text: "Tool loaded." }] });
+      assert.deepEqual(tools(sentC), tools(sentA), "the same tools on every step of the loop, so the Haiku cache holds");
+
+      // Unrewritten: request bytes and a streamed tool_use response pass through byte for byte.
+      const sse = [
+        'event: message_start\ndata: {"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":1}}}',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_2","name":"ToolSearch","input":{}}}',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"query\\":\\"select:CronList\\"}"}}',
+        'event: message_stop\ndata: {"type":"message_stop"}',
+      ].join("\n\n") + "\n\n";
+      stack.upstream.setHandler((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end(sse);
+      });
+      const plain = inSession(ts("main-continuation-tool-loaded"), "s-toolsearch-passthrough");
+      const m = stack.upstream.seen.length;
+      const r = await request(`${stack.url}/v1/messages?beta=true`, { method: "POST", headers: requestHeaders(plain), body: plain.body });
+      assert.ok(stack.upstream.seen[m]!.body.equals(plain.body), "an unrewritten request is byte-identical");
+      assert.equal(stack.upstream.seen[m]!.headers["anthropic-beta"], plain.headers["anthropic-beta"]);
+      assert.equal(r.body.toString(), sse);
     });
 
     it("the TypeSafe key never reaches the upstream in route mode either", () => {

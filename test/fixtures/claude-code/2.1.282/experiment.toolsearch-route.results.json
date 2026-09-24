@@ -1,0 +1,974 @@
+{
+ "from": "opus",
+ "targets": [
+  "haiku",
+  "sonnet"
+ ],
+ "settings": {
+  "model_setting": "opus[1m]",
+  "claude_args": [
+   "-p",
+   "reflex:<tier> Step 1: use ToolSearch to load the CronList tool. Step 2: call CronList. Step 3: call the Claude Docs MCP tool guide with items [\"topic.index\"]. Step 4: reply with the single word done.",
+   "--allowedTools",
+   "CronList",
+   "mcp__claude_ai_Claude_Docs__guide",
+   "--output-format",
+   "stream-json",
+   "--verbose"
+  ],
+  "requested_models": [
+   "claude-opus-5-5"
+  ],
+  "entrypoints": [
+   "sdk-cli"
+  ],
+  "env": {
+   "ENABLE_TOOL_SEARCH": "true (set by reflex)",
+   "REFLEX_MODE": "route",
+   "REFLEX_UPSTREAM_URL": "https://api.anthropic.com"
+  },
+  "betas_seen": [
+   "advanced-tool-use-2025-11-20",
+   "advisor-tool-2026-03-01",
+   "claude-code-20250219",
+   "context-1m-2025-08-07",
+   "context-management-2025-06-27",
+   "effort-2025-11-24",
+   "extended-cache-ttl-2025-04-11",
+   "interleaved-thinking-2025-05-14",
+   "mid-conversation-system-2026-04-07",
+   "mid-conversation-tool-changes-2026-07-01",
+   "oauth-2025-04-20",
+   "per-turn-control-2026-07-01",
+   "prompt-caching-scope-2026-01-05",
+   "thinking-token-count-2026-05-13"
+  ]
+ },
+ "cap_usd": 5,
+ "est_total_usd": 4.2,
+ "native_probes": [
+  {
+   "label": "claude-code-haiku-subagent",
+   "how": "Agent tool with model \"haiku\" (capture toolsearch-haiku-native)",
+   "model": "claude-haiku-4-5-20251001",
+   "status": 200,
+   "system_messages": 0,
+   "tool_addition": 0,
+   "tool_reference": true,
+   "defer_loading": true,
+   "betas_without": [
+    "mid-conversation-system-2026-04-07",
+    "mid-conversation-tool-changes-2026-07-01",
+    "per-turn-control-2026-07-01",
+    "context-1m-2025-08-07",
+    "effort-2025-11-24"
+   ]
+  },
+  {
+   "label": "claude-code-fable-subagent",
+   "how": "Agent tool with model \"fable\" (capture toolsearch-fable-native)",
+   "model": "claude-fable-5-1",
+   "status": 200,
+   "system_messages": true,
+   "tool_addition": 3,
+   "tool_reference": true,
+   "defer_loading": true
+  }
+ ],
+ "probes": [
+  {
+   "session": "6c9a7239",
+   "override": "haiku",
+   "code": "before any lift (system messages folded as they were)",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 400,
+   "accepted": false,
+   "error": "invalid_request_error: messages.0.content: 'tool_addition'/'tool_removal' blocks are only permitted within `role: \"system\"` messages",
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "6c9a7239",
+   "override": "haiku",
+   "code": "before any lift (system messages folded as they were)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "74c26583",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "74c26583",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "tools.undeferred:3",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "74c26583",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "tools.undeferred:3",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "468436a1",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "468436a1",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "468436a1",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "468436a1",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "468436a1",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "194b120e",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "194b120e",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "194b120e",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "tools.undeferred:3",
+    "messages.system_folded:3",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "194b120e",
+   "override": "haiku",
+   "code": "lift for Haiku only (intermediate code)",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "tools.undeferred:3",
+    "messages.system_folded:3",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "6e326e41",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 400,
+   "accepted": false,
+   "error": "invalid_request_error: tool_addition/tool_removal is not supported on this model",
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "6e326e41",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "6e326e41",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "fafc78bb",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "fafc78bb",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "fafc78bb",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "fafc78bb",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "fafc78bb",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "fafc78bb",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "fafc78bb",
+   "override": "sonnet",
+   "code": "before the Sonnet lift",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "492a302c",
+   "override": null,
+   "code": "lift for Haiku only (intermediate code), no override",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "492a302c",
+   "override": null,
+   "code": "lift for Haiku only (intermediate code), no override",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "492a302c",
+   "override": null,
+   "code": "lift for Haiku only (intermediate code), no override",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "492a302c",
+   "override": null,
+   "code": "lift for Haiku only (intermediate code), no override",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "d3dfd249",
+   "override": null,
+   "code": "lift for Haiku only (intermediate code), no override",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "d3dfd249",
+   "override": null,
+   "code": "lift for Haiku only (intermediate code), no override",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "d3dfd249",
+   "override": null,
+   "code": "lift for Haiku only (intermediate code), no override",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-opus-5-5",
+   "rewritten": false,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": []
+  },
+  {
+   "session": "739ad207",
+   "override": "sonnet",
+   "code": "final code, captured behind reflex",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "739ad207",
+   "override": "sonnet",
+   "code": "final code, captured behind reflex",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "739ad207",
+   "override": "sonnet",
+   "code": "final code, captured behind reflex",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "cbee4980",
+   "override": "haiku",
+   "code": "final code, captured behind reflex",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "cbee4980",
+   "override": "haiku",
+   "code": "final code, captured behind reflex",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "cbee4980",
+   "override": "haiku",
+   "code": "final code, captured behind reflex",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.system_folded:2",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "e74622ff",
+   "override": "sonnet",
+   "code": "final code",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "e74622ff",
+   "override": "sonnet",
+   "code": "final code",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "e74622ff",
+   "override": "sonnet",
+   "code": "final code",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "af368238",
+   "override": "sonnet",
+   "code": "final code",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "af368238",
+   "override": "sonnet",
+   "code": "final code",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "af368238",
+   "override": "sonnet",
+   "code": "final code",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-sonnet-5",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "messages.tool_addition_lifted:3",
+    "tools.undeferred:3",
+    "messages.output_config_dropped:1"
+   ]
+  },
+  {
+   "session": "16ed2054",
+   "override": "haiku",
+   "code": "final code",
+   "turn": "new",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "16ed2054",
+   "override": "haiku",
+   "code": "final code",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "16ed2054",
+   "override": "haiku",
+   "code": "final code",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "16ed2054",
+   "override": "haiku",
+   "code": "final code",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  },
+  {
+   "session": "16ed2054",
+   "override": "haiku",
+   "code": "final code",
+   "turn": "continuation",
+   "side_kind": null,
+   "requested_model": "claude-opus-5-5",
+   "sent_model": "claude-haiku-4-5-20251001",
+   "rewritten": true,
+   "status": 200,
+   "accepted": true,
+   "error": null,
+   "fields": [
+    "model",
+    "max_tokens",
+    "output_config.effort",
+    "thinking",
+    "messages.system_folded:1",
+    "anthropic-beta:-context-1m-2025-08-07"
+   ]
+  }
+ ]
+}
