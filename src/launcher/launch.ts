@@ -164,7 +164,7 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
   // http hooks for outcome capture go to the front door, which answers 204 even when the worker is down.
   const claudeDir = io.env["CLAUDE_CONFIG_DIR"] || path.join(io.homedir ?? os.homedir(), ".claude");
   const ownStatusLine = hasOwnStatusLine([path.join(claudeDir, "settings.json"), path.join(io.cwd, ".claude", "settings.json"), path.join(io.cwd, ".claude", "settings.local.json")], (f) => fs.readFileSync(f, "utf8"));
-  const statusLine = config.statusline && !ownStatusLine ? { type: "command", command: `"${process.execPath}" "${REFLEX_BIN}" statusline`, padding: 0 } : undefined;
+  const statusLine = config.statusline && !ownStatusLine ? { type: "command", command: `"${process.execPath}" "${REFLEX_BIN}" statusline`, padding: 0, refreshInterval: 2 } : undefined;
   const injection = injectSettings(argv, { env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }, hooks: outcomeHooks(door.port), ...(statusLine ? { statusLine } : {}) }, realInjectIO(io.cwd));
   if (injection.warning) warn(injection.warning);
   try {

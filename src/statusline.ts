@@ -72,7 +72,7 @@ const SEP = ` ${DIM}·${RESET} `;
  * Pure. The lines for one session; null prints nothing (not behind reflex, or nothing to say yet).
  *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80 · Est. Saved: $0.42 · Total Saved: $3.10
  *   ↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)
- * One line per running subagent reflex changed, titled as Claude Code shows it (else `subagent N`, by start order).
+ * One line per running subagent (changed or not), titled as Claude Code shows it (else `subagent N`, by start order).
  */
 export function formatStatus(s: StatusBody | null): string | null {
   if (s === null) return null;
@@ -87,12 +87,10 @@ export function formatStatus(s: StatusBody | null): string | null {
     parts.push(`${DIM}Est. Saved:${RESET} ${money(saved.session)}`);
     if (saved.total !== null) parts.push(`${DIM}Total Saved:${RESET} ${money(saved.total)}`);
   }
-  const subs = (s.subagents ?? []).flatMap((x, i) => {
-    const changed = (x.model !== null && routed(x.model)) || (x.effort !== null && moved(x.effort));
-    if (!changed) return [];
+  const subs = (s.subagents ?? []).map((x, i) => {
     const bits = [...(x.model !== null ? [modelText(x.model)] : []), ...(x.effort !== null && moved(x.effort) ? [effortText(x.effort)] : [])];
     const title = cleanTitle(x.title ?? "");
-    return [`${DIM}↳ ${title === "" ? `subagent ${i + 1}` : title}:${RESET} ${bits.join(SEP)}`];
+    return `${DIM}↳ ${title === "" ? `subagent ${i + 1}` : title}:${RESET} ${bits.length ? bits.join(SEP) : `${DIM}…${RESET}`}`;
   });
   return [parts.join(SEP), ...subs].join("\n");
 }

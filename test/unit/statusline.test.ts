@@ -22,12 +22,12 @@ describe("statusline", () => {
     assert.equal(shortModel("some-gateway-model"), "some-gateway-model");
   });
 
-  it("shows the model reflex sent when it differs from the one asked for, and routed subagents", () => {
+  it("shows the model reflex sent when it differs from the one asked for, and every running subagent", () => {
     assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: SONNET }, subagents: [] })), "Reflex: ⇣ Sonnet 5 (asked Opus 5.5)");
     assert.equal(plain(formatStatus({ worker: "up", main: { requested: SONNET, sent: OPUS }, subagents: [] })), "Reflex: ⇡ Opus 5.5 (asked Sonnet 5)");
     const sub = (sent: string, title: string | null) => ({ title, model: { requested: OPUS, sent }, effort: null });
     const subs = [sub(HAIKU, "List docs directory files"), sub(OPUS, "Unchanged"), sub(SONNET, null)];
-    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: subs })), "Reflex: Opus 5.5\n↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5)\n↳ subagent 3: ⇣ Sonnet 5 (asked Opus 5.5)");
+    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: subs })), "Reflex: Opus 5.5\n↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5)\n↳ Unchanged: Opus 5.5\n↳ subagent 3: ⇣ Sonnet 5 (asked Opus 5.5)");
     assert.equal(plain(formatStatus({ worker: "up", main: null, subagents: [] })), "Reflex");
     const main = { requested: OPUS, sent: OPUS };
     assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0.4231, total: 3.1 } })), "Reflex: Opus 5.5 · Est. Saved: $0.42 · Total Saved: $3.10");
@@ -79,7 +79,7 @@ describe("statusline", () => {
     const main = { requested: OPUS, sent: OPUS };
     const lvl = (level: string) => ({ requested: "high", level });
     const subagents = [{ title: "Explore", model: { requested: OPUS, sent: HAIKU }, effort: lvl("low") }, { title: "Same", model: { requested: OPUS, sent: OPUS }, effort: lvl("high") }, { title: "Review", model: { requested: OPUS, sent: OPUS }, effort: lvl("max") }];
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents, effort: { main: lvl("low") } })), "Reflex: Opus 5.5 · Effort: ⇣ low (asked high)\n↳ Explore: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)\n↳ Review: Opus 5.5 · Effort: ⇡ max (asked high)");
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents, effort: { main: lvl("low") } })), "Reflex: Opus 5.5 · Effort: ⇣ low (asked high)\n↳ Explore: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)\n↳ Same: Opus 5.5\n↳ Review: Opus 5.5 · Effort: ⇡ max (asked high)");
     assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort: { main: lvl("high") } })), "Reflex: Opus 5.5", "same level: nothing to say");
     assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort: { main: { requested: null, level: "low" } } })), "Reflex: Opus 5.5", "the client's level unknown: no comparison");
   });
