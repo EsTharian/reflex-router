@@ -57,8 +57,8 @@ describe("statusline", () => {
     s.observe(d({ turn: "side", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", turn: "continuation", sentModel: HAIKU }));
-    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, saved: { session: 0, total: null } });
-    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, saved: { session: 0, total: null } });
+    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, cost: 0, saved: { session: 0, total: null } });
+    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, cost: 0, saved: { session: 0, total: null } });
   });
 
   it("the saving is section 8's: the same usage at the requested model minus at the model sent, routed records only", () => {
@@ -70,6 +70,9 @@ describe("statusline", () => {
     s.addRecord(rec({ forwarded: { model: HAIKU, rewritten: true, fallback: false } }), "s2"); // another session
     s.setLoggedTotal(10);
     assert.deepEqual(s.get("s1").saved, { session: 2, total: 10 + 2 + 3 });
+    assert.equal(s.get("s1").cost, 2 + 4 + 1, "the cost: every record at the model sent, side calls included"); // Sonnet $2, Opus $4, Haiku $1
+    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: [], cost: 7.004, saved: { session: 0, total: null } })), "Reflex: Opus 5.5 · Est. Cost: $7.00");
+    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: [], cost: 0.001 })), "Reflex: Opus 5.5");
   });
 
   it("shows the effort level REFLEX_EFFORT applied when it differs from the one asked for", () => {
@@ -99,6 +102,18 @@ describe("statusline", () => {
     s.observe({ id: "y", at: 0, sessionId: "s1", agentId: "a2", kind: "subagent", turn: "new", conv: "c-a2", requestedModel: OPUS, sentModel: HAIKU, taskHash: hashId("other") });
     assert.deepEqual(s.get("s1").subagents.map((x) => x.title), ["List docs", null]);
     assert.equal(cleanTitle(`evil\x1b[31m title\n${"x".repeat(60)}`), `evil [31m title ${"x".repeat(23)}…`);
+  });
+
+  it("a subagent's line goes at its SubagentStop, and a record landing after the stop does not bring it back", () => {
+    const s = new SessionStatus();
+    const obs = (agentId: string) => s.observe({ id: agentId, at: 0, sessionId: "s1", agentId, kind: "subagent", turn: "continuation", conv: `c-${agentId}`, requestedModel: OPUS, sentModel: HAIKU });
+    obs("a1");
+    obs("a2");
+    s.stop("s1", "a1");
+    s.stop("other", "a2"); // another session's stop changes nothing here
+    obs("a1");
+    s.addRecord({ id: "r", at: "2026-09-24T10:00:00.000Z", turn: "continuation", kind: "subagent", conv: "c-a1", requested: { model: OPUS, tier: "opus", effort: "high" }, forwarded: { model: HAIKU, rewritten: true, fallback: false }, effort: { pick: "low", target: "low", via: "message", reasons: [] } } as unknown as DecisionRecord, "s1");
+    assert.deepEqual(s.get("s1").subagents, [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }]);
   });
 
   it("never replaces the user's own status line", () => {

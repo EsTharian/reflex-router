@@ -206,6 +206,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
       }
       if (event?.type === "UserPromptSubmit") prompts.add(event.base.sessionId, event.prompt);
       if (event?.type === "PreToolUse" && event.title !== null) status.title(event.base.sessionId, hashId(event.prompt.trim()) as string, event.title);
+      if (event?.type === "SubagentStop" && event.base.agentId !== null) status.stop(event.base.sessionId, event.base.agentId);
       if (event) tracker?.ingest(event);
       return;
     }
