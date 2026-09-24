@@ -518,3 +518,29 @@ system message at index 1, changing only the top-level value left thinking where
 against 1,844–1,900 unchanged); adding the effort message moved it (about 1,070 at `low`, about 5,100 at `max`). So on
 Opus 5.5 the level can only be changed by adding to the history, and reflex must keep re-adding what it added.
 
+## 2026-09-24 — effort: every model measured, and where a changed level is safe to leave behind
+
+**Setup.** `route-experiment.mjs --probe-effort-verify` (four runs) and smoke runs through the built `reflex`, `-p` and
+interactive, under the user's settings (`opus[1m]`, no `--model`). Est. $9.8 on top of the $1.77 of the first two runs.
+Tables and wording: `docs/wire-format.md` §5.8.
+
+**Result.** The effort message changes how much the model thinks on Opus 5 (1,556 / 2,354 / 2,676 output tokens at
+`low` / client `high` / `max`) and Fable 5.1 (2,215 / 2,563 / 5,908) and keeps their cache, where a top-level change
+rewrites ~13.6k tokens of it; Sonnet's top-level value moves it the most (1,980 / 5,626 / 10,524) and rewrites the
+whole prompt each time. With Anthropic's edited-history check opted in, an **inserted** effort message that is later
+left out gets the next request refused (Opus 5.5), while a level **set** on the turn's own system message and later
+left out is accepted with nothing dropped (Opus 5.5 and Fable). Claude Code answers that refusal by removing the
+thinking blocks and retrying on its own. Appending after Claude Code's effort-bearing system message cost ~11k tokens
+of cache on the next request and on a resumed turn; setting it in place cost nothing (identical numbers to a run
+without `REFLEX_EFFORT`).
+
+**What it means.** `REFLEX_EFFORT=1` now only uses `set` (a conversation's first request, main or subagent) and
+Sonnet's top-level value where the cache is rewritten anyway: nothing left behind if the conversation is later
+continued without reflex. Later main-chat turns need an insert, so they wait for `REFLEX_EFFORT_MIDTURN=1`, whose cost
+if the conversation is continued without reflex is one refused request and the earlier thinking blocks, on enforced
+accounts only. Quality is still unmeasured: `REFLEX_EFFORT_AB` and report section 14 are there for it.
+
+**Seen on the way, not about effort.** After route mode moved a `-p` main chat to Haiku, `claude -p --continue`
+requested Haiku itself (`requested.model` `claude-haiku-4-5-20251001`, no effort): the resumed session took the model
+of the transcript's last turn, so the user's own model choice did not come back. Not investigated further here.
+

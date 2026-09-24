@@ -24,7 +24,8 @@
 // keep-history variant) · --probe-message-oc (first request to each target that drops a system message's
 // output_config, sent with it kept) · --probe-effort-switch (main chat stays on its model; its effort is switched
 // mid-conversation the way Claude Code's own /effort does it, see below) · --probe-effort-apply (does the level take
-// effect? full answers, see below). Probes and routed requests carry the product's header rewrite (STRIP_BETAS).
+// effect? full answers, see below) · --probe-effort-verify (the preserved-thinking check with effort messages; Sonnet's
+// top-level effort; Opus 5 and Fable 5.1 per-message effort; see below). Probes and routed requests carry the product's header rewrite (STRIP_BETAS).
 // Target model ids and prices are the product's own (DEFAULT_MODELS, src/pricing.ts).
 //
 // The cap is ENFORCED: every probe and every forwarded request is pre-charged from its own bytes (estimateTokens: 2.5 bytes/token,
@@ -84,6 +85,21 @@ let probeEffortSwitch = false;
  */
 let probeEffortApply = false;
 const EFFORT_APPLY_MAX_TOKENS = 16000;
+/**
+ * --probe-effort-verify. At the main chat's first request: Opus 5 and Fable 5.1 (model swapped / retargeted) get a
+ * cache write, then the same request + an effort message (accepted? cache kept?), then the PUZZLE as an extra user
+ * message answered in full at the client's effort and with message + top-level low / max; Sonnet (retargeted) the same
+ * with the top-level value only. The live main chat then does what reflex does (effort message -> low at the first
+ * continuation, re-inserted after), and with `prefix_mismatch_behavior` (which opts any account into the
+ * preserved-thinking check, beta thinking-binding-controls-2026-08-01) probes: adding the message at the first
+ * continuation, and at the second the re-inserted request, the request with it forgotten ("error"), and forgotten with
+ * "drop_block". The session's prompt must make the model think between tool calls, or there is nothing to check.
+ */
+let probeEffortVerify = false;
+/** --effort-verify-parts opus-5,fable-5.1,sonnet,binding | binding-set (alone): run only these parts (each Opus 5 / Fable part costs a cache write). */
+let verifyParts = new Set(["opus-5", "fable-5.1", "sonnet", "binding"]);
+/** Part binding-set only: run the live main chat (and its probes) on this tier instead (e.g. fable: the product's retarget). */
+let bindingTier = null;
 // Not memorisable (2026-09-24: a known-answer puzzle got ~150 output tokens at every level); needs step-by-step work.
 const PUZZLE = "Set the file task aside for this one reply and use no tools. Let f(0)=1 and, for n>0, f(n) = f(n-1) + f(n-3) + f(n-4) + 2*f(n-7), where f of a negative number is 0. What is f(37) mod 1009? Reply with only the number.";
 /** Each apply variant is sent this many times (the output length of one answer is noisy). */
@@ -106,6 +122,9 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--probe-message-oc") probeMessageOc = true;
   else if (argv[i] === "--probe-effort-switch") probeEffortSwitch = true;
   else if (argv[i] === "--probe-effort-apply") probeEffortApply = true;
+  else if (argv[i] === "--probe-effort-verify") probeEffortVerify = true;
+  else if (argv[i] === "--effort-verify-parts") verifyParts = new Set(argv[++i].split(","));
+  else if (argv[i] === "--binding-tier") bindingTier = argv[++i];
   else if (argv[i] === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
 }
 mkdirSync(out, { recursive: true, mode: 0o700 });
@@ -170,7 +189,7 @@ function send(path, headers, body, { probe, full = false }) {
         buf += c.toString("utf8");
         if (probe && !full && res.statusCode < 400) {
           const m = /data: (\{"type":"message_start".*)\n/.exec(buf);
-          if (m) { let usage = null; try { usage = JSON.parse(m[1]).message.usage; } catch { /* partial */ } res.destroy(); req.destroy(); resolve({ status: res.statusCode, usage }); }
+          if (m) { let usage = null; let transformations; try { const o = JSON.parse(m[1]).message; usage = o.usage; transformations = o.input_transformations; } catch { /* partial */ } res.destroy(); req.destroy(); resolve({ status: res.statusCode, usage, transformations }); }
         }
       });
       res.on("end", () => {
@@ -180,7 +199,8 @@ function send(path, headers, body, { probe, full = false }) {
           for (const m of buf.matchAll(/data: (\{"type":"message_(?:start|delta)".*)\n/g)) { try { const o = JSON.parse(m[1]); usage = { ...usage, ...(o.message?.usage ?? o.usage) }; } catch { /* partial */ } }
           const text = [...buf.matchAll(/"type":"text_delta","text":("(?:[^"\\]|\\.)*")/g)].map((m) => JSON.parse(m[1])).join("");
           const stop = /"stop_reason":"([a-z_]+)"/.exec(buf)?.[1] ?? null;
-          resolve({ status: res.statusCode, usage, answer: text.slice(0, 40), stop });
+          const tm = /"input_transformations":(\[[^\]]*\])/.exec(buf);
+          resolve({ status: res.statusCode, usage, answer: text.slice(0, 40), stop, transformations: tm ? JSON.parse(tm[1]) : undefined });
         } else resolve({ status: res.statusCode, text: buf });
       });
       res.on("error", () => resolve({ status: res.statusCode ?? 0, error: "stream error" }));
@@ -210,7 +230,7 @@ async function probe(label, path, rawHeaders, bodyBuf, rawFields, facts, { keepH
   const model = JSON.parse(bodyBuf.toString("utf8")).model;
   const usd = costUsd(model, r.usage);
   spent += usd - pre;
-  probes.push({ label, status: r.status, accepted: r.status === 200, error: r.error ?? null, fields, facts, usage: r.usage ?? null, ...(full ? { answer: r.answer ?? null, stop_reason: r.stop ?? null } : {}), est_usd: Number(usd.toFixed(5)) });
+  probes.push({ label, status: r.status, accepted: r.status === 200, error: r.error ?? null, fields, facts, usage: r.usage ?? null, ...(full ? { answer: r.answer ?? null, stop_reason: r.stop ?? null } : {}), ...(r.transformations !== undefined ? { input_transformations: r.transformations } : {}), est_usd: Number(usd.toFixed(5)) });
   log(`${r.status === 200 ? "ACCEPT" : "reject"} ${r.status} ${label}${r.error ? " :: " + String(r.error).slice(0, 160) : ""}  (spent ~$${spent.toFixed(3)})`);
   return r.status === 200;
 }
@@ -297,6 +317,117 @@ async function effortSwitch(req, raw, headers, parsed, facts, view) {
   return { body, headers, note: `main effort-switch #${es.n} (${es.inserts.map((x) => x.effort).join(",")})`, fields: ["messages.+effort", "output_config.effort"], facts: f };
 }
 
+const BINDING_BETA = "thinking-binding-controls-2026-08-01";
+const bound = (headers, b, behavior) => {
+  b.thinking = { ...(b.thinking ?? { type: "adaptive" }), block_binding: { prefix_mismatch_behavior: behavior } };
+  return { headers: { ...headers, "anthropic-beta": `${headers["anthropic-beta"]},${BINDING_BETA}` }, body: Buffer.from(JSON.stringify(b)) };
+};
+// Onto the last user message: a user message after Claude Code's trailing system text message is a 400 (first run,
+// 2026-09-24: "role 'system' must precede an 'assistant' message or end the array").
+const withPuzzle = (b) => {
+  const last = [...b.messages].reverse().find((m) => m.role === "user");
+  if (typeof last.content === "string") last.content = [{ type: "text", text: last.content }];
+  last.content.push({ type: "text", text: PUZZLE });
+  return b;
+};
+const vs = { n: 0, prev: null, inserts: [] };
+async function effortVerify(req, raw, headers, parsed, facts, view) {
+  const cur = parsed.output_config?.effort ?? null;
+  const f = { ...facts, client_effort: cur };
+  if (verifyParts.has("binding-set")) return bindingSet(req, raw, headers, parsed, f, view);
+  if (view.turn !== "continuation") {
+    if (vs.prev) return { body: raw, headers, note: "main-new passthrough (effort-verify, later)" };
+    vs.prev = raw;
+    for (const [label, make] of [["opus-5", () => variantBody(parsed, (b) => { b.model = "claude-opus-5"; })], ["fable-5.1", () => { const r = rt(raw, "fable"); return r.ok ? r.body : null; }]]) {
+      if (!verifyParts.has(label)) continue;
+      const base = make();
+      if (!base) continue;
+      const pb = JSON.parse(base.toString("utf8"));
+      await probe(`${label}: first request (cache write)`, req.url, headers, base, ["model"], f, { keepHeaders: true });
+      await probe(`${label}: + effort message low (accepted? cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.messages.push(effortMsg("low")); b.output_config = { ...b.output_config, effort: "low" }; }), ["model", "messages.effort_added"], f, { keepHeaders: true });
+      await probe(`${label}: + effort message low, top-level unchanged (cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.messages.push(effortMsg("low")); }), ["model", "messages.effort_added"], f, { keepHeaders: true });
+      for (const [v, mut] of [[`client effort (${pb.output_config?.effort})`, () => {}], ["message only low", (b) => { b.messages.push(effortMsg("low")); }], ["message only max", (b) => { b.messages.push(effortMsg("max")); }]]) {
+        await probe(`${label}: puzzle, ${v}`, req.url, headers, variantBody(pb, (b) => { b.max_tokens = EFFORT_APPLY_MAX_TOKENS; withPuzzle(b); mut(b); }), ["model", "puzzle"], f, { keepHeaders: true, full: true });
+      }
+    }
+    const s = rt(raw, "sonnet");
+    if (s.ok && verifyParts.has("sonnet")) {
+      const sb = JSON.parse(s.body.toString("utf8"));
+      for (const [v, e] of [[`client effort (${sb.output_config?.effort})`, null], ["top-level low", "low"], ["top-level max", "max"]]) {
+        await probe(`sonnet: puzzle, ${v}`, req.url, headers, variantBody(sb, (b) => { b.max_tokens = EFFORT_APPLY_MAX_TOKENS; withPuzzle(b); if (e) b.output_config = { ...b.output_config, effort: e }; }), [...s.fields, "puzzle"], f, { full: true });
+      }
+    }
+    return { body: raw, headers, note: "main-new passthrough (effort-verify)", facts: f };
+  }
+  vs.n++;
+  if (!verifyParts.has("binding")) return { body: raw, headers, note: "passthrough (binding part off)" };
+  if (vs.n === 1) {
+    const added = structuredClone(parsed); added.messages.push(effortMsg("low")); added.output_config = { ...added.output_config, effort: "low" };
+    const e = bound(headers, structuredClone(added), "error");
+    await probe("binding error: effort message added at the end", req.url, e.headers, e.body, ["messages.effort_added", "block_binding"], f, { keepHeaders: true });
+    vs.inserts.push({ index: parsed.messages.length, effort: "low" });
+  } else if (vs.n === 2) {
+    const re = bound(headers, withInsertsOf(parsed, vs.inserts), "error");
+    await probe("binding error: effort message re-inserted (what reflex sends)", req.url, re.headers, re.body, ["messages.effort_reinserted", "block_binding"], f, { keepHeaders: true });
+    const fe = bound(headers, structuredClone(parsed), "error");
+    await probe("binding error: effort message forgotten (continued without reflex)", req.url, fe.headers, fe.body, ["block_binding"], f, { keepHeaders: true });
+    const fd = bound(headers, structuredClone(parsed), "drop_block");
+    await probe("binding drop_block: effort message forgotten", req.url, fd.headers, fd.body, ["block_binding"], f, { keepHeaders: true });
+    // Positive control: a real edit before the thinking block (one character added to the first tool result). If the
+    // check is on, this must be a 400; if it is not, "forgotten" above proves nothing.
+    const edited = structuredClone(parsed);
+    const tr = edited.messages.find((m) => m.role === "user" && Array.isArray(m.content) && m.content.some((c) => c.type === "tool_result"));
+    const block = tr?.content.find((c) => c.type === "tool_result");
+    if (block) {
+      if (typeof block.content === "string") block.content += " ";
+      else if (Array.isArray(block.content)) { const t = block.content.find((c) => c.type === "text"); if (t) t.text += " "; }
+      const pe = bound(headers, withInsertsOf(edited, vs.inserts), "error");
+      await probe("binding error: POSITIVE CONTROL, first tool result edited (effort message kept)", req.url, pe.headers, pe.body, ["tool_result edited", "block_binding"], f, { keepHeaders: true });
+      const pd = bound(headers, withInsertsOf(edited, vs.inserts), "drop_block");
+      await probe("binding drop_block: POSITIVE CONTROL, first tool result edited", req.url, pd.headers, pd.body, ["tool_result edited", "block_binding"], f, { keepHeaders: true });
+    }
+    const fn = structuredClone(parsed);
+    await probe("no binding controls: effort message forgotten (this account's default)", req.url, headers, Buffer.from(JSON.stringify(fn)), [], f, { keepHeaders: true });
+  }
+  return { body: Buffer.from(JSON.stringify(withInsertsOf(parsed, vs.inserts))), headers, note: `main effort-verify #${vs.n}`, fields: ["messages.+effort"], facts: { ...f, history_thinking_blocks: facts.history_thinking_blocks } };
+}
+/**
+ * Part `binding-set`: the first request's own trailing system message gets the new level (what src/wire/effort.ts does
+ * as op "set"), the model thinks after it, and at the next request the check is run with it re-applied and forgotten.
+ */
+const bs = { index: null, n: 0 };
+const setLevel = (b) => { const m = b.messages[bs.index]; m.output_config = { ...m.output_config, effort: "low" }; if (!bindingTier) b.output_config = { ...b.output_config, effort: "low" }; return b; };
+/** The live body on --binding-tier (the product's retarget), else as is. */
+const onTier = (obj) => { const buf = Buffer.from(JSON.stringify(obj)); if (!bindingTier) return buf; const r = rt(buf, bindingTier); if (!r.ok) throw new Error(`retarget: ${r.reason}`); return r.body; };
+const onTierBound = (headers, obj, behavior) => { const b = JSON.parse(onTier(obj).toString("utf8")); return bound(headers, b, behavior); };
+async function bindingSet(req, raw, headers, parsed, f, view) {
+  if (view.turn !== "continuation") {
+    if (bs.index !== null) return { body: raw, headers, note: "passthrough (binding-set, later new turn)" };
+    const last = parsed.messages.length - 1;
+    if (parsed.messages[last]?.role !== "system" || !parsed.messages[last].output_config) return { body: raw, headers, note: "passthrough (binding-set: no effort-bearing trailing system message)" };
+    bs.index = last;
+    return { body: onTier(setLevel(structuredClone(parsed))), headers, note: `main binding-set: first request, level set in place${bindingTier ? ` (on ${bindingTier})` : ""}`, fields: ["messages.effort_set"], facts: f };
+  }
+  if (bs.index === null) return { body: raw, headers, note: "passthrough" };
+  bs.n++;
+  if (bs.n === 1) {
+    const re = onTierBound(headers, setLevel(structuredClone(parsed)), "error");
+    await probe("binding-set error: level re-applied in place (what reflex sends)", req.url, re.headers, re.body, ["messages.effort_set", "block_binding"], { ...f, history_thinking_blocks: f.history_thinking_blocks }, { keepHeaders: true });
+    const fe = onTierBound(headers, structuredClone(parsed), "error");
+    await probe("binding-set error: level forgotten (continued without reflex)", req.url, fe.headers, fe.body, ["block_binding"], f, { keepHeaders: true });
+    const fd = onTierBound(headers, structuredClone(parsed), "drop_block");
+    await probe("binding-set drop_block: level forgotten", req.url, fd.headers, fd.body, ["block_binding"], f, { keepHeaders: true });
+  }
+  return { body: onTier(setLevel(structuredClone(parsed))), headers, note: `main binding-set #${bs.n}`, fields: ["messages.effort_set"], facts: f };
+}
+
+function withInsertsOf(parsed, inserts) {
+  const b = structuredClone(parsed);
+  for (const ins of inserts) b.messages.splice(ins.index, 0, effortMsg(ins.effort));
+  if (inserts.length) b.output_config = { ...b.output_config, effort: inserts.at(-1).effort };
+  return b;
+}
+
 let applyDone = false;
 async function effortApply(req, headers, parsed, facts, view) {
   if (applyDone || view.turn !== "continuation") return;
@@ -326,6 +457,7 @@ async function route(req, raw, headers) {
   seen.requested_models.add(view.requestedModel);
   seen.entrypoints.add(view.entrypoint);
   for (const b of facts.betas) seen.betas.add(b);
+  if (probeEffortVerify) return view.kind === "main" ? effortVerify(req, raw, headers, parsed, facts, view) : { body: raw, headers, note: "passthrough" };
   if (probeEffortApply) { if (view.kind === "main") await effortApply(req, headers, parsed, facts, view); return { body: raw, headers, note: "passthrough" }; }
   if (probeEffortSwitch) return view.kind === "main" ? effortSwitch(req, raw, headers, parsed, facts, view) : { body: raw, headers, note: "passthrough" };
 
