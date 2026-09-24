@@ -22,7 +22,9 @@
 // (first request padded to the Haiku ceiling, sent to Haiku) · --delay-pin (decide a subagent at its second request) ·
 // --interactive <exit-s> (TUI in a pseudo-terminal via pty-run.py) · --lean (main-cont1: only the product's own
 // keep-history variant) · --probe-message-oc (first request to each target that drops a system message's
-// output_config, sent with it kept). Probes and routed requests carry the product's header rewrite (STRIP_BETAS).
+// output_config, sent with it kept) · --probe-effort-switch (main chat stays on its model; its effort is switched
+// mid-conversation the way Claude Code's own /effort does it, see below) · --probe-effort-apply (does the level take
+// effect? full answers, see below). Probes and routed requests carry the product's header rewrite (STRIP_BETAS).
 // Target model ids and prices are the product's own (DEFAULT_MODELS, src/pricing.ts).
 //
 // The cap is ENFORCED: every probe and every forwarded request is pre-charged from its own bytes (estimateTokens: 2.5 bytes/token,
@@ -64,6 +66,28 @@ let delayPin = false;
 let interactiveExitS = null;
 let lean = false;
 let probeMessageOc = false;
+/**
+ * Main chat only, no model change. Claude Code's own /effort appends `{role:"system",content:[],output_config:{effort}}`
+ * after the new user message and sets the top-level effort too (2.1.281 capture). The live session does the same at its
+ * first continuation (-> low) and third (-> max), and re-inserts every earlier effort message on later requests, as
+ * reflex would have to. Probes at the first continuation: each level (message + top-level), top-level only, message
+ * only, and Sonnet (previous request, then this one at the same and at another top-level effort). At the second: the
+ * request with the effort message forgotten (a history edit).
+ */
+let probeEffortSwitch = false;
+/**
+ * Main chat only, no model change: does a changed effort actually change how much the model thinks, when the system
+ * message at index 1 still carries the client's effort? At the first continuation a fixed synthetic puzzle (never user
+ * text) is appended to the last user message and the request is sent to the END (full answer, max_tokens clamped to
+ * EFFORT_APPLY_MAX_TOKENS, reserved against the cap) at: the client's effort, top-level only low / max, effort message
+ * + top-level low / max, effort message only low. Output tokens (thinking included) are the measure.
+ */
+let probeEffortApply = false;
+const EFFORT_APPLY_MAX_TOKENS = 16000;
+// Not memorisable (2026-09-24: a known-answer puzzle got ~150 output tokens at every level); needs step-by-step work.
+const PUZZLE = "Set the file task aside for this one reply and use no tools. Let f(0)=1 and, for n>0, f(n) = f(n-1) + f(n-3) + f(n-4) + 2*f(n-7), where f of a negative number is 0. What is f(37) mod 1009? Reply with only the number.";
+/** Each apply variant is sent this many times (the output length of one answer is noisy). */
+const APPLY_REPEATS = 2;
 const claudeArgs = [];
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--out") out = argv[++i];
@@ -80,6 +104,8 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--interactive") interactiveExitS = Number(argv[++i]);
   else if (argv[i] === "--lean") lean = true;
   else if (argv[i] === "--probe-message-oc") probeMessageOc = true;
+  else if (argv[i] === "--probe-effort-switch") probeEffortSwitch = true;
+  else if (argv[i] === "--probe-effort-apply") probeEffortApply = true;
   else if (argv[i] === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
 }
 mkdirSync(out, { recursive: true, mode: 0o700 });
@@ -135,21 +161,27 @@ function shapeFacts(body, headers) {
 }
 
 /** Sends one request; for probes reads only up to message_start, then aborts. */
-function send(path, headers, body, { probe }) {
+function send(path, headers, body, { probe, full = false }) {
   return new Promise((resolve) => {
     const h = { ...headers, host: upstream.host, "content-length": String(body.length), "accept-encoding": "identity" };
     const req = https.request({ hostname: upstream.hostname, method: "POST", path, headers: h }, (res) => {
       let buf = "";
       res.on("data", (c) => {
         buf += c.toString("utf8");
-        if (probe && res.statusCode < 400) {
+        if (probe && !full && res.statusCode < 400) {
           const m = /data: (\{"type":"message_start".*)\n/.exec(buf);
           if (m) { let usage = null; try { usage = JSON.parse(m[1]).message.usage; } catch { /* partial */ } res.destroy(); req.destroy(); resolve({ status: res.statusCode, usage }); }
         }
       });
       res.on("end", () => {
         if (res.statusCode >= 400) { let error = buf.slice(0, 300); try { error = JSON.parse(buf).error.message; } catch { /* raw */ } resolve({ status: res.statusCode, error }); }
-        else resolve({ status: res.statusCode, text: buf });
+        else if (full) {
+          let usage = null;
+          for (const m of buf.matchAll(/data: (\{"type":"message_(?:start|delta)".*)\n/g)) { try { const o = JSON.parse(m[1]); usage = { ...usage, ...(o.message?.usage ?? o.usage) }; } catch { /* partial */ } }
+          const text = [...buf.matchAll(/"type":"text_delta","text":("(?:[^"\\]|\\.)*")/g)].map((m) => JSON.parse(m[1])).join("");
+          const stop = /"stop_reason":"([a-z_]+)"/.exec(buf)?.[1] ?? null;
+          resolve({ status: res.statusCode, usage, answer: text.slice(0, 40), stop });
+        } else resolve({ status: res.statusCode, text: buf });
       });
       res.on("error", () => resolve({ status: res.statusCode ?? 0, error: "stream error" }));
     });
@@ -168,17 +200,17 @@ function productHeaders(headers, body) {
   return b.stripped.length === 0 ? { headers, stripped: [] } : { headers: { ...headers, "anthropic-beta": b.value }, stripped: b.stripped };
 }
 
-async function probe(label, path, rawHeaders, bodyBuf, rawFields, facts, { keepHeaders = false } = {}) {
-  const pre = preUsd(bodyBuf);
+async function probe(label, path, rawHeaders, bodyBuf, rawFields, facts, { keepHeaders = false, full = false } = {}) {
+  const pre = preUsd(bodyBuf) + (full ? (JSON.parse(bodyBuf.toString("utf8")).max_tokens * price(JSON.parse(bodyBuf.toString("utf8")).model).output) / 1e6 : 0);
   if (spent + pre > capUsd) { refused++; probes.push({ label, skipped: "cap reached", pre_usd: Number(pre.toFixed(4)) }); log(`skip ${label} (cap)`); return null; }
   spent += pre;
   const { headers, stripped } = keepHeaders ? { headers: rawHeaders, stripped: [] } : productHeaders(rawHeaders, bodyBuf);
   const fields = [...rawFields, ...stripped.map((x) => `anthropic-beta:-${x}`)];
-  const r = await send(path, headers, bodyBuf, { probe: true });
+  const r = await send(path, headers, bodyBuf, { probe: true, full });
   const model = JSON.parse(bodyBuf.toString("utf8")).model;
   const usd = costUsd(model, r.usage);
   spent += usd - pre;
-  probes.push({ label, status: r.status, accepted: r.status === 200, error: r.error ?? null, fields, facts, usage: r.usage ?? null, est_usd: Number(usd.toFixed(5)) });
+  probes.push({ label, status: r.status, accepted: r.status === 200, error: r.error ?? null, fields, facts, usage: r.usage ?? null, ...(full ? { answer: r.answer ?? null, stop_reason: r.stop ?? null } : {}), est_usd: Number(usd.toFixed(5)) });
   log(`${r.status === 200 ? "ACCEPT" : "reject"} ${r.status} ${label}${r.error ? " :: " + String(r.error).slice(0, 160) : ""}  (spent ~$${spent.toFixed(3)})`);
   return r.status === 200;
 }
@@ -222,6 +254,70 @@ const state = { subTarget: new Map(), subCount: 0, mainPinned: null, unpinProbed
 /** What the run was made under (CLAUDE.md: real-API experiments record their settings). */
 const seen = { requested_models: new Set(), entrypoints: new Set(), betas: new Set() };
 
+const LEVELS = ["low", "medium", "high", "xhigh", "max"];
+const effortMsg = (effort) => ({ role: "system", content: [], output_config: { effort } });
+const es = { prev: null, n: 0, inserts: [] };
+/** Re-inserts every effort message at the index it was first placed at (indices of the already-extended list). */
+function withInserts(parsed) {
+  const b = structuredClone(parsed);
+  for (const ins of es.inserts) b.messages.splice(ins.index, 0, effortMsg(ins.effort));
+  if (es.inserts.length) b.output_config = { ...b.output_config, effort: es.inserts.at(-1).effort };
+  return b;
+}
+async function effortSwitch(req, raw, headers, parsed, facts, view) {
+  const cur = parsed.output_config?.effort ?? null;
+  if (view.turn !== "continuation") { es.prev = raw; return { body: raw, headers, note: "main-new passthrough (effort-switch)", facts }; }
+  es.n++;
+  const f = { ...facts, client_effort: cur };
+  if (es.n === 1) {
+    for (const e of LEVELS) {
+      const b = structuredClone(parsed); b.messages.push(effortMsg(e)); b.output_config = { ...b.output_config, effort: e };
+      await probe(`switch:${cur}->${e} (message + top-level)`, req.url, headers, Buffer.from(JSON.stringify(b)), ["messages.+effort", "output_config.effort"], f, { keepHeaders: true });
+    }
+    const other = cur === "low" ? "high" : "low";
+    await probe(`switch:${cur}->${other} (top-level only)`, req.url, headers, variantBody(parsed, (b) => { b.output_config = { ...b.output_config, effort: other }; }), ["output_config.effort"], f, { keepHeaders: true });
+    await probe(`switch:${cur}->${other} (message only)`, req.url, headers, variantBody(parsed, (b) => { b.messages.push(effortMsg(other)); }), ["messages.+effort"], f, { keepHeaders: true });
+    if (es.prev) {
+      const p = rt(es.prev, "sonnet");
+      if (p.ok) await probe("sonnet:previous request (cache write)", req.url, headers, p.body, p.fields, f);
+      const r = rt(raw, "sonnet");
+      if (r.ok) {
+        await probe(`sonnet:this request, effort ${cur}`, req.url, headers, r.body, r.fields, f);
+        const b = JSON.parse(r.body.toString("utf8")); b.output_config = { ...b.output_config, effort: other };
+        await probe(`sonnet:this request, effort ${other} (top-level)`, req.url, headers, Buffer.from(JSON.stringify(b)), [...r.fields, "output_config.effort"], f);
+      }
+    }
+    es.inserts.push({ index: parsed.messages.length, effort: "low" });
+  } else if (es.n === 2) {
+    await probe("forgot the effort message (raw bytes, history edit)", req.url, headers, raw, [], f, { keepHeaders: true });
+  } else if (es.n === 3) {
+    es.inserts.push({ index: withInserts(parsed).messages.length, effort: "max" });
+  }
+  const body = Buffer.from(JSON.stringify(withInserts(parsed)));
+  return { body, headers, note: `main effort-switch #${es.n} (${es.inserts.map((x) => x.effort).join(",")})`, fields: ["messages.+effort", "output_config.effort"], facts: f };
+}
+
+let applyDone = false;
+async function effortApply(req, headers, parsed, facts, view) {
+  if (applyDone || view.turn !== "continuation") return;
+  applyDone = true;
+  const cur = parsed.output_config?.effort ?? null;
+  const f = { ...facts, client_effort: cur, puzzle: true, max_tokens: EFFORT_APPLY_MAX_TOKENS };
+  const base = structuredClone(parsed);
+  base.max_tokens = EFFORT_APPLY_MAX_TOKENS;
+  const last = [...base.messages].reverse().find((m) => m.role === "user");
+  if (typeof last.content === "string") last.content = [{ type: "text", text: last.content }];
+  last.content.push({ type: "text", text: PUZZLE });
+  const variants = [
+    [`client effort (${cur})`, () => {}],
+    ["top-level low", (b) => { b.output_config = { ...b.output_config, effort: "low" }; }],
+    ["top-level max", (b) => { b.output_config = { ...b.output_config, effort: "max" }; }],
+    ["message + top-level low", (b) => { b.messages.push(effortMsg("low")); b.output_config = { ...b.output_config, effort: "low" }; }],
+    ["message + top-level max", (b) => { b.messages.push(effortMsg("max")); b.output_config = { ...b.output_config, effort: "max" }; }],
+  ];
+  for (let i = 1; i <= APPLY_REPEATS; i++) for (const [label, mutate] of variants) await probe(`apply:${label} #${i}`, req.url, headers, variantBody(base, mutate), ["puzzle", "max_tokens"], f, { keepHeaders: true, full: true });
+}
+
 async function route(req, raw, headers) {
   const view = (() => { const r = parseRequest(req.headers, raw); return r.ok ? r.view : null; })();
   if (!view || !String(view.requestedModel).includes(from) || view.toolCount === 0) return { body: raw, headers, note: "passthrough" };
@@ -230,6 +326,8 @@ async function route(req, raw, headers) {
   seen.requested_models.add(view.requestedModel);
   seen.entrypoints.add(view.entrypoint);
   for (const b of facts.betas) seen.betas.add(b);
+  if (probeEffortApply) { if (view.kind === "main") await effortApply(req, headers, parsed, facts, view); return { body: raw, headers, note: "passthrough" }; }
+  if (probeEffortSwitch) return view.kind === "main" ? effortSwitch(req, raw, headers, parsed, facts, view) : { body: raw, headers, note: "passthrough" };
 
   if (view.kind === "main" && view.turn === "new" && !state.mainNewProbed && !noMainNew) {
     state.mainNewProbed = true;

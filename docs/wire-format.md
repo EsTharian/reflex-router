@@ -422,6 +422,63 @@ Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet,
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 
+### 5.8 Changing effort mid-conversation, same model (2.1.281)
+
+**What Claude Code sends for `/effort`** (interactive, $0, against a local stand-in upstream; model setting `opus[1m]`,
+requested model `claude-opus-5-5`). The first request carries the session's effort twice, as before: top-level
+`output_config.effort` and on the `role:"system"` message at index 1. After `/effort low` the next request appends
+`{"role":"system","content":[],"output_config":{"effort":"low"}}` directly after the new user message **and** sets the
+top-level effort to `low`. Earlier effort messages stay in the history: after four changes it held
+`high` (index 1), `low`, `max`, `medium`, each after the user message it was set before. The betas do not change
+(`per-turn-control-2026-07-01`, `effort-2025-11-24`). `/effort` also writes the level into the user's
+`~/.claude/settings.json` (`modelSettings.<model>.effortLevel`); a capture that types it must restore that file.
+
+**What the API does with it** (`test/fixtures/experiments/2.1.281/experiment.effort-switch.results.json`, est. $0.94,
+cap $2.00). One `-p` session under the user's own settings, no override (`opus[1m]`, effort `high`, entrypoint
+`sdk-cli`), `route-experiment.mjs --from opus --to sonnet --probe-effort-switch`. The main chat stays on Opus 5.5;
+the live requests do what reflex would do (append an effort message at the first continuation → `low`, at the third →
+`max`, and re-insert every earlier one on later requests); probes at the first and second continuation. Cache counts
+are tokens of a ~49k-token request:
+
+| Request | Status | Cache read | Cache write |
+| --- | --- | --- | --- |
+| Opus 5.5, `high` → each of `low` `medium` `high` `xhigh` `max` (message + top-level) | 200 ×5 | 48,371–49,317 (all) | ≤ 946 (the new tail) |
+| Opus 5.5, top-level effort only | 200 | 49,317 | 0 |
+| Opus 5.5, effort message only | 200 | 49,317 | 0 |
+| live: effort messages re-inserted on the next three requests (one more added at the third) | 200 ×3 | 49,726–49,930 | 0–728 |
+| next request with the effort message **forgotten** (a history edit) | 200 | 49,317 (up to the removed message) | 409 |
+| Sonnet 5, same request at the same effort (after a write) | 200 | 48,438 | 946 |
+| Sonnet 5, same request, top-level effort `high` → `low` | 200 | **0** | **49,384** |
+
+**What it settles.** On Opus 5.5 effort is not part of the cache key: any level, in either direction, keeps the cache,
+with or without the message. Claude Code sends both, so reflex should too. Re-inserting
+the effort messages keeps the prefix byte-identical; forgetting one is accepted (no preserved-thinking 400 on this
+account) but loses the cache from the removed message on, which grows with every later turn. On **Sonnet 5 an effort
+change rewrites the whole cache**, like a model switch (Sonnet takes no per-message effort, §5.6), so there it only
+pays where the cache is being written anyway: a first request, or together with a model switch. Haiku takes no effort.
+**Does the level take effect?** (`experiment.effort-apply.results.json`, est. $0.60 plus $0.23 for a first attempt
+whose puzzle the model knew by heart, ~150 output tokens at every level.) Same setup, `--probe-effort-apply`: at the
+first continuation a fixed synthetic puzzle (a recurrence mod 1009, answer 1006) is appended to the last user message
+and each variant is answered in full, twice, `max_tokens` 16000. Output tokens (thinking included), client effort `high`:
+
+| Variant | Output tokens (two runs) | Answer |
+| --- | --- | --- |
+| unchanged (`high`) | 1,844 / 1,900 | correct ×2 |
+| top-level only → `low` | 1,827 / 1,616 | correct ×2 |
+| top-level only → `max` | 2,060 / 1,707 | correct ×2 |
+| effort message + top-level → `low` | 1,092 / 1,051 | correct ×2 |
+| effort message + top-level → `max` | 4,704 / 5,487 | correct ×2 |
+
+**The top-level value alone does nothing** while the system message at index 1 carries the client's effort; the
+appended effort message is what changes the level (about −43% at `low`, +170% at `max` here). So a mid-conversation
+change on Opus 5.5 needs the message, and with it the re-insertion on every later request. Anything that changes the
+level therefore makes the history the model saw differ from Claude Code's transcript; if the effort messages are ever
+left out (state lost, or the conversation continued without reflex), that is a history edit: accepted on this account,
+unverified on accounts that the preserved-thinking check enforces (created on or after 2026-08-31).
+
+**Not tested:** Fable 5.1 and Opus 5 (the docs list per-message effort for both), whether Sonnet's top-level effort
+changes its thinking, and interactive (`cli`) sessions.
+
 ## 6. Responses
 
 Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_block_start, ping, content_block_delta, content_block_stop, message_delta, message_stop`. The capture proxy drops `accept-encoding`, so compression was **not** observed. The interactive client offers `zstd`, which `node:zlib` cannot decode before Node 22.15, so reflex narrows `accept-encoding` toward the upstream to the client's own offer restricted to `gzip, br, deflate` (absent stays absent). A response in any other coding is relayed untouched and logged as `usage_unknown_reason: "encoding:<name>"`. `message_start.message.usage` has `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, cache_creation{…}, output_tokens, service_tier, inference_geo`; final usage is in `message_delta.usage` (adds `output_tokens_details`, `iterations[]`).

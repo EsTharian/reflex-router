@@ -498,3 +498,23 @@ Cross-entropy against Jev is the same (1.046 vs 1.046); demand MAE 0.72 → 0.67
 The margins picked were 2 and 1.5 (large: its cheaper-than-Jev plans are confident ones).
 
 **What it means.** Five times the data brought the cheaper-than-Jev rate from 12.6% to 7.9%, still too high. At the shipped head's safety level the fine-tuned checkpoint keeps as many turns on Opus as the head (232 vs 230): no saving gained. Its one gain is latency (3.3× at p95, two questions instead of nine), which item "cut Laya latency" can get far more cheaply than hosting an 800 MB custom checkpoint behind a `laya-serve` wrapper. The limit is the data: synthetic tasks do not carry real traffic's shape (20% vs 46% Opus by Jev), and the owner decided that their prompts are not training data. **Not shipped.** The tools stay (`label-corpus.ts`, `eval-checkpoint.ts`, `laya-serve-checkpoint.sh`) for a later attempt with better data.
+
+## 2026-09-24 — effort can change mid-conversation on Opus 5.5 without losing the cache; on Sonnet it cannot
+
+**Setup.** Claude Code's own `/effort` captured against a local stand-in ($0), then one `-p` Opus 5.5 session through
+`route-experiment.mjs --probe-effort-switch` (est. $0.94, cap $2.00). Details and the table: `docs/wire-format.md` §5.8.
+
+**Result.** On Opus 5.5, switching from `high` to any of the five levels kept the whole ~49k-token cache (read
+48–49k, write under 1k), whether the switch went through the per-message effort, the top-level value, or both. The
+effort messages re-inserted on later requests kept every request a full cache hit; a forgotten one was accepted but
+lost the cache from that point. On Sonnet 5 the same switch read 0 and rewrote 49k tokens (est. $0.20 at list prices).
+
+**What it means.** On Opus 5.5 an effort change mid-conversation costs nothing in cache, unlike a model switch
+(33–111 requests to pay back, 2026-09-23). On Sonnet it costs as much as a model switch.
+
+**Follow-up, same day: does the level take effect?** A non-memorisable puzzle answered in full at each variant, twice
+(est. $0.60; a first attempt with a known-answer puzzle, $0.23, showed nothing). With Claude Code's effort still on the
+system message at index 1, changing only the top-level value left thinking where it was (1,616–2,060 output tokens
+against 1,844–1,900 unchanged); adding the effort message moved it (about 1,070 at `low`, about 5,100 at `max`). So on
+Opus 5.5 the level can only be changed by adding to the history, and reflex must keep re-adding what it added.
+
