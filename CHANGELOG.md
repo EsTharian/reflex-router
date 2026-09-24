@@ -1,10 +1,23 @@
 # Changelog
 
-None of these versions has been published to a registry.
+0.5.3 is the first version published to npm (`reflex-router`); earlier ones were GitHub release tarballs only.
 
 ## Unreleased
 
 _Nothing yet._
+
+## 0.5.3 — 2026-09-24
+
+### Fixed
+
+- A conversation reflex moved to another model came back on that model when resumed (`--continue`, `--resume`, with
+  or without reflex): Claude Code resumes on the model named in the transcript's last answer, over your own setting.
+  When reflex changes a request's model it now asks for an uncompressed answer and writes the model you asked for back
+  into its `message_start`; every other byte is relayed unchanged (wire-format §5.9).
+
+### Changed
+
+- Published to npm: `npm install -g reflex-router`.
 
 ## 0.5.2 — 2026-09-24
 

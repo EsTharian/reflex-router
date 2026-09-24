@@ -36,12 +36,11 @@ What this alpha does **not** do, so you don't have to find out: reasoning effort
 ## Quick start
 
 ```sh
-npm install -g https://github.com/ziyacivan/reflex-router/releases/download/v0.5.2/reflex-router-0.5.2.tgz
+npm install -g reflex-router
 ```
 
-That puts `reflex` on your PATH (Node.js 20+; alpha, see [Status](#status)). The tarball is attached to each
-[GitHub release](https://github.com/ziyacivan/reflex-router/releases) and already contains the built code. reflex is
-not published to npm.
+That puts `reflex` on your PATH (Node.js 20+; alpha, see [Status](#status)). The same package is attached to each
+[GitHub release](https://github.com/ziyacivan/reflex-router/releases) as a tarball.
 
 Or from a checkout, if you would rather read it first:
 
@@ -227,7 +226,7 @@ which differ in difficulty before any outcome is measured. It costs you the chea
 
 ## Status
 
-**Alpha.** Distributed as a tarball on [GitHub releases](https://github.com/ziyacivan/reflex-router/releases), not on npm (see [Quick start](#quick-start)).
+**Alpha.** Published on npm as `reflex-router` from 0.5.3; each version is also a tarball on [GitHub releases](https://github.com/ziyacivan/reflex-router/releases) (see [Quick start](#quick-start)).
 It works and it is covered by tests, but almost nothing in it is calibrated, and the honest summary is below rather
 than in a footnote.
 
