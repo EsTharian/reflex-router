@@ -6,6 +6,8 @@ export type HookEvent =
   | { readonly type: "UserPromptSubmit"; readonly base: Base; readonly prompt: string }
   | { readonly type: "PostToolUse" | "PostToolUseFailure"; readonly base: Base; readonly tool: ToolUse }
   | { readonly type: "SubagentStart"; readonly base: Base; readonly agentType: string | null }
+  /** The main chat starting a subagent (Agent tool): its title as Claude Code shows it, and the prompt it is given. */
+  | { readonly type: "PreToolUse"; readonly base: Base; readonly title: string | null; readonly prompt: string }
   | { readonly type: "SubagentStop"; readonly base: Base }
   | { readonly type: "Stop"; readonly base: Base };
 
@@ -28,6 +30,9 @@ export interface ToolUse {
   /** PostToolUseFailure only. */
   readonly error: string | null;
 }
+
+/** Tools that start a subagent (PreToolUse matcher; `Task` is the tool's older name). */
+export const AGENT_TOOLS = ["Agent", "Task"] as const;
 
 /** Tools whose PostToolUse / PostToolUseFailure events are delivered (the injected matcher). */
 export const OBSERVED_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"] as const;
@@ -72,6 +77,12 @@ export function parseHookEvent(body: Buffer): HookEvent | null {
     case "PostToolUse":
     case "PostToolUseFailure":
       return { type: e["hook_event_name"], base, tool: toolUse(e) };
+    case "PreToolUse": {
+      const input = isObj(e["tool_input"]) ? e["tool_input"] : {};
+      const prompt = str(input["prompt"]);
+      if (!(AGENT_TOOLS as readonly unknown[]).includes(e["tool_name"]) || prompt === null) return null;
+      return { type: "PreToolUse", base, title: str(input["description"]) || null, prompt };
+    }
     case "SubagentStart":
       return { type: "SubagentStart", base, agentType: str(e["agent_type"]) || null };
     case "SubagentStop":

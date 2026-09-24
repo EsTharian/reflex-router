@@ -90,9 +90,10 @@ describe("hook payloads (2.1.277 fixtures)", () => {
     assert.equal(parseHookEvent(Buffer.from(JSON.stringify({ hook_event_name: "PreToolUse", session_id: "s" }))), null);
   });
 
-  it("the injected settings register exactly the six events, tool events limited to the observed tools", () => {
+  it("the injected settings register exactly the seven events, tool events limited to the observed tools", () => {
     const h = outcomeHooks(4321);
-    assert.deepEqual(Object.keys(h).sort(), ["PostToolUse", "PostToolUseFailure", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
+    assert.equal(h["PreToolUse"]?.[0]?.matcher, "Agent|Task");
+    assert.deepEqual(Object.keys(h).sort(), ["PostToolUse", "PostToolUseFailure", "PreToolUse", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
     assert.equal(h["PostToolUse"]?.[0]?.matcher, "Edit|Write|MultiEdit|NotebookEdit|Bash");
     assert.deepEqual(h["UserPromptSubmit"]?.[0]?.hooks[0], { type: "http", url: "http://127.0.0.1:4321/__reflex/hook", timeout: 2 });
   });

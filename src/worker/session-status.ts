@@ -1,8 +1,8 @@
 // What `reflex statusline` shows: per session, the model the main chat asked for and the one reflex sent on its last
 // request, the same for each subagent, the effort level REFLEX_EFFORT last applied against the client's (main chat and
-// each subagent), and the estimated saving (section 8's "routed only" difference: the same token counts at the
-// requested model minus at the model sent, list prices). Model ids, level names and dollar sums only, in memory only,
-// served on loopback (GET /__reflex/status).
+// each subagent), each subagent's title (the Agent call's description, in memory only), and the estimated saving (section 8's "routed only" difference: the same token counts at the
+// requested model minus at the model sent, list prices). Model ids, level names, subagent titles and dollar sums only,
+// in memory only, served on loopback (GET /__reflex/status); never logged.
 import type { DecisionRecord } from "../log/decision-log.js";
 import type { DecisionInfo } from "../outcome/tracker.js";
 import { toDec, type J } from "../report/records.js";
@@ -19,20 +19,31 @@ export interface EffortPair {
   readonly level: string;
 }
 
+/** One subagent, in the order first seen: its model pair and the level applied to it (either may be missing). */
+export interface SubagentStatus {
+  readonly title: string | null;
+  readonly model: ModelPair | null;
+  readonly effort: EffortPair | null;
+}
+
 export interface SessionStatusBody {
   readonly main: ModelPair | null;
-  readonly subagents: readonly ModelPair[];
-  readonly effort: { readonly main: EffortPair | null; readonly subagents: readonly EffortPair[] };
+  readonly subagents: readonly SubagentStatus[];
+  readonly effort: { readonly main: EffortPair | null };
   /** Estimated $ saved: this session, and every logged session (null until the log has been read). */
   readonly saved: { readonly session: number; readonly total: number | null };
 }
 
+type Sub = { -readonly [K in keyof SubagentStatus]: SubagentStatus[K] };
+
 export class SessionStatus {
   readonly #main = new Map<string, ModelPair>();
-  readonly #subs = new Map<string, Map<string, ModelPair>>();
+  /** Per session, per subagent conversation key (the one decision records carry, so model and effort join). */
+  readonly #subs = new Map<string, Map<string, Sub>>();
+  /** Per session: Agent-call titles by the hash of the prompt they started, until a subagent's first request claims one. */
+  readonly #titles = new Map<string, Map<string, string>>();
   readonly #saved = new Map<string, number>();
   readonly #mainEffort = new Map<string, EffortPair>();
-  readonly #subEffort = new Map<string, Map<string, EffortPair>>();
   /** The log's total when this worker started; this worker's own records are added on top. */
   #logged: number | null = null;
 
@@ -40,11 +51,31 @@ export class SessionStatus {
     if (d.sessionId === null || d.sentModel === null || d.turn === "side") return;
     const pair = { requested: d.requestedModel, sent: d.sentModel };
     if (d.kind === "main" && d.agentId === null) this.#main.set(d.sessionId, pair);
-    else if (d.kind === "subagent" && d.agentId !== null) {
-      const subs = this.#subs.get(d.sessionId) ?? new Map<string, ModelPair>();
-      subs.set(d.agentId, pair);
-      this.#subs.set(d.sessionId, subs);
+    else if (d.kind === "subagent" && d.conv !== null) {
+      const sub = this.#sub(d.sessionId, d.conv);
+      sub.model = pair;
+      const titles = this.#titles.get(d.sessionId);
+      const t = d.taskHash ? titles?.get(d.taskHash) : undefined;
+      if (t !== undefined && d.taskHash) {
+        sub.title = t;
+        titles?.delete(d.taskHash);
+      }
     }
+  }
+
+  /** PreToolUse on the Agent tool: arrives before the subagent's first request, whose task text is this prompt. */
+  title(sessionId: string, promptHash: string, title: string): void {
+    const titles = this.#titles.get(sessionId) ?? new Map<string, string>();
+    titles.set(promptHash, title);
+    this.#titles.set(sessionId, titles);
+  }
+
+  #sub(sessionId: string, conv: string): Sub {
+    const subs = this.#subs.get(sessionId) ?? new Map<string, Sub>();
+    this.#subs.set(sessionId, subs);
+    const sub = subs.get(conv) ?? { title: null, model: null, effort: null };
+    subs.set(conv, sub);
+    return sub;
   }
 
   addRecord(record: DecisionRecord, sessionId: string | null): void {
@@ -56,11 +87,7 @@ export class SessionStatus {
     if (e === null || e.via === null || e.target === null || d.fallback) return;
     const pair = { requested: d.requestedEffort, level: e.target };
     if (d.kind === "main") this.#mainEffort.set(sessionId, pair);
-    else if (d.kind === "subagent" && d.conv !== null) {
-      const subs = this.#subEffort.get(sessionId) ?? new Map<string, EffortPair>();
-      subs.set(d.conv, pair);
-      this.#subEffort.set(sessionId, subs);
-    }
+    else if (d.kind === "subagent" && d.conv !== null) this.#sub(sessionId, d.conv).effort = pair;
   }
 
   setLoggedTotal(usd: number): void {
@@ -71,8 +98,8 @@ export class SessionStatus {
     const mine = [...this.#saved.values()].reduce((a, b) => a + b, 0);
     return {
       main: this.#main.get(sessionId) ?? null,
-      subagents: [...(this.#subs.get(sessionId)?.values() ?? [])],
-      effort: { main: this.#mainEffort.get(sessionId) ?? null, subagents: [...(this.#subEffort.get(sessionId)?.values() ?? [])] },
+      subagents: [...(this.#subs.get(sessionId)?.values() ?? [])].map((x) => ({ ...x })),
+      effort: { main: this.#mainEffort.get(sessionId) ?? null },
       saved: { session: this.#saved.get(sessionId) ?? 0, total: this.#logged === null ? null : this.#logged + mine },
     };
   }

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fetchStatus, formatStatus, shortModel } from "../../src/statusline.js";
+import { cleanTitle, fetchStatus, formatStatus, shortModel } from "../../src/statusline.js";
 import { parseStatusInput } from "../../src/wire/statusline.js";
 import { SessionStatus } from "../../src/worker/session-status.js";
 import { hasOwnStatusLine, mergeSettings } from "../../src/launcher/settings-inject.js";
 import type { DecisionInfo } from "../../src/outcome/tracker.js";
-import type { DecisionRecord } from "../../src/log/decision-log.js";
+import { hashId, type DecisionRecord } from "../../src/log/decision-log.js";
 
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[\\d+m`, "g");
 const plain = (s: string | null): string | null => (s === null ? null : s.replace(ANSI, ""));
@@ -23,17 +23,18 @@ describe("statusline", () => {
   });
 
   it("shows the model reflex sent when it differs from the one asked for, and routed subagents", () => {
-    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: SONNET }, subagents: [] })), "⇣ Sonnet 5 (asked Opus 5.5)");
-    assert.equal(plain(formatStatus({ worker: "up", main: { requested: SONNET, sent: OPUS }, subagents: [] })), "⇡ Opus 5.5 (asked Sonnet 5)");
-    const subs = [{ requested: OPUS, sent: HAIKU }, { requested: OPUS, sent: HAIKU }, { requested: OPUS, sent: OPUS }];
-    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: subs })), "reflex: Opus 5.5 · subagents → Haiku 4.5 ×2");
-    assert.equal(plain(formatStatus({ worker: "up", main: null, subagents: [] })), "reflex");
+    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: SONNET }, subagents: [] })), "Reflex: ⇣ Sonnet 5 (asked Opus 5.5)");
+    assert.equal(plain(formatStatus({ worker: "up", main: { requested: SONNET, sent: OPUS }, subagents: [] })), "Reflex: ⇡ Opus 5.5 (asked Sonnet 5)");
+    const sub = (sent: string, title: string | null) => ({ title, model: { requested: OPUS, sent }, effort: null });
+    const subs = [sub(HAIKU, "List docs directory files"), sub(OPUS, "Unchanged"), sub(SONNET, null)];
+    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: subs })), "Reflex: Opus 5.5\n↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5)\n↳ subagent 3: ⇣ Sonnet 5 (asked Opus 5.5)");
+    assert.equal(plain(formatStatus({ worker: "up", main: null, subagents: [] })), "Reflex");
     const main = { requested: OPUS, sent: OPUS };
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0.4231, total: 3.1 } })), "reflex: Opus 5.5 · est. saved $0.42 (total $3.10)");
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0, total: -0.95 } })), "reflex: Opus 5.5 · est. saved $0.00 (total −$0.95)");
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0.001, total: null } })), "reflex: Opus 5.5");
-    assert.equal(plain(formatStatus({ worker: "up", main: null, subagents: [], saved: { session: 0, total: 2.14 } })), "reflex · est. saved $0.00 (total $2.14)");
-    assert.equal(plain(formatStatus({ worker: "down" })), "reflex: passthrough");
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0.4231, total: 3.1 } })), "Reflex: Opus 5.5 · Est. Saved: $0.42 · Total Saved: $3.10");
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0, total: -0.95 } })), "Reflex: Opus 5.5 · Est. Saved: $0.00 · Total Saved: −$0.95");
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0.001, total: null } })), "Reflex: Opus 5.5");
+    assert.equal(plain(formatStatus({ worker: "up", main: null, subagents: [], saved: { session: 0, total: 2.14 } })), "Reflex · Est. Saved: $0.00 · Total Saved: $2.14");
+    assert.equal(plain(formatStatus({ worker: "down" })), "Reflex: passthrough");
     assert.equal(formatStatus(null), null);
   });
 
@@ -54,10 +55,10 @@ describe("statusline", () => {
     const d = (o: Partial<DecisionInfo>): DecisionInfo => ({ id: "x", at: 0, sessionId: "s1", agentId: null, kind: "main", turn: "new", conv: null, requestedModel: OPUS, sentModel: OPUS, ...o });
     s.observe(d({ sentModel: SONNET }));
     s.observe(d({ turn: "side", sentModel: HAIKU }));
-    s.observe(d({ kind: "subagent", agentId: "a1", sentModel: HAIKU }));
-    s.observe(d({ kind: "subagent", agentId: "a1", turn: "continuation", sentModel: HAIKU }));
-    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ requested: OPUS, sent: HAIKU }], effort: { main: null, subagents: [] }, saved: { session: 0, total: null } });
-    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null, subagents: [] }, saved: { session: 0, total: null } });
+    s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", sentModel: HAIKU }));
+    s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", turn: "continuation", sentModel: HAIKU }));
+    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, saved: { session: 0, total: null } });
+    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, saved: { session: 0, total: null } });
   });
 
   it("the saving is section 8's: the same usage at the requested model minus at the model sent, routed records only", () => {
@@ -73,10 +74,11 @@ describe("statusline", () => {
 
   it("shows the effort level REFLEX_EFFORT applied when it differs from the one asked for", () => {
     const main = { requested: OPUS, sent: OPUS };
-    const effort = { main: { requested: "high", level: "low" }, subagents: [{ requested: "high", level: "low" }, { requested: "high", level: "low" }, { requested: "high", level: "max" }, { requested: "high", level: "high" }] };
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort })), "reflex: Opus 5.5 · effort ⇣ low (asked high) · subagent effort ⇣ low ×2, ⇡ max");
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort: { main: { requested: "high", level: "high" }, subagents: [] } })), "reflex: Opus 5.5", "same level: nothing to say");
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort: { main: { requested: null, level: "low" }, subagents: [] } })), "reflex: Opus 5.5", "the client's level unknown: no comparison");
+    const lvl = (level: string) => ({ requested: "high", level });
+    const subagents = [{ title: "Explore", model: { requested: OPUS, sent: HAIKU }, effort: lvl("low") }, { title: "Same", model: { requested: OPUS, sent: OPUS }, effort: lvl("high") }, { title: "Review", model: { requested: OPUS, sent: OPUS }, effort: lvl("max") }];
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents, effort: { main: lvl("low") } })), "Reflex: Opus 5.5 · Effort: ⇣ low (asked high)\n↳ Explore: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)\n↳ Review: Opus 5.5 · Effort: ⇡ max (asked high)");
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort: { main: lvl("high") } })), "Reflex: Opus 5.5", "same level: nothing to say");
+    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], effort: { main: { requested: null, level: "low" } } })), "Reflex: Opus 5.5", "the client's level unknown: no comparison");
   });
 
   it("the worker keeps the last APPLIED level per main chat and per subagent; unapplied and rejected ones are ignored", () => {
@@ -86,7 +88,17 @@ describe("statusline", () => {
     s.addRecord(rec({ effort: { pick: "max", target: "high", via: null, reasons: ["effort_midturn_off"] } }), "s1"); // not applied: low holds
     s.addRecord(rec({ kind: "subagent", conv: "c-a1", effort: { pick: "low", target: "low", via: "message", reasons: ["effort_down"] } }), "s1");
     s.addRecord(rec({ kind: "subagent", conv: "c-a2", effort: { pick: "low", target: "low", via: "message", reasons: [] }, forwarded: { model: OPUS, rewritten: true, fallback: true } }), "s1");
-    assert.deepEqual(s.get("s1").effort, { main: { requested: "high", level: "low" }, subagents: [{ requested: "high", level: "low" }] });
+    assert.deepEqual(s.get("s1").effort, { main: { requested: "high", level: "low" } });
+    assert.deepEqual(s.get("s1").subagents, [{ title: null, model: null, effort: { requested: "high", level: "low" } }]);
+  });
+
+  it("a subagent is titled by the Agent call that started it, joined on its task text; titles are cleaned", () => {
+    const s = new SessionStatus();
+    s.title("s1", hashId("Run ls and report") as string, "List docs");
+    s.observe({ id: "x", at: 0, sessionId: "s1", agentId: "a1", kind: "subagent", turn: "new", conv: "c-a1", requestedModel: OPUS, sentModel: HAIKU, taskHash: hashId("Run ls and report") });
+    s.observe({ id: "y", at: 0, sessionId: "s1", agentId: "a2", kind: "subagent", turn: "new", conv: "c-a2", requestedModel: OPUS, sentModel: HAIKU, taskHash: hashId("other") });
+    assert.deepEqual(s.get("s1").subagents.map((x) => x.title), ["List docs", null]);
+    assert.equal(cleanTitle(`evil\x1b[31m title\n${"x".repeat(60)}`), `evil [31m title ${"x".repeat(23)}…`);
   });
 
   it("never replaces the user's own status line", () => {

@@ -4,7 +4,13 @@ None of these versions has been published to a registry.
 
 ## Unreleased
 
-_Nothing yet._
+### Changed
+
+- New status line format: `Reflex: Opus 5.5 · Effort: ⇣ low (asked high) · Est. Saved: $0.42 · Total Saved: $3.10`,
+  and below it one line per subagent reflex changed, titled as Claude Code shows it: `↳ List docs directory files:
+  ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)`. It replaces `subagents → Haiku 4.5 ×2` and `subagent
+  effort ⇣ low ×2` on the first line. The title comes from a new `PreToolUse` hook limited to the Agent tool (answered
+  `204`), is joined to the subagent by its task text, and stays in the worker's memory; it is never logged.
 
 ## 0.5.1 — 2026-09-24
 

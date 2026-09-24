@@ -193,7 +193,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
       try {
         event = tracker ? parseHookEvent(body) : null;
         hint = opts.config.delegate ? hintReply(event) : null;
-        const notice = event && event.base.agentId === null ? notices.take(event.base.sessionId) : null;
+        const notice = event && event.base.agentId === null && event.type !== "PreToolUse" ? notices.take(event.base.sessionId) : null;
         if (hint || notice) reply = Buffer.from(JSON.stringify({ ...hint, ...(notice ? { systemMessage: notice } : {}) }));
       } catch {
         reply = null;
@@ -205,6 +205,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         void decisionLog.appendRecord(rec);
       }
       if (event?.type === "UserPromptSubmit") prompts.add(event.base.sessionId, event.prompt);
+      if (event?.type === "PreToolUse" && event.title !== null) status.title(event.base.sessionId, hashId(event.prompt.trim()) as string, event.title);
       if (event) tracker?.ingest(event);
       return;
     }

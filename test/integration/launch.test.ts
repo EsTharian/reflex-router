@@ -130,7 +130,7 @@ describe("launcher end to end (fake claude)", () => {
     assert.equal(o.report.settings.length, 1);
     assert.deepEqual((o.report.settings[0] as { env: unknown }).env, { ANTHROPIC_BASE_URL: o.report.baseUrl });
     const hooks = (o.report.settings[0] as { hooks: Record<string, { hooks: { url: string }[] }[]> }).hooks;
-    assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PostToolUseFailure", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
+    assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PostToolUseFailure", "PreToolUse", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
     for (const groups of Object.values(hooks)) assert.equal(groups[0]?.hooks[0]?.url, `${o.report.baseUrl}/__reflex/hook`, "outcome hooks go to the front door");
   });
 

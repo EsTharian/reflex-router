@@ -40,6 +40,8 @@ export interface DecisionInfo {
   readonly sentModel: string | null;
   /** REFLEX_EFFORT ran this turn below the client's effort level (the model may be the one asked for). */
   readonly effortLowered?: boolean;
+  /** A subagent's `new` turn: the hash of its task text, which joins it to the Agent call that started it (status line). */
+  readonly taskHash?: string | null;
 }
 
 type RevertKind = "inverse_edit" | "write_restore" | "git_restore";
@@ -277,6 +279,8 @@ export class OutcomeTracker {
   #ingest(e: HookEvent): void {
     const s = this.#session(e.base.sessionId);
     switch (e.type) {
+      case "PreToolUse":
+        return; // the status line's subagent titles; nothing to capture
       case "UserPromptSubmit": {
         s.promptsSeen = true;
         if (e.prompt.trimStart().startsWith("/")) {

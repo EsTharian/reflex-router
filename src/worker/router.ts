@@ -472,7 +472,7 @@ export class Router {
             };
             const et = outcome.part.effort?.target ?? null;
             const effortLowered = fallbackStatus === null && effortApplied !== null && et !== null && EFFORTS.indexOf(et) < EFFORTS.indexOf(v.requestedEffort as Effort);
-            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, interjection: v.interjection, conv: v.convKey, requestedModel: v.requestedModel, sentModel, effortLowered });
+            this.d.onDecision?.({ id, at: started, sessionId: v.sessionId, agentId: v.agentId, kind: v.kind, turn: v.turn, sideKind: v.sideKind, interjection: v.interjection, conv: v.convKey, requestedModel: v.requestedModel, sentModel, effortLowered, taskHash: v.kind === "subagent" && v.task !== null ? hashId(v.task.trim()) : null });
             this.d.onRecord?.(record, v.sessionId);
             return this.d.log.append(record, v.turn === "new" ? v.task : null);
           })

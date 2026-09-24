@@ -17,11 +17,12 @@ interface Pair {
 export interface StatusBody {
   readonly worker: "up" | "down";
   readonly main?: Pair | null;
-  readonly subagents?: readonly Pair[];
+  /** Each subagent in the order first seen: its model pair and the level applied to it. */
+  readonly subagents?: readonly { readonly title?: string | null; readonly model: Pair | null; readonly effort: EffortPair | null }[];
   /** Estimated $ saved (list prices; negative when routing cost more): this session, and all logged sessions. */
   readonly saved?: { readonly session: number; readonly total: number | null };
-  /** REFLEX_EFFORT: the level last applied to the main chat and to each subagent, with the client's own. */
-  readonly effort?: { readonly main: EffortPair | null; readonly subagents: readonly EffortPair[] };
+  /** REFLEX_EFFORT: the level last applied to the main chat, with the client's own. */
+  readonly effort?: { readonly main: EffortPair | null };
 }
 interface EffortPair {
   readonly requested: string | null;
@@ -52,28 +53,45 @@ const YELLOW = "\x1b[33m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
-/** Pure. The line for one session; null prints nothing (not behind reflex, or nothing to say yet). */
+/** A subagent title is model-written text: no control characters (no terminal escapes), one line, at most 40 chars. */
+export function cleanTitle(t: string): string {
+  // eslint-disable-next-line no-control-regex
+  const one = t.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim();
+  return one.length > 40 ? `${one.slice(0, 39)}…` : one;
+}
+
+/** `⇣ Haiku 4.5 (asked Opus 5.5)` when reflex changed the model, `Opus 5.5` when it did not. */
+const modelText = (p: Pair): string =>
+  routed(p) ? `${YELLOW}${arrow(p)} ${shortModel(p.sent)}${RESET} ${DIM}(asked ${shortModel(p.requested as string)})${RESET}` : shortModel(p.sent);
+const effortText = (p: EffortPair): string => `${DIM}Effort:${RESET} ${YELLOW}${effortArrow(p)} ${p.level}${RESET} ${DIM}(asked ${p.requested as string})${RESET}`;
+const SEP = ` ${DIM}·${RESET} `;
+
+/**
+ * Pure. The lines for one session; null prints nothing (not behind reflex, or nothing to say yet).
+ *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Saved: $0.42 · Total Saved: $3.10
+ *   ↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)
+ * One line per subagent reflex changed, titled as Claude Code shows it (else `subagent N`, by start order).
+ */
 export function formatStatus(s: StatusBody | null): string | null {
   if (s === null) return null;
-  if (s.worker === "down") return `${DIM}reflex: passthrough${RESET}`;
-  const parts: string[] = [];
+  if (s.worker === "down") return `${DIM}Reflex: passthrough${RESET}`;
   const main = s.main ?? null;
-  if (main !== null && routed(main)) parts.push(`${YELLOW}${arrow(main)} ${shortModel(main.sent)}${RESET} ${DIM}(asked ${shortModel(main.requested as string)})${RESET}`);
-  else if (main !== null) parts.push(`${DIM}reflex:${RESET} ${shortModel(main.sent)}`);
-  else parts.push(`${DIM}reflex${RESET}`); // nothing decided yet: still say whose line this is
+  const parts = [main === null ? `${DIM}Reflex${RESET}` : `${DIM}Reflex:${RESET} ${modelText(main)}`]; // nothing decided yet: still say whose line this is
   const me = s.effort?.main ?? null;
-  if (me !== null && moved(me)) parts.push(`${DIM}effort${RESET} ${YELLOW}${effortArrow(me)} ${me.level}${RESET} ${DIM}(asked ${me.requested as string})${RESET}`);
-  const subs = new Map<string, number>();
-  for (const p of s.subagents ?? []) if (routed(p)) subs.set(p.sent, (subs.get(p.sent) ?? 0) + 1);
-  if (subs.size > 0) parts.push(`${DIM}subagents${RESET} ${[...subs].map(([m, n]) => `${YELLOW}→ ${shortModel(m)}${n > 1 ? ` ×${n}` : ""}${RESET}`).join(", ")}`);
-  const levels = new Map<string, number>();
-  for (const p of s.effort?.subagents ?? []) if (moved(p)) levels.set(`${effortArrow(p)} ${p.level}`, (levels.get(`${effortArrow(p)} ${p.level}`) ?? 0) + 1);
-  if (levels.size > 0) parts.push(`${DIM}subagent effort${RESET} ${[...levels].map(([l, n]) => `${YELLOW}${l}${n > 1 ? ` ×${n}` : ""}${RESET}`).join(", ")}`);
+  if (me !== null && moved(me)) parts.push(effortText(me));
   const saved = s.saved;
   if (saved !== undefined && (Math.abs(saved.session) >= 0.005 || Math.abs(saved.total ?? 0) >= 0.005)) {
-    parts.push(`${DIM}est. saved${RESET} ${money(saved.session)}${saved.total === null ? "" : ` ${DIM}(total ${money(saved.total)})${RESET}`}`);
+    parts.push(`${DIM}Est. Saved:${RESET} ${money(saved.session)}`);
+    if (saved.total !== null) parts.push(`${DIM}Total Saved:${RESET} ${money(saved.total)}`);
   }
-  return parts.join(` ${DIM}·${RESET} `);
+  const subs = (s.subagents ?? []).flatMap((x, i) => {
+    const changed = (x.model !== null && routed(x.model)) || (x.effort !== null && moved(x.effort));
+    if (!changed) return [];
+    const bits = [...(x.model !== null ? [modelText(x.model)] : []), ...(x.effort !== null && moved(x.effort) ? [effortText(x.effort)] : [])];
+    const title = cleanTitle(x.title ?? "");
+    return [`${DIM}↳ ${title === "" ? `subagent ${i + 1}` : title}:${RESET} ${bits.join(SEP)}`];
+  });
+  return [parts.join(SEP), ...subs].join("\n");
 }
 
 /** GET the status from a loopback base URL; null on anything unexpected. */
