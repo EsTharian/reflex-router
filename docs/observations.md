@@ -612,3 +612,26 @@ the final code, every request routed, no fallback.
 **Not measured.** Whether a model sees the same tools as well when a lifted `tool_addition` becomes a non-deferred tool
 (the visible set is the same; quality was not scored). Cost per session was not measured beyond the start-of-session
 context. List-price estimate of the experiment: about $4.
+
+## 2026-09-25 — nine anomaly claims checked: four fixes, one refuted, one open
+
+**Conditions.** Claims from another machine's logs, checked one by one with a prediction, a control, a repro and a
+mutation: fake upstream and fake Jev for the wire (no tokens), the real `claude` 2.1.282 against a fake Messages API,
+and a few live runs on the owner's settings (`opus[1m]`, `effortLevel: medium`). Full record with commands and outputs:
+[`verification-2026-09-25.md`](verification-2026-09-25.md).
+
+**Result.** Four claims confirmed and fixed in code. (1) Side calls lost `REFLEX_EFFORT`'s marks. Live, a subagent's
+progress summaries read only the 16.6k fixed prefix and wrote its history again (17.9k); after the fix they read 31–34k
+and wrote 88. (2) A routed subagent's summaries went to the requested model and built a second cache there: a 15k
+write on Opus for a loop running on Sonnet; they now follow the pin. (3) A subagent whose Agent call named a model was
+routed anyway. (4) Decisions queued behind 4 sockets: with 800 ms answers, 4 of 8 simultaneous subagents timed out
+(fake Jev); in the owner's log 28% of subagent decisions timed out when 4 or more started together. Tool search behind
+0.5.5 was confirmed and was already fixed in 0.5.6. `REFLEX_EFFORT_UP` going above `effortLevel` is the flag doing
+its job (a decision is open). The resends on a rejected rewrite or a dead worker happen as documented. The startup 429
+is Claude Code's quota probe, answered 429 without reflex too.
+
+**Not measured.** Whether resuming without reflex after a main-chat effort change costs a cache rewrite: in `-p
+--continue` pairs the control missed its cache as well (the tool list changed between processes). The task
+notifications and subagent hand-backs that reach the main chat are real turns (92 of 99 and 45 of 46 answered there in
+the transcripts) but are still side calls to the router. List-price estimate of the live runs: about $7.95 (4.76M
+tokens).

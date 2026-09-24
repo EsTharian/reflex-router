@@ -4,7 +4,25 @@
 
 ## Unreleased
 
-_Nothing yet._
+### Fixed
+
+- A subagent's progress summaries rewrote its whole history into a second cache. With `REFLEX_EFFORT` they went out
+  without the effort level reflex had put into the subagent's first request, so the prefix changed at message 1; for a
+  subagent routed to another model they went to the requested model. Every side call now carries its conversation's
+  effort messages, and a routed subagent's summaries follow its pin. One live run each (Opus 5.5, 2.1.282): before, the
+  summaries read only the 16.6k fixed prefix and wrote the subagent's history again (17.9k); after, they read 31–34k
+  and wrote 88.
+- A subagent the Agent tool call gave a `model` explicitly is no longer routed (or given another effort level): the
+  choice was made on purpose. Recorded as `plan.reasons: ["model_explicit"]`. Models set in an agent definition's
+  frontmatter are not seen and are still routed.
+- Several subagents starting at once no longer queue for the decision backend: the client kept 4 connections, and
+  with 8 subagents and 800 ms answers the last 4 ran out of the deadline and were not routed (fake backend). In the
+  owner's log, 28% of subagent decisions timed out when 4 or more started within 1.5 s, 0% when one started alone.
+
+### Added
+
+- `scripts/spike/fake-anthropic.mjs` (a loopback Messages API for running the real `claude` without tokens) and
+  `scripts/spike/claims-probe.mts` (the scenarios of the 2026-09-25 verification, fake upstream and fake Jev).
 
 ## 0.5.6 — 2026-09-25
 
