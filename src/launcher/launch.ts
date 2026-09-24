@@ -42,6 +42,16 @@ export function sanitizedEnv(env: NodeJS.ProcessEnv, extra: Record<string, strin
   return { ...out, ...extra };
 }
 
+/**
+ * Claude Code turns MCP tool search off when ANTHROPIC_BASE_URL is not first-party, because many proxies drop
+ * `tool_reference` blocks; every MCP tool schema is then sent up front on every request. reflex forwards bodies and
+ * the anthropic-beta header as they are (rewrites parse and re-serialise, keeping every unknown field), so it turns
+ * tool search back on. Any value the user set, including `false`, is left alone; Claude Code's settings `env` wins too.
+ */
+export function proxyEnv(env: NodeJS.ProcessEnv, baseUrl: string): Record<string, string> {
+  return { ANTHROPIC_BASE_URL: baseUrl, ...(env["ENABLE_TOOL_SEARCH"] === undefined ? { ENABLE_TOOL_SEARCH: "true" } : {}) };
+}
+
 const signalNumber = (signal: NodeJS.Signals): number => os.constants.signals[signal] ?? 0;
 
 /** Runs claude with the terminal attached and resolves with the exit code a shell would report. */
@@ -167,8 +177,9 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
   const statusLine = config.statusline && !ownStatusLine ? { type: "command", command: `"${process.execPath}" "${REFLEX_BIN}" statusline`, padding: 0, refreshInterval: 2 } : undefined;
   const injection = injectSettings(argv, { env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }, hooks: outcomeHooks(door.port), ...(statusLine ? { statusLine } : {}) }, realInjectIO(io.cwd));
   if (injection.warning) warn(injection.warning);
+  if (io.env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"]) warn("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS is set: MCP tool search stays off, so every MCP tool schema is sent on every request");
   try {
-    return await runClaude(bin, injection.args, sanitizedEnv(io.env, { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }), io);
+    return await runClaude(bin, injection.args, sanitizedEnv(io.env, proxyEnv(io.env, `http://127.0.0.1:${door.port}`)), io);
   } finally {
     injection.cleanup();
     await door.close();

@@ -142,6 +142,17 @@ describe("launcher end to end (fake claude)", () => {
     assert.equal(o.report.passthroughVars["CLAUDE_CODE_TEST_MARKER"], "kept");
   });
 
+  it("turns MCP tool search back on behind the proxy, and never overrides a value the user set", async () => {
+    const o = await run(["-p", "x"]);
+    assert.equal(o.report.passthroughVars["ENABLE_TOOL_SEARCH"], "true");
+    assert.equal(o.stderr, "");
+    for (const v of ["false", "auto:5", ""]) assert.equal((await run(["-p", "x"], { ENABLE_TOOL_SEARCH: v })).report.passthroughVars["ENABLE_TOOL_SEARCH"], v);
+    const off = await run(["-p", "x"], { REFLEX_MODE: "off" });
+    assert.equal(off.report.passthroughVars["ENABLE_TOOL_SEARCH"], null, "plain claude talks to its own base URL and gets nothing");
+    const betasOff = await run(["-p", "x"], { CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1" });
+    assert.match(betasOff.stderr, /CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS is set: MCP tool search stays off/);
+  });
+
   it("merges the user's own --settings into one file instead of adding a second flag", async () => {
     const o = await run(["--settings", '{"model":"opus","env":{"MINE":"1"}}', "-p", "x"]);
     assert.equal(o.report.argv.filter((a) => a === "--settings").length, 1);
