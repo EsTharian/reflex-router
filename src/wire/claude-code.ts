@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import {
   BETA_EXTENDED_CACHE_TTL, BETA_MID_CONVERSATION_SYSTEM, BILLING_ENTRYPOINT, HANDBACK_PROMPT_PREFIX, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
-  INJECTED_PROMPT_MARKERS, MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, QUEUED_MESSAGE_MARKER, QUEUED_MESSAGE_TRAILER, SIDE_MARKERS, SYSTEM_REMINDER, USER_AGENT_VERSION, type SideKind,
+  INJECTED_PROMPT_MARKERS, MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, QUEUED_MESSAGE_MARKER, QUEUED_MESSAGE_TRAILER, SIDE_MARKERS, SYSTEM_REMINDER, TOOL_LOADED_TEXT, USER_AGENT_VERSION, type SideKind,
 } from "./markers.js";
 import { matchesTypedPrompt } from "./typed-prompt.js";
 
@@ -106,6 +106,9 @@ const blocksOf = (m: Json): Block[] => {
 };
 /** The harness sends each reminder as its own text block starting with the tag; inline ones are stripped too. */
 const isReminderOnly = (t: string): boolean => t.trimStart().startsWith("<system-reminder>") || t.replace(SYSTEM_REMINDER, "").trim() === "";
+/** True when a tool_result in the message holds a `tool_reference` block (what ToolSearch returns). */
+const hasToolReferenceResult = (m: Json): boolean =>
+  Array.isArray(m["content"]) && m["content"].some((b) => isObj(b) && b["type"] === "tool_result" && Array.isArray(b["content"]) && b["content"].some((c) => isObj(c) && c["type"] === "tool_reference"));
 /** The user's own words: reminder blocks dropped, inline reminders and local-command wrappers removed, pasted-content tags unwrapped. */
 const ownText = (blocks: readonly Block[]): string =>
   blocks
@@ -214,8 +217,10 @@ function classifyTurn(nonSystem: readonly Json[], toolCount: number, kind: Reque
     for (const q of queuedMessages(blocks)) {
       if (matchesTypedPrompt(q, newestTyped === null ? null : [newestTyped])) return continuation(true);
     }
-    // A tool-loop step carries tool results and at most harness reminders.
-    const onlyResults = blocks.every((b) => b.type === "tool_result" || (b.type === "text" && isReminderOnly(b.text ?? "")));
+    // A tool-loop step carries tool results and at most harness text: reminders, or "Tool loaded." beside a ToolSearch
+    // result of tool_reference blocks.
+    const loaded = hasToolReferenceResult(last);
+    const onlyResults = blocks.every((b) => b.type === "tool_result" || (b.type === "text" && (isReminderOnly(b.text ?? "") || (loaded && b.text?.trim() === TOOL_LOADED_TEXT))));
     if (onlyResults) return continuation(false);
     // Tool results plus text. Two different things wear this shape, and they must not share a label:
     //  - the user typed into a running tool loop. Still their own turn, still the same pin, no new decision.

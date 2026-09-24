@@ -53,6 +53,12 @@ export const PASTED_CONTENT_TAG = /<\/?pasted_content(?:\s+id="[^"]*")?\s*>/g;
 export const QUEUED_MESSAGE_MARKER = "The user sent a new message while you were working:";
 export const QUEUED_MESSAGE_TRAILER = "This is how Claude Code surfaces messages the user sends mid-turn";
 
+/**
+ * MCP tool search (2.1.282, toolsearch.main-continuation-tool-loaded): the tool-loop step after a ToolSearch that loaded
+ * tools carries this harness text beside the tool_result of `tool_reference` blocks. Only recognised next to such a
+ * result, so a user who types exactly these words anywhere else is unaffected.
+ */
+export const TOOL_LOADED_TEXT = "Tool loaded.";
 export const LOCAL_COMMAND_BLOCK = /<(local-command-caveat|local-command-stdout|local-command-stderr|command-name|command-message|command-args)>[\s\S]*?<\/\1>/g;
 
 /**

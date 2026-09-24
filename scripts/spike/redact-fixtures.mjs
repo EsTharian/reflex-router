@@ -113,6 +113,7 @@ const redactTool = (t) => {
     description: scrubString(elide(t.description ?? "", 60)),
     input_schema: keepFull ? scrubDeep(stripDescriptions(t.input_schema)) : { _elided: true, type: t.input_schema?.type, "$schema": t.input_schema?.$schema },
     ...(t.cache_control ? { cache_control: t.cache_control } : {}),
+    ...(t.defer_loading !== undefined ? { defer_loading: t.defer_loading } : {}), // MCP tool search (2.1.282)
   };
 };
 const stripDescriptions = (s) => {

@@ -77,6 +77,16 @@ describe("turn classification: only positively identified user turns are `new`",
     assert.deepEqual([many.turn, many.sideKind], ["side", "tool_result_text"]);
   });
 
+  it("'Tool loaded.' beside a ToolSearch result of tool_reference blocks is a continuation, and only there", () => {
+    const search = { type: "tool_result", tool_use_id: "a", content: [{ type: "tool_reference", tool_name: "mcp__srv__lookup" }] };
+    const v = view([{ role: "user", content: [search, text("Tool loaded.")] }]);
+    assert.deepEqual([v.turn, v.sideKind], ["continuation", null]);
+    const plain = view([{ role: "user", content: [{ type: "tool_result", tool_use_id: "a", content: "ok" }, text("Tool loaded.")] }]);
+    assert.deepEqual([plain.turn, plain.sideKind], ["side", "tool_result_text"]);
+    const other = view([{ role: "user", content: [search, text("Tool loaded. Now summarise it.")] }]);
+    assert.deepEqual([other.turn, other.sideKind], ["side", "tool_result_text"]);
+  });
+
   it("tool results plus a message the user typed mid-loop are a continuation, flagged as an interjection", () => {
     const typed = ["actually, skip the tests and just show me the diff"];
     const msgs = [{ role: "user", content: [{ type: "tool_result", tool_use_id: "a" }, text("actually, skip the tests and just show me the diff")] }];

@@ -1,0 +1,201 @@
+{
+ "files": [
+  {
+   "file": "toolsearch.main-new-turn.request.json",
+   "description": "main chat with MCP tool search on (ENABLE_TOOL_SEARCH=true behind a proxy), the prompt typed with -p (sdk-cli): ToolSearch plus defer_loading tools (DeferredToolPlaceholder, MCP tools); the trailing role:system message announces MCP tools with tool_addition blocks; advanced-tool-use-2025-11-20 beta",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.282.610",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "toolsearch#002",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "new"
+   }
+  },
+  {
+   "file": "toolsearch.main-continuation-tool-loaded.request.json",
+   "description": "main chat, the step after a ToolSearch that loaded tools: the loaded tools are appended to tools with defer_loading, the last message is a tool_result of tool_reference blocks plus the harness text 'Tool loaded.'",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.282.610",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "toolsearch#004",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "continuation"
+   }
+  },
+  {
+   "file": "toolsearch.main-continuation.request.json",
+   "description": "main chat, continuation after a deferred MCP tool (Claude Docs guide) returned; the history holds the tool_reference result",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.282.610",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "toolsearch#005",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "continuation"
+   }
+  },
+  {
+   "file": "toolsearch.main-continuation-deferred-notice.request.json",
+   "description": "main chat, continuation after the Agent tool returned, followed by a trailing role:system 'The following deferred tools are now available via ToolSearch' notice",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.282.610",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "toolsearch#008",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "continuation"
+   }
+  },
+  {
+   "file": "toolsearch.subagent-new-turn.request.json",
+   "description": "Explore subagent, first request, with tool search on (tool_addition blocks in its role:system message)",
+   "facts": {
+    "side_markers": [],
+    "S1": true,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.282.281",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": true,
+   "response_status": 200,
+   "source": "toolsearch#006",
+   "expect": {
+    "kind": "subagent",
+    "signal": "header",
+    "turn": "new"
+   }
+  },
+  {
+   "file": "toolsearch.subagent-new-turn.response.sse.txt",
+   "description": "SSE response of a subagent request (LF-separated, identity-encoded because the capture proxy drops accept-encoding)",
+   "status": 200,
+   "response_headers": {
+    "date": "[redacted]",
+    "content-type": "text/event-stream; charset=utf-8",
+    "transfer-encoding": "chunked",
+    "connection": "keep-alive",
+    "cache-control": "no-cache",
+    "anthropic-ratelimit-unified-5h-status": "[redacted]",
+    "anthropic-ratelimit-unified-representative-claim": "[redacted]",
+    "anthropic-ratelimit-unified-overage-status": "[redacted]",
+    "anthropic-ratelimit-unified-reset": "[redacted]",
+    "anthropic-ratelimit-unified-5h-utilization": "[redacted]",
+    "anthropic-ratelimit-unified-7d-reset": "[redacted]",
+    "anthropic-ratelimit-unified-5h-reset": "[redacted]",
+    "anthropic-ratelimit-unified-7d-status": "[redacted]",
+    "anthropic-ratelimit-unified-fallback-percentage": "[redacted]",
+    "anthropic-ratelimit-unified-overage-disabled-reason": "[redacted]",
+    "anthropic-ratelimit-unified-7d-utilization": "[redacted]",
+    "anthropic-ratelimit-unified-status": "[redacted]",
+    "server": "cloudflare",
+    "request-id": "[redacted]",
+    "strict-transport-security": "[redacted]",
+    "anthropic-organization-id": "[redacted]",
+    "anthropic-workspace-id": "[redacted]",
+    "traceresponse": "[redacted]",
+    "content-security-policy": "[redacted]",
+    "vary": "Accept-Encoding",
+    "cf-cache-status": "[redacted]",
+    "x-robots-tag": "[redacted]",
+    "cf-ray": "[redacted]"
+   }
+  },
+  {
+   "file": "toolsearch.subagent-continuation.request.json",
+   "description": "Explore subagent, tool-loop continuation (last non-system message a tool_result), trailing role:system MCP authentication notice",
+   "facts": {
+    "side_markers": [],
+    "S1": true,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.282.281",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": true,
+   "response_status": 200,
+   "source": "toolsearch#007",
+   "expect": {
+    "kind": "subagent",
+    "signal": "header",
+    "turn": "continuation"
+   }
+  },
+  {
+   "file": "toolsearch.head-probe.json",
+   "description": "startup probe Claude Code sends to the base URL",
+   "expect": {
+    "passthrough": true
+   }
+  },
+  {
+   "file": "toolsearch.hooks.jsonl",
+   "description": "hook payloads delivered by http hooks injected with --settings (one JSON per line, in arrival order)",
+   "events": [
+    "UserPromptSubmit",
+    "PreToolUse:ToolSearch",
+    "PostToolUse:ToolSearch",
+    "PreToolUse:ToolSearch",
+    "PostToolUse:ToolSearch",
+    "PreToolUse:mcp__claude_ai_Claude_Docs__guide",
+    "PostToolUse:mcp__claude_ai_Claude_Docs__guide",
+    "PreToolUse:Agent",
+    "SubagentStart(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "SubagentStop(sub)",
+    "PostToolUse:Agent",
+    "Stop"
+   ]
+  },
+  {
+   "file": "experiment.toolsearch-route.results.json",
+   "kind": "experiment",
+   "description": "MCP tool search on (ENABLE_TOOL_SEARCH=true, set by reflex), main chat routed from Opus 5.5 with reflex:haiku / reflex:sonnet: Haiku rejected tool_addition blocks folded into a user message and Sonnet 5 rejected them in a system message (400, fallback) until reflex lifted them; afterwards every rewritten request was accepted, including tool_reference results and 'Tool loaded.' steps. Plus Claude Code's own Haiku and Fable subagent requests with tool search (200). Model setting opus[1m] (the user's own settings, no --model), sdk-cli, Claude Code 2.1.282. Statuses, API errors and rewritten fields only."
+  }
+ ],
+ "claude_code_version": "2.1.282",
+ "captured_at": "2026-09-24",
+ "platform": "darwin",
+ "entrypoints": [
+  "sdk-cli"
+ ],
+ "method": "scripts/spike/capture.mjs (dump-only passthrough proxy) + scripts/spike/redact-fixtures.mjs",
+ "gaps": [
+  "see docs/wire-format.md"
+ ]
+}
