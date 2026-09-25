@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.5.7 — 2026-09-25
+
 ### Fixed
 
 - A subagent's progress summaries rewrote its whole history into a second cache. With `REFLEX_EFFORT` they went out
