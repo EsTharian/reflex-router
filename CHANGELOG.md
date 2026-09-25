@@ -15,14 +15,28 @@
 - A subagent the Agent tool call gave a `model` explicitly is no longer routed (or given another effort level): the
   choice was made on purpose. Recorded as `plan.reasons: ["model_explicit"]`. Models set in an agent definition's
   frontmatter are not seen and are still routed.
+- Task notifications and subagent hand-backs are turns the chat answers, and a tool result carrying harness text is
+  the loop's next step; they now follow the conversation's pin instead of going to the requested model. Live, with the
+  main chat on Sonnet, they went to Sonnet and read its cache (~45k read, ~400 written each).
+- A subagent asking for another tier than the main chat (its agent definition or a built-in agent chose the model) is
+  no longer routed either.
+- A subagent resumed after a background task lost the effort level reflex had set: Claude Code rebuilds its history
+  (its cache misses there with or without reflex), so reflex's mark no longer matched. The level is now set again on
+  that request (`messages.effort_kept`) and kept for the rest of the loop.
 - Several subagents starting at once no longer queue for the decision backend: the client kept 4 connections, and
   with 8 subagents and 800 ms answers the last 4 ran out of the deadline and were not routed (fake backend). In the
   owner's log, 28% of subagent decisions timed out when 4 or more started within 1.5 s, 0% when one started alone.
 
+### Changed
+
+- `docs/reference.md`: resuming a conversation in a new process rewrites its cache whether or not reflex changed its
+  effort (measured the same both ways), so continuing without reflex costs nothing extra.
+
 ### Added
 
 - `scripts/spike/fake-anthropic.mjs` (a loopback Messages API for running the real `claude` without tokens) and
-  `scripts/spike/claims-probe.mts` (the scenarios of the 2026-09-25 verification, fake upstream and fake Jev).
+  `scripts/spike/claims-probe.mts` (the scenarios of the 2026-09-25 verification, fake upstream and fake Jev) and
+  `scripts/spike/dump-proxy.mjs` (request bodies as reflex sent them, behind reflex).
 
 ## 0.5.6 — 2026-09-25
 

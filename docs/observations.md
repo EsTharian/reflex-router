@@ -613,7 +613,7 @@ the final code, every request routed, no fallback.
 (the visible set is the same; quality was not scored). Cost per session was not measured beyond the start-of-session
 context. List-price estimate of the experiment: about $4.
 
-## 2026-09-25 — nine anomaly claims checked: four fixes, one refuted, one open
+## 2026-09-25 — nine anomaly claims checked: six fixes, two refuted
 
 **Conditions.** Claims from another machine's logs, checked one by one with a prediction, a control, a repro and a
 mutation: fake upstream and fake Jev for the wire (no tokens), the real `claude` 2.1.282 against a fake Messages API,
@@ -630,8 +630,11 @@ routed anyway. (4) Decisions queued behind 4 sockets: with 800 ms answers, 4 of 
 its job (a decision is open). The resends on a rejected rewrite or a dead worker happen as documented. The startup 429
 is Claude Code's quota probe, answered 429 without reflex too.
 
-**Not measured.** Whether resuming without reflex after a main-chat effort change costs a cache rewrite: in `-p
---continue` pairs the control missed its cache as well (the tool list changed between processes). The task
-notifications and subagent hand-backs that reach the main chat are real turns (92 of 99 and 45 of 46 answered there in
-the transcripts) but are still side calls to the router. List-price estimate of the live runs: about $7.95 (4.76M
-tokens).
+**Follow-ups.** Task notifications and subagent hand-backs are real main-chat turns (92 of 99 and 45 of 46 answered
+there in the transcripts); they, and tool results carrying harness text, now follow the conversation's pin. With the
+main chat on Sonnet, a notification read ~45k and wrote ~400. A subagent resumed after a background task is rebuilt by
+Claude Code (cache miss with or without reflex); reflex now keeps its effort level there. Subagents asking for another
+tier than the main chat are not routed. Resuming a conversation in a new process rewrote its cache in every
+interactive pair, with or without reflex (12,831 vs 12,840 written), so continuing without reflex adds nothing. The
+effort level may go above the user's own by the owner's decision. List-price estimate of all live runs: about $11.50
+(~6.3M tokens).

@@ -30,15 +30,22 @@ medium`, four MCP servers, entrypoint `cli` (interactive) / `sdk-cli` (`-p`). No
 | C2 explicit subagent model overridden | CONFIRMED | A (probe c2), test `side-calls` | yes (`c4f5dd9`) |
 | C3 routed subagent's side calls on the requested model | CONFIRMED | A (c3), B live pair, log | yes (`c4f5dd9`) |
 | C4 side calls lose effort marks, cache rewritten | CONFIRMED | A (c4/c4off), B live triple, log | yes (`c4f5dd9`) |
-| C4b notifications/cross-session are real main turns | CONFIRMED (separate finding) | transcripts | partial (effort marks only); open |
-| C5 effort above the user's setting | CONFIRMED (design: `REFLEX_EFFORT_UP`) | A (c5) | none; options below, your call |
+| C4b notifications/cross-session are real main turns | CONFIRMED (separate finding) | transcripts, B live | yes (`3de5903`) |
+| C4c a subagent resumed after a background task loses its level | CONFIRMED (separate finding) | B dump + live | yes (`3de5903`) |
+| C5 effort above the user's setting | CONFIRMED; kept by decision | A (c5) | none (owner's decision: may go above) |
 | C6 decision wait and `maxSockets: 4` | CONFIRMED with a threshold | A (c6), log | yes (`69ee6cc`) |
 | C7 429 at worker start | REFUTED (not caused by reflex) | B with and without reflex, fixture | none |
-| C8 resume without reflex rewrites the cache | NOT VERIFIED | B control failed to separate | none |
-| C9 resends | CONFIRMED (two upstream requests); billing NOT VERIFIED | A (c9) | none; reasons below |
+| C8 resume without reflex rewrites the cache | REFUTED as an extra cost (every resume rewrites it) | B interactive, three pairs | none |
+| C9 resends | CONFIRMED (two upstream requests); billing not verifiable here | A (c9) | none; reasons below |
 
-Real-API spend: **4,763,904 tokens, about $7.95** at list prices (estimate over recorded token counts, cap stated
-beforehand: $10). Breakdown at the end.
+Real-API spend: **about 6.31M tokens, about $11.50** at list prices (estimate over recorded token counts), in two
+rounds: $7.95 under a $10 cap stated beforehand, then $3.58 for the follow-ups without a cap stated first. Breakdown
+at the end.
+
+**Environment caveat.** The shell these runs started from was itself inside a Claude Code session, so every `claude`
+inherited `CLAUDE_CODE_*` variables: `CLAUDE_EFFORT=medium` (the same as `effortLevel`), `CLAUDE_CODE_ENTRYPOINT=cli`,
+and `CLAUDE_CODE_CHILD_SESSION`, which turns transcript saving off in interactive sessions. The interactive C8 runs
+removed them all; the earlier runs did not.
 
 ## C1. Tool search off behind reflex
 
@@ -120,8 +127,12 @@ C2 upgrades=on (c) ... -> upstream model claude-opus-5-5; plan.reasons ["model_e
 **Test and mutation.** `side-calls.test.ts` "a subagent the Agent call gave a model explicitly runs on it". Removing
 the router line → ✖. Making `hooks.ts` return `model: null` → ✖. Both restored → green.
 
-**Limits.** A model set in an agent definition's frontmatter (`subagent_type` with `model:`) is not in `tool_input`,
-so such a subagent is still routed. An explicit-model subagent now also keeps its effort level, because the whole
+**Agent definitions** (`3de5903`). A model set in an agent definition's frontmatter, or a built-in agent's own model, is
+not in `tool_input`. Such a subagent asks for a different model from the main chat's, which is the signal: a subagent
+whose requested tier differs from the main chat's latest is not decided either. Log: of 171 subagent starts, 30 asked
+for another tier than their main chat (26 Sonnet, 4 Haiku). One frontmatter `model:` naming the main chat's own tier
+is still indistinguishable from inheriting and is routed. Test "a subagent asking for another tier than the main chat
+… not routed"; removing the comparison → ✖. An explicit-model subagent also keeps its effort level, because the whole
 decision is skipped.
 
 ## C3. A routed subagent's side calls stay on the requested model
@@ -208,10 +219,30 @@ A: every side kind shows "first divergence: none".
 
 **Test and mutation.** `side-calls.test.ts` "every side call carries the effort marks…". Putting back `if (conv)` → ✖.
 
-**Seen along the way (not fixed).** In two live runs the subagent ran its `sleep` in the background, and a subagent
-`notification` side call wrote about 18.7k even with `REFLEX_EFFORT` off (read 16,633 / write 18,739). That request
-therefore misses the cache without reflex too. After it, reflex's mark stopped matching (Claude Code sends a different
-history), and the rest of that loop ran at the client's level.
+### C4c. A subagent resumed after a background task
+
+In two live runs the subagent ran its `sleep` in the background, and a subagent `notification` side call wrote about
+18.7k even with `REFLEX_EFFORT` off (read 16,633 / write 18,739). A dump of every request body (`scripts/spike/dump-proxy.mjs`, a loopback proxy
+between reflex and the API, bodies only) shows why: when the background task ends, Claude Code rebuilds the waiting
+subagent. The `x-anthropic-billing-header` system block changes, and message 0 loses its task-text block (5 text
+blocks become 4). The cache misses from message 0 on, with or without reflex, and nothing in reflex can prevent that.
+What reflex did wrong: its effort mark is keyed by the hash of the history, so it stopped matching, and the rest of the
+loop silently ran at the client's level (`medium` instead of the decided `low`).
+
+**Fix** (`3de5903`). The conversation remembers the level reflex set on its first effort-bearing system message
+(`effortFirst`, memory only). When no mark matches that message any more, `withEffort(..., keepFirst)` sets it again
+there and returns it as a new `set` mark (`messages.effort_kept`). That request already misses the cache, so the edit
+costs nothing. Live (Opus 5.5, fake Jev `low`):
+
+```
+{"turn":"new","fields":["messages.effort_set","output_config.effort"],"read":16633,"create":15815}
+{"turn":"continuation","fields":["messages.effort_reinserted:1","output_config.effort"],"read":32448,"create":2134}
+{"turn":"side","marker":"task_notification","fields":["messages.effort_kept","output_config.effort"],"read":16633,"create":18303}
+{"turn":"continuation","fields":["messages.effort_reinserted:1","output_config.effort"],"read":34936,"create":109}
+```
+
+Tests: `effort.test.ts` "keepFirst: a history Claude Code rebuilt …" and `side-calls.test.ts` "when Claude Code
+rebuilds a subagent's history …". Mutations (keep branch off; router not passing it; level never recorded) → ✖ each.
 
 ### C4b. `task_notification`, `cross_session`: side calls, or turns?
 
@@ -220,8 +251,27 @@ Claude Code transcripts on this machine (`~/.claude/projects/*/*.jsonl`, structu
 in the main transcript. `Another Claude session sent a message:` (origin `peer`, the subagent hand-back): 46, of which
 45 were answered in the main chat. These are real main-chat turns. `src/wire/markers.ts:77-91` names them side kinds,
 so they are never decided and never follow the main chat's pin (they go to the requested model while the chat may run
-elsewhere). The C4 fix gives them the effort marks. Treating them as pinned turns is **open**. `tool_result_text`
-could not be told apart in transcripts and is not checked.
+elsewhere). `tool_result_text` does not show in transcripts (tool results are stored on their own), but by shape it is
+the loop's next step: a tool result has to be answered in the loop that asked for it.
+
+**Fix** (`3de5903`). `followsPin` (`src/wire/claude-code.ts`) names the side calls that go where their conversation's
+pin sends it: `agent_summary`, `tool_result_text`, `cross_session`, and the `task_notification` marker (main chat and
+subagent). They are still never decided, and the pin is only read. Suggestions, recaps, compaction and title calls are
+unchanged. Live, main chat pinned to Sonnet (fake Jev: main `sonnet`, subagent `opus`):
+
+```
+{"kind":"main","turn":"new","model":"claude-sonnet-5","read":0,"create":43994}
+{"kind":"main","turn":"side","marker":"task_notification","model":"claude-sonnet-5","read":44788,"create":377}
+{"kind":"main","turn":"side","marker":"cross_session","model":"claude-sonnet-5","read":45165,"create":387}
+{"kind":"main","turn":"side","marker":"task_notification","model":"claude-sonnet-5","read":45552,"create":563}
+```
+
+All 200, no fallback. Test "a main chat's task notifications, hand-backs and tool steps with harness text follow its
+pin; a suggestion does not"; narrowing `followsPin` to summaries → ✖.
+
+**Seen, not reflex's.** In the same session Claude Code sent a tool-less side call on `claude-sonnet-5` itself (not
+rewritten, 127k characters of system text, two user messages) that wrote 47,026 tokens. It is Claude Code's own call
+on a model it chose; reflex forwards it unchanged.
 
 ## C5. Effort above the user's setting
 
@@ -236,10 +286,10 @@ C5 effortUp=false: client medium -> upstream top medium, message medium; effort 
 C5 effortUp=true:  client medium -> upstream top max, message max;       effort {"pick":"max","target":"max","reasons":["effort_up"]}
 ```
 
-**Result.** CONFIRMED. This is what the flag is for, and the owner's `~/.reflex/env` sets it. No mutation: the
-behaviour is the flag. Options, not applied: (1) keep it, and have `reflex doctor` and the status line say plainly
-that the level is above `effortLevel`; (2) treat `effortLevel` as a ceiling and let `UP` lift at most one step;
-(3) remove `REFLEX_EFFORT_UP`. Your decision.
+**Result.** CONFIRMED, and kept. This is what the flag is for, and the owner's `~/.reflex/env` sets it. Owner's
+decision (2026-09-25): effort may go above the user's own level, because a user who does not know how much effort a
+task needs is better served by a level set for that task. Nothing changed; the status line already shows a level
+above the requested one (`Effort: ⇡ …`).
 
 ## C6. Decision wait and `maxSockets: 4`
 
@@ -292,7 +342,7 @@ touches this request. No mutation: the claim rests on no reflex line.
 differs there. That much is deterministic (the A repro above for side calls; `test/unit/effort.test.ts`, the fresh
 worker case).
 
-**Runs** (`-p`, fake Jev `low`, one turn each):
+**First attempt** (`-p`, fake Jev `low`, one turn each):
 
 | pair | turn 1 | turn 2 (`--continue`) read / write |
 | --- | --- | --- |
@@ -305,8 +355,23 @@ claimed effect. A capture of a plain pair showed why: `tools` differed between t
 servers connected at different moments. Through the capture proxy (tool search off) both turns wrote about 45k with no
 read at all.
 
-**Result.** NOT VERIFIED. An interactive resume, with a stable tool list, would be needed. No fix. README already states
-the cost ("it would cost one cache rewrite").
+**Interactive runs.** Each run was a fresh folder with the trust prompt accepted, one typed turn, then `/exit`; the
+second process ran `claude --continue`. The inherited `CLAUDE_CODE_*` variables were removed, so transcripts were
+saved. Usage comes from the Claude Code transcript (both turns in one file each time).
+
+| pair | turn 1 read / write | turn 2 (`--continue`) read / write |
+| --- | --- | --- |
+| repro: reflex (`effort_set`), then plain | 26,288 / 12,789 | 26,288 / 12,831 |
+| control: plain, then plain | 26,486 / 12,798 | 26,486 / 12,840 |
+| reflex, then reflex (`effort_reinserted:1`) | 24,095 / 14,975 | 26,287 / 12,800 |
+
+Every resume in a new process read only the fixed prefix and wrote the conversation again, with or without reflex.
+The reflex→reflex pair had its mark re-applied, which shows the history really did continue. The claimed rewrite
+happens, but it happens on every resume anyway: continuing without reflex added nothing measurable (12,831 against
+12,840).
+
+**Result.** REFUTED as a cost caused by reflex. The README sentence "(it would cost one cache rewrite)" describes a
+rewrite that resuming costs anyway; it stays, qualified in `docs/reference.md`.
 
 ## C9. Resends
 
@@ -323,7 +388,8 @@ C9(2) kill worker mid-request=true:  client got 200; upstream saw 2 requests; do
 ```
 
 **Result.** CONFIRMED: two requests reach the upstream in both cases. No mutation was needed: the resend is the
-documented fail-open path. That either is billed twice is NOT VERIFIED. (1) A 400 carries no usage, so it is not
+documented fail-open path. Whether either is billed twice cannot be verified from here: Anthropic reports usage only
+inside a response, and the aborted first request never returns one. There is no per-request bill to read. (1) A 400 carries no usage, so it is not
 billed. (2) The first request's connection closes when the worker dies, and whether Anthropic bills a request aborted
 before its headers is not observable here. **No fix.** Without the door's resend the client would get a 502, and
 Claude Code retries 5xx itself, which also sends the request twice. Case (2) needs a worker crash.
@@ -338,6 +404,11 @@ Claude Code retries 5xx itself, which also sends the request twice. Case (2) nee
 | C8 through reflex (4 turns) | 68,531 | $0.31 |
 | C8 plain (3 turns) + capture pair (2 turns) | 160,577 | $0.66 |
 | C7 (4 quota probes, all 429) | 0 | $0 |
-| **total** | **4,763,904** | **about $7.95** |
+| round 1 total | 4,763,904 | $7.95 |
+| C4c dump run, C4b/C4c live runs (3 interactive) | 1,221,418 | $2.51 |
+| C8 interactive through reflex (4 turns; one in the repo folder, discarded) | 164,732 | $0.50 |
+| C8 interactive plain (3 turns + 1 screen-capture turn) | ~157,000 | ~$0.57 |
+| round 2 total | ~1,543,000 | ~$3.58 |
+| **total** | **~6,307,000** | **about $11.50** |
 
 Rates from `src/pricing.ts` (last verified 2026-09-24), cache writes at the 1-hour rate. An estimate, not a bill.
