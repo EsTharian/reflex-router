@@ -38,8 +38,8 @@ medium`, four MCP servers, entrypoint `cli` (interactive) / `sdk-cli` (`-p`). No
 | C8 resume without reflex rewrites the cache | REFUTED as an extra cost (every resume rewrites it) | B interactive, three pairs | none |
 | C9 resends | CONFIRMED (two upstream requests); billing not verifiable here | A (c9) | none; reasons below |
 
-Real-API spend: **about 6.31M tokens, about $11.50** at list prices (estimate over recorded token counts), in two
-rounds: $7.95 under a $10 cap stated beforehand, then $3.58 for the follow-ups without a cap stated first. Breakdown
+Real-API spend: **about 6.31M tokens, about $11.40** at list prices (estimate over recorded token counts), in two
+rounds: $7.95 under a $10 cap stated beforehand, then $3.45 for the follow-ups without a cap stated first. Breakdown
 at the end.
 
 **Environment caveat.** The shell these runs started from was itself inside a Claude Code session, so every `claude`
@@ -407,8 +407,8 @@ Claude Code retries 5xx itself, which also sends the request twice. Case (2) nee
 | round 1 total | 4,763,904 | $7.95 |
 | C4c dump run, C4b/C4c live runs (3 interactive) | 1,221,418 | $2.51 |
 | C8 interactive through reflex (4 turns; one in the repo folder, discarded) | 164,732 | $0.50 |
-| C8 interactive plain (3 turns + 1 screen-capture turn) | ~157,000 | ~$0.57 |
-| round 2 total | ~1,543,000 | ~$3.58 |
-| **total** | **~6,307,000** | **about $11.50** |
+| C8 interactive plain (3 turns + 1 screen-capture turn) | ~157,000 | ~$0.43 |
+| round 2 total | ~1,543,000 | ~$3.45 |
+| **total** | **~6,307,000** | **about $11.40** |
 
 Rates from `src/pricing.ts` (last verified 2026-09-24), cache writes at the 1-hour rate. An estimate, not a bill.

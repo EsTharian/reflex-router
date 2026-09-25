@@ -636,5 +636,5 @@ main chat on Sonnet, a notification read ~45k and wrote ~400. A subagent resumed
 Claude Code (cache miss with or without reflex); reflex now keeps its effort level there. Subagents asking for another
 tier than the main chat are not routed. Resuming a conversation in a new process rewrote its cache in every
 interactive pair, with or without reflex (12,831 vs 12,840 written), so continuing without reflex adds nothing. The
-effort level may go above the user's own by the owner's decision. List-price estimate of all live runs: about $11.50
+effort level may go above the user's own by the owner's decision. List-price estimate of all live runs: about $11.40
 (~6.3M tokens).
