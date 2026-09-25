@@ -85,12 +85,16 @@ const withLevel = (m: Json, effort: Effort): Json => ({ ...m, output_config: { .
  * appending an effort-only message (`insert`). With `setTop` the top-level value follows the level in effect, as
  * Claude Code does. Null for a body it cannot read.
  *
+ * `keepFirst`: the level reflex set on the conversation's first effort-bearing system message. When no stored mark
+ * matches that message any more (Claude Code rebuilt the history, e.g. resuming a subagent after a background task,
+ * which already misses the cache from message 0), it is set again there and returned as a new `set` mark.
+ *
  * Why `insert` is gated: the preserved-thinking check binds later thinking blocks to an inserted message, so a
  * conversation continued without it (without reflex) is refused once on accounts that check enforces, before Claude
  * Code strips the blocks and retries; a changed level on an existing message is not part of what the check binds
  * (experiment.effort-verify-set: forgotten, still accepted), so `set` leaves nothing behind but a cache miss.
  */
-export function withEffort(body: Buffer, lookup: (anchor: string) => EffortMark | undefined, add: Effort | null, setTop = true, allowInsert = true): EffortEdit | null {
+export function withEffort(body: Buffer, lookup: (anchor: string) => EffortMark | undefined, add: Effort | null, setTop = true, allowInsert = true, keepFirst: Effort | null = null): EffortEdit | null {
   let b: Json;
   try {
     const parsed: unknown = JSON.parse(body.toString("utf8"));
@@ -104,6 +108,8 @@ export function withEffort(body: Buffer, lookup: (anchor: string) => EffortMark 
   let reinserted = 0;
   /** The last message is Claude Code's own and was left as sent: a system message with an effort can take `set`. */
   let lastUntouched = false;
+  let firstLevelSeen = false;
+  let kept: EffortEdit["added"] = null;
   for (const m of b["messages"] as unknown[]) {
     lastUntouched = false;
     if (!isObj(m)) {
@@ -112,7 +118,12 @@ export function withEffort(body: Buffer, lookup: (anchor: string) => EffortMark 
     }
     h = chain(h, m);
     const e = lookup(h);
-    if (e?.op === "set" && effortOf(m) !== undefined) {
+    const first = !firstLevelSeen && effortOf(m) !== undefined;
+    if (effortOf(m) !== undefined) firstLevelSeen = true;
+    if (first && e === undefined && keepFirst !== null && effortOf(m) !== keepFirst) {
+      out.push(withLevel(m, keepFirst));
+      kept = { anchor: h, effort: keepFirst, op: "set" };
+    } else if (e?.op === "set" && effortOf(m) !== undefined) {
       out.push(withLevel(m, e.effort));
       reinserted++;
     } else if (e !== undefined) {
@@ -126,7 +137,7 @@ export function withEffort(body: Buffer, lookup: (anchor: string) => EffortMark 
   const oc = isObj(b["output_config"]) ? b["output_config"] : {};
   const inMessages = [...out].reverse().map(effortOf).find((e) => e !== undefined);
   const current = inMessages ?? oc["effort"];
-  let added: EffortEdit["added"] = null;
+  let added: EffortEdit["added"] = kept;
   let insertRefused = false;
   if (add !== null && add !== current) {
     const last = out[out.length - 1];
@@ -142,7 +153,8 @@ export function withEffort(body: Buffer, lookup: (anchor: string) => EffortMark 
 
   const fields: string[] = [];
   if (reinserted > 0) fields.push(`messages.effort_reinserted:${reinserted}`);
-  if (added) fields.push(added.op === "set" ? "messages.effort_set" : "messages.effort_added");
+  if (kept) fields.push("messages.effort_kept");
+  else if (added) fields.push(added.op === "set" ? "messages.effort_set" : "messages.effort_added");
   const effective = added?.effort ?? current;
   if (setTop && effective !== oc["effort"]) {
     b["output_config"] = { ...oc, effort: effective };

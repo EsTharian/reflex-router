@@ -92,6 +92,44 @@ describe("side calls and explicit subagent models (route mode)", () => {
     assert.equal((await send(at(subCont, "pin", { agent: "A" }))).sent.model, "claude-sonnet-5");
   });
 
+  it("a main chat's task notifications, hand-backs and tool steps with harness text follow its pin; a suggestion does not", async () => {
+    jev.set({ kind: "answer", tier: "sonnet", reasoning: 1 });
+    assert.equal((await send(at(mainNew, "mpin"))).sent.model, "claude-sonnet-5");
+    const cases: [string, string, Msg[]][] = [
+      ["cross_session", "claude-sonnet-5", said("Another Claude session sent a message:\nhello")],
+      ["task_notification", "claude-sonnet-5", said("[SYSTEM NOTIFICATION - NOT USER INPUT] task done")],
+      ["tool_result_text", "claude-sonnet-5", [{ role: "assistant", content: [{ type: "tool_use", id: "toolu_x", name: "Bash", input: { command: "ls" } }] }, { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_x", content: "a" }, { type: "text", text: "Harness note: output truncated." }] }]],
+      ["suggestion", "claude-opus-5-5", said("[SUGGESTION MODE: Suggest what the user might naturally type next.]")],
+    ];
+    for (const [what, model, extra] of cases) assert.equal((await send(at(mainCont, "mpin", { extra }))).sent.model, model, what);
+    jev.set({ kind: "answer", tier: "sonnet", reasoning: 1 });
+    await send(at(subNew, "mpin", { agent: "N" }));
+    assert.equal((await send(at(subCont, "mpin", { agent: "N", extra: said("[SYSTEM NOTIFICATION - NOT USER INPUT] task done") }))).sent.model, "claude-sonnet-5", "a subagent's too");
+  });
+
+  it("a subagent asking for another tier than the main chat was given its model (agent definition): not routed", async () => {
+    jev.set({ kind: "answer", tier: "opus", reasoning: 1 });
+    await send(at(mainNew, "x-tier")); // the main chat asks for Opus 5.5 and stays there
+    const r = await send(at(subNew, "x-tier", { agent: "A", model: "claude-sonnet-5" }));
+    assert.equal(r.sent.model, "claude-sonnet-5", "no upgrade although upgrades are on");
+    assert.deepEqual(r.rec.plan?.reasons, ["model_explicit"]);
+    jev.set({ kind: "answer", tier: "sonnet", reasoning: 1 });
+    assert.equal((await send(at(subNew, "x-tier", { agent: "B" }))).sent.model, "claude-sonnet-5", "the main chat's tier: inherited, routed");
+  });
+
+  it("when Claude Code rebuilds a subagent's history (background task resumed), its level is put back and kept", async () => {
+    jev.set({ kind: "answer", tier: "opus", reasoning: 0 });
+    await send(at(subNew, "rebuilt", { agent: "R" }));
+    await send(at(subCont, "rebuilt", { agent: "R" }));
+    const rebuilt: Req = { headers: subCont.headers, body: { ...subCont.body, messages: [{ role: "user", content: [{ type: "text", text: "the task, as Claude Code rebuilds it" }] }, ...subCont.body.messages.slice(1)] } };
+    const n = await send(at(rebuilt, "rebuilt", { agent: "R", extra: said("[SYSTEM NOTIFICATION - NOT USER INPUT] task done") }));
+    assert.equal(n.sent.messages[1]!.output_config?.effort, "low");
+    assert.ok(n.rec.forwarded.fields.includes("messages.effort_kept"));
+    const c = await send(at(rebuilt, "rebuilt", { agent: "R" }));
+    assert.equal(c.sent.messages[1]!.output_config?.effort, "low");
+    assert.ok(c.rec.forwarded.fields.includes("messages.effort_reinserted:1"));
+  });
+
   it("every side call carries the effort marks its conversation's last request carried: the prefix is the same", async () => {
     jev.set({ kind: "answer", tier: "opus", reasoning: 0 }); // same model, level low (the client asks for medium)
     await send(at(mainNew, "marks"));

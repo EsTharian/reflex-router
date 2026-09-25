@@ -22,7 +22,7 @@ import type { DecisionState, Effort, QuestionSet, ReasonCode } from "../types.js
 import type { Log } from "../util/log.js";
 import { isPromptTooLong, ModelRestorer, usageFormat } from "../wire/anthropic.js";
 import type { ChunkEdit } from "../net/forward.js";
-import { isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
+import { followsPin, isMessagesRequest, parseRequest, type RequestView } from "../wire/claude-code.js";
 import { sideFingerprint, type SideFingerprint } from "../wire/fingerprint.js";
 import { EFFORTS, effortVia, messageEffort, withEffort, withTopEffort, type EffortEdit } from "../wire/effort.js";
 import { isVerifiedRetarget, retarget, retargetBetas } from "../wire/rewrite.js";
@@ -111,6 +111,8 @@ interface ConvState {
   sums: { write: number; output: number; n: number };
   /** REFLEX_EFFORT on Sonnet: the top-level level set on this conversation's first request, kept for all its requests. */
   topEffort: Effort | null;
+  /** REFLEX_EFFORT: the level set on the conversation's first system message; put back if Claude Code rebuilds it. */
+  effortFirst: Effort | null;
 }
 interface SessionState {
   readonly shape: ShapeTracker;
@@ -122,6 +124,8 @@ interface SessionState {
   readonly convs: Map<string, ConvState>;
   /** A request carrying an effort change was rejected: no new level is set in this session (added ones are kept). */
   effortOff: boolean;
+  /** The model the main chat last asked for on a turn of its own: a subagent asking for another tier was given it. */
+  mainModel: string | null;
 }
 
 type DecisionPart = Pick<DecisionRecord, "decision" | "plan" | "error" | "sent" | "backend" | "guard" | "override" | "escalation" | "would_escalate" | "ab" | "effort">;
@@ -197,7 +201,7 @@ export class Router {
     const key = v.sessionId ?? "";
     let s = this.#sessions.get(key);
     if (!s) {
-      s = { shape: new ShapeTracker(this.d.config.shapeCheckN), drift: new DriftTracker(), turnOverride: null, disabledUntil: new Map(), convs: new Map(), effortOff: false };
+      s = { shape: new ShapeTracker(this.d.config.shapeCheckN), drift: new DriftTracker(), turnOverride: null, disabledUntil: new Map(), convs: new Map(), effortOff: false, mainModel: null };
       this.#sessions.set(key, s);
     }
     return s;
@@ -206,7 +210,7 @@ export class Router {
   #conv(s: SessionState, key: string): ConvState {
     let c = s.convs.get(key);
     if (!c) {
-      c = { pin: null, cacheTier: null, lastCtx: null, sums: { write: 0, output: 0, n: 0 }, topEffort: null };
+      c = { pin: null, cacheTier: null, lastCtx: null, sums: { write: 0, output: 0, n: 0 }, topEffort: null, effortFirst: null };
       s.convs.set(key, c);
     }
     return c;
@@ -250,6 +254,7 @@ export class Router {
     s.drift.observe(v);
     // A recognised main `new` turn consumes the newest typed prompt, so no later request can be promoted by it again.
     if (v.kind === "main" && v.turn === "new") this.d.claimTypedPrompt?.(v.sessionId);
+    if (v.kind === "main" && v.turn !== "side" && v.requestedModel !== null) s.mainModel = v.requestedModel;
     // Alarm only: never an input to `routing` below. See src/wire/drift.ts.
     const drift: string[] = s.drift.check(this.d.typedPromptCount?.(v.sessionId) ?? 0, v);
     for (const r of drift) {
@@ -340,9 +345,11 @@ export class Router {
         conv.pin = { target: t, from: requestedTier };
       }
       if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier) && !applyRetarget(requestedTier, t.tier, t.model) && !extraReasons.includes("rewrite_unverified")) extraReasons = ["rewrite_failed"];
-    } else if (v.sideKind === "agent_summary" && sideConv) {
-      // A pinned subagent's progress summary replays its history: sent where the loop runs, it reads that loop's cache
-      // instead of writing a second one on the requested model. Its pin is only read, never moved.
+    } else if (sideConv && followsPin(v)) {
+      // Side calls that replay the conversation's history and whose answer belongs to it (a subagent's progress
+      // summary, a tool-loop step with harness text, a task notification or subagent hand-back the chat answers): sent
+      // where the loop runs, they read that loop's cache instead of writing a second one on the requested model, and
+      // the conversation stays on one model. Never decided; the pin is only read, never moved.
       const t = sideConv.pin?.from === requestedTier ? (sideConv.pin?.target ?? null) : null;
       if (routing && t && requestedTier && !this.#tierDisabled(s, t.tier)) applyRetarget(requestedTier, t.tier, t.model);
     }
@@ -370,7 +377,7 @@ export class Router {
       let e: EffortEdit | null = null;
       if (me && store) {
         // Only a main chat (MIDTURN) may insert; a subagent's level goes into its first request's own system message.
-        e = withEffort(sendBody, (a) => store.get(a), via === "message" ? add : null, me.top, main);
+        e = withEffort(sendBody, (a) => store.get(a), via === "message" ? add : null, me.top, main, add === null ? (effortConv?.effortFirst ?? null) : null);
         effortAdded = e?.added ?? null;
       } else if (tierOfModel(sentModel) === "sonnet") {
         if (main && add !== null) effortSkip = "effort_sonnet_main_chat";
@@ -402,7 +409,10 @@ export class Router {
       headers: (st, h) => {
         status = st;
         // The model saw the added message only if the request went out as rewritten and was accepted.
-        if (st === 200 && fallbackStatus === null && effortAdded && store) store.add(effortAdded.anchor, effortAdded.effort, effortAdded.op);
+        if (st === 200 && fallbackStatus === null && effortAdded && store) {
+          store.add(effortAdded.anchor, effortAdded.effort, effortAdded.op);
+          if (effortAdded.op === "set" && v.facts.nonSystemMessages === 1 && effortConv) effortConv.effortFirst = effortAdded.effort;
+        }
         const arrived = this.#now();
         msToHeaders = arrived - started;
         upstreamFirstByteMs = arrived - forwardStarted;
@@ -579,7 +589,10 @@ export class Router {
       return finalize(override, override, ["override"], {}, null); // bypasses backend, confidence and the cost guard
     }
     // The Agent call named this subagent's model: a choice made on purpose, so it runs where it was sent.
-    if (kind === "subagent" && (this.d.explicitModel?.(v.sessionId, v.task) ?? null) !== null) return none({ plan: planRecord(null, ["model_explicit"]) });
+    // A tier other than the main chat's comes from the Agent call or the agent's definition (`model:` frontmatter,
+    // built-in agents): chosen as well, where the tool input alone cannot show it.
+    const explicit = (this.d.explicitModel?.(v.sessionId, v.task) ?? null) !== null || (s.mainModel !== null && tierOfModel(s.mainModel) !== requested);
+    if (kind === "subagent" && explicit) return none({ plan: planRecord(null, ["model_explicit"]) });
     if (kind === "main" && cfg.mainChat === "never") return none({ plan: planRecord(null, ["main_chat_disabled"]) });
 
     // The tier this main-chat conversation is pinned to now (its last decided target); the requested tier when it

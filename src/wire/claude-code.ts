@@ -80,6 +80,15 @@ export interface RequestView {
 
 export type ParseResult = { readonly ok: true; readonly view: RequestView } | { readonly ok: false; readonly reason: "not_json" | "not_object" };
 
+/**
+ * Side calls that replay their conversation and whose answer belongs to it, so they go where the conversation's pin
+ * sends it (never decided): a subagent's progress summary, a tool-loop step carrying harness text, and a task
+ * notification or subagent hand-back (`cross_session`) the chat answers as a turn of its own (Claude Code transcripts,
+ * 2026-09-25: 92 of 99 and 45 of 46 answered in the main chat).
+ */
+export const followsPin = (v: Pick<RequestView, "sideKind" | "sideMarker">): boolean =>
+  v.sideKind === "agent_summary" || v.sideKind === "tool_result_text" || v.sideKind === "cross_session" || v.sideMarker === "task_notification";
+
 /** `POST /v1/messages` (any query string). Everything else, including count_tokens, is never classified. */
 export function isMessagesRequest(method: string, url: string): boolean {
   return method === "POST" && url.split("?")[0] === "/v1/messages";

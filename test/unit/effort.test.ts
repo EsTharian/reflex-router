@@ -103,6 +103,19 @@ describe("effort on the wire", () => {
     assert.equal(withEffort(buf(first), () => undefined, "low", true, false)!.added?.op, "set");
   });
 
+  it("keepFirst: a history Claude Code rebuilt (no mark matches) gets the conversation's first level back, as a new set mark", () => {
+    const set = storeOf(withEffort(buf(first), () => undefined, "low"));
+    const rebuilt = { ...next, messages: [{ role: "user", content: [{ type: "text", text: "do the thing, rebuilt" }] }, ...next.messages.slice(1)] };
+    assert.deepEqual(withEffort(buf(rebuilt), (h) => set.get(h), null)!.fields, [], "without keepFirst the level is lost");
+    const e = withEffort(buf(rebuilt), (h) => set.get(h), null, true, false, "low")!;
+    assert.equal(shape(e.body), "u s:low a u");
+    assert.deepEqual(e.fields, ["messages.effort_kept", "output_config.effort"]);
+    assert.equal(e.added!.op, "set");
+    const again = new Map([[e.added!.anchor, { effort: "low" as const, op: "set" as const }]]);
+    assert.deepEqual(withEffort(buf(rebuilt), (h) => again.get(h), null, true, false, "low")!.fields, ["messages.effort_reinserted:1", "output_config.effort"]);
+    assert.deepEqual(withEffort(buf(next), (h) => set.get(h), null, true, false, "low")!.fields, ["messages.effort_reinserted:1", "output_config.effort"], "a matching mark wins");
+  });
+
   it("nothing stored and nothing to add: the very same bytes (byte-identical passthrough)", () => {
     const b = buf(next);
     assert.equal(withEffort(b, () => undefined, null)!.body, b);

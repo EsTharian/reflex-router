@@ -57,8 +57,13 @@ describe("shadow mode, end to end", () => {
   });
 
   it("a subagent downgrade is recorded as would-route, and the request still goes out unchanged", async () => {
-    const fx = fixtures.find((f) => f.file === "interactive.subagent-new-turn.request.json");
-    assert.ok(fx);
+    const found = fixtures.find((f) => f.file === "interactive.subagent-new-turn.request.json");
+    assert.ok(found);
+    // A session of its own: the redacted fixtures of every version share SESSION-1, and a main chat on another tier
+    // in the same session would make this subagent's model an explicit choice (not decided).
+    const b = JSON.parse(found.body.toString()) as { metadata: { user_id: string } };
+    b.metadata.user_id = JSON.stringify({ ...(JSON.parse(b.metadata.user_id) as object), session_id: "s-shadow-sub" });
+    const fx = { ...found, headers: { ...found.headers, "x-claude-code-session-id": "s-shadow-sub" }, body: Buffer.from(JSON.stringify(b)) };
     const { rec } = await replay(stack, fx);
     assert.equal(rec.plan?.would_route_to, "claude-haiku-4-5-20251001");
     assert.deepEqual(rec.plan?.reasons, ["downgrade"]);
